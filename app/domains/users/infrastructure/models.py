@@ -1,0 +1,35 @@
+from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+from datetime import datetime
+
+class Rol(Base):
+    __tablename__ = "Rols"
+
+    r_id = Column(Integer, primary_key=True, index=True)
+    r_name = Column(String(255))
+    r_description = Column(String(255))
+
+    users = relationship("AppUser", back_populates="role")
+
+class AppUser(Base):
+    __tablename__ = "AppUsers"
+
+    usr_id = Column(Integer, primary_key=True, index=True)
+    usr_login = Column(String(255), unique=True, index=True)
+    usr_password = Column(String(255), nullable=False)
+    usr_first_name = Column(String(255))
+    usr_middle_name = Column(String(255), nullable=True)
+    usr_last_name = Column(String(255))
+    usr_second_last_name = Column(String(255), nullable=True)
+    usr_document_number = Column(String(255), unique=True, index=True)
+    usr_phone_number = Column(String(255), nullable=True)
+    usr_is_active = Column(Boolean, default=True)
+    usr_mail = Column(String(255), unique=True, index=True)
+    usr_is_Locked = Column(Boolean, default=False)
+    usr_Signature = Column(Text, nullable=True)
+    usr_created_at = Column(DateTime, default=datetime.utcnow)
+    usr_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    usr_rol_id = Column(Integer, ForeignKey("Rols.r_id"), nullable=False)
+
+    role = relationship("Rol", back_populates="users")
