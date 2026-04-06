@@ -8,6 +8,7 @@ from app.domains.contractstariffs.api.router import router as contractstariffs_r
 from app.domains.samples.api.router import router as samples_router
 from app.domains.testslabs.api.router import router as testslabs_router
 from app.domains.studieslab.api.router import router as studieslab_router
+from app.domains.orders.api.router import router as orders_router
     
 api_router = APIRouter()
 
@@ -20,3 +21,4 @@ api_router.include_router(contractstariffs_router, prefix="/contracts-tariffs", 
 api_router.include_router(samples_router, prefix="/samples", tags=["Samples"])
 api_router.include_router(testslabs_router, prefix="/tests-lab", tags=["Tests Lab"])
 api_router.include_router(studieslab_router, prefix="/studies-lab", tags=["Studies Lab"])
+api_router.include_router(orders_router, prefix="/orders", tags=["Orders"])

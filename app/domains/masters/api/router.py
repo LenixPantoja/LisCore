@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,14 +7,15 @@ from app.domains.masters.api.schemas import (
     CountryResponse, DepartmentResponse, CityResponse, DocumentTypeResponse, SexTypeResponse, 
     AfiliationTypeResponse, RegimeResponse, ServiceResponse, TypeLiabilityResponse, ClassificationResponse,
     TechniqueCreate, TechniqueUpdate, TechniqueResponse, WorkGroupCreate, WorkGroupUpdate, WorkGroupResponse,
-    ReferralLocationCreate, ReferralLocationUpdate, ReferralLocationResponse
+    ReferralLocationCreate, ReferralLocationUpdate, ReferralLocationResponse,
+    DiagnosisResponse, SchoolingResponse
 )
 from app.domains.masters.application.use_cases import (
     get_countries, get_departments_by_country, get_cities_by_department, get_document_types, 
     get_sex_types, get_afiliation_types, get_regimes, get_services, get_type_liabilities, 
     get_classifications, masters_crud_use_cases as crud
 )
-from app.domains.masters.domain.models import Technique, WorkGroup, ReferralLocation
+from app.domains.masters.domain.models import Technique, WorkGroup, ReferralLocation, Diagnosis, Schooling
 
 router = APIRouter()
 
@@ -114,3 +115,27 @@ async def read_referral_locations(db: AsyncSession = Depends(get_db)):
 @router.patch("/referral-locations/{id}", response_model=ReferralLocationResponse)
 async def update_referral_location(id: int, data: ReferralLocationUpdate, db: AsyncSession = Depends(get_db)):
     return await crud.update_item(db, ReferralLocation, id, data.model_dump(exclude_unset=True))
+
+# --- Diagnoses ---
+@router.get("/diagnoses", response_model=List[DiagnosisResponse])
+async def read_diagnoses(
+    skip: int = 0, 
+    limit: int = 100, 
+    code: Optional[str] = None, 
+    description: Optional[str] = None, 
+    db: AsyncSession = Depends(get_db)
+):
+    return await crud.get_diagnoses_paginated(db, skip, limit, code, description)
+
+@router.get("/diagnoses/{id}", response_model=DiagnosisResponse)
+async def read_diagnosis(id: int, db: AsyncSession = Depends(get_db)):
+    return await crud.get_item_by_id(db, Diagnosis, id)
+
+# --- Schooling ---
+@router.get("/schooling", response_model=List[SchoolingResponse])
+async def read_schoolings(db: AsyncSession = Depends(get_db)):
+    return await crud.get_items(db, Schooling)
+
+@router.get("/schooling/{id}", response_model=SchoolingResponse)
+async def read_schooling(id: int, db: AsyncSession = Depends(get_db)):
+    return await crud.get_item_by_id(db, Schooling, id)

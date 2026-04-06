@@ -1,0 +1,65 @@
+from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Text, ForeignKey
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+from datetime import datetime
+
+class Order(Base):
+    __tablename__ = "Orders"
+
+    o_id = Column(Integer, primary_key=True, index=True)
+    o_number = Column(String(255), index=True)
+    o_date = Column(Date)
+    o_his_id = Column(Integer, ForeignKey("Patients.pt_id"), nullable=False)
+    o_print_date = Column(DateTime, nullable=True)
+    o_age = Column(String(255))
+    o_pregnated = Column(Boolean, default=False)
+    o_week_pregnated = Column(String(255), nullable=True)
+    o_priority = Column(Integer, default=0)
+    o_mail_sent = Column(Integer, default=0)
+    o_whatsapp_sent = Column(Integer, default=0)
+    o_autorizacion = Column(String(255), nullable=True)
+    o_service_id = Column(Integer, ForeignKey("Services.id"), nullable=True)
+    o_diagnoses_id = Column(Integer, ForeignKey("Diagnoses.diag_id"), nullable=True)
+    o_headquarter_id = Column(Integer, nullable=True) # Falta FK formal si no existe tabla headquarters mapeada
+    o_AppUser_id = Column(Integer, nullable=True) # Corresponde a Users
+    o_enterprise_id = Column(Integer, ForeignKey("Enterprises.en_id"), nullable=True)
+    o_scholarity = Column(Integer, ForeignKey("Schooling.id"), nullable=True)
+    o_order_state = Column(Integer, default=1)
+    o_pat_num_whatsapp = Column(String(255), nullable=True)
+    o_pat_mail = Column(String(255), nullable=True)
+    o_note = Column(Text, nullable=True)
+    o_created_at = Column(DateTime, default=datetime.utcnow)
+    o_updated_at = Column(DateTime, default=datetime.utcnow, 
+                          onupdate=datetime.utcnow)
+    o_tariff_id = Column(Integer, ForeignKey("Tariffs.t_id"), nullable=True)
+
+    # Relaciones
+    patient = relationship("app.domains.patients.domain.models.Patient")
+    service = relationship("app.domains.masters.domain.models.Service")
+    diagnosis = relationship("app.domains.masters.domain.models.Diagnosis")
+    enterprise = relationship("app.domains.enterprises.domain.models.Enterprise")
+    schooling = relationship("app.domains.masters.domain.models.Schooling")
+    tariff = relationship("app.domains.contractstariffs.domain.models.Tariff")
+    details = relationship("OrdersDetail", back_populates="order", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Order(id={self.o_id}, number='{self.o_number}')>"
+
+class OrdersDetail(Base):
+    __tablename__ = "OrdersDetails"
+
+    od_id = Column(Integer, primary_key=True, index=True)
+    od_order_id = Column(Integer, ForeignKey("Orders.o_id"))
+    od_study_id = Column(Integer, ForeignKey("StudiesLab.id"))
+    od_state = Column(Integer)
+    od_print_date = Column(DateTime, nullable=True)
+    o_checking_date = Column(DateTime, nullable=True)
+    od_created_at = Column(DateTime, default=datetime.utcnow)
+    od_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relaciones
+    order = relationship("Order", back_populates="details")
+    study = relationship("app.domains.studieslab.domain.models.StudiesLab")
+
+    def __repr__(self):
+        return f"<OrdersDetail(id={self.od_id}, order_id={self.od_order_id}, study_id={self.od_study_id})>"

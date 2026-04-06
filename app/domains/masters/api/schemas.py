@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from typing import Optional, List
-from datetime import date
+from datetime import date, datetime
 
 class CountryBase(BaseModel):
     code_country: str
@@ -9,6 +9,26 @@ class CountryBase(BaseModel):
 
 class CountryResponse(CountryBase):
     id: int
+
+    class Config:
+        from_attributes = True
+
+# --- Diagnoses ---
+class DiagnosisResponse(BaseModel):
+    diag_id: int
+    diag_code: Optional[str] = None
+    d_description: Optional[str] = None
+    diag_created_at: Optional[datetime] = None
+    diag_updated_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+# --- Schooling ---
+class SchoolingResponse(BaseModel):
+    id: int
+    code: Optional[str] = None
+    description: Optional[str] = None
 
     class Config:
         from_attributes = True

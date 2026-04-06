@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Date
+from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Date, DateTime, Text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -124,3 +124,19 @@ class ReferralLocation(Base):
     active = Column(Boolean, default=True)
     created_at = Column(Date)
     update_at = Column(Date)
+
+class Diagnosis(Base):
+    __tablename__ = "Diagnoses"
+
+    diag_id = Column(Integer, primary_key=True, index=True)
+    diag_code = Column(String(255))
+    d_description = Column(Text)
+    diag_created_at = Column(DateTime)
+    diag_updated_at = Column(DateTime)
+
+class Schooling(Base):
+    __tablename__ = "Schooling"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(255))
+    description = Column(String(255))

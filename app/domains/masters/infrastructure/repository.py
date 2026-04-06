@@ -1,7 +1,7 @@
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from app.domains.masters.domain.models import Country, Department, City, DocumentType, SexType, AfiliationType, Regime, Service, TypeLiability, Classification, Technique, WorkGroup, ReferralLocation
+from app.domains.masters.domain.models import Country, Department, City, DocumentType, SexType, AfiliationType, Regime, Service, TypeLiability, Classification, Technique, WorkGroup, ReferralLocation, Diagnosis
 from datetime import date
 
 class MastersRepository:
@@ -54,6 +54,23 @@ class MastersRepository:
             await db.commit()
             await db.refresh(item)
         return item
+
+    @staticmethod
+    async def get_diagnoses_filtered(
+        db: AsyncSession, 
+        skip: int, 
+        limit: int, 
+        code: Optional[str] = None, 
+        description: Optional[str] = None
+    ) -> List[Diagnosis]:
+        query = select(Diagnosis)
+        if code:
+            query = query.filter(Diagnosis.diag_code.ilike(f"%{code}%"))
+        if description:
+            query = query.filter(Diagnosis.d_description.ilike(f"%{description}%"))
+        
+        result = await db.execute(query.offset(skip).limit(limit))
+        return result.scalars().all()
     @staticmethod
     async def get_all_document_types(db: AsyncSession) -> List[DocumentType]:
         result = await db.execute(select(DocumentType))

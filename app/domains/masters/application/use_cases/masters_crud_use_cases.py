@@ -1,3 +1,4 @@
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.masters.infrastructure.repository import MastersRepository
 from fastapi import HTTPException, status
@@ -28,3 +29,6 @@ async def update_item(db: AsyncSession, model, item_id: int, data: dict):
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se pudo actualizar el registro por conflicto de datos.")
+
+async def get_diagnoses_paginated(db: AsyncSession, skip: int, limit: int, code: Optional[str] = None, description: Optional[str] = None):
+    return await MastersRepository.get_diagnoses_filtered(db, skip, limit, code, description)
