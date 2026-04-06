@@ -18,6 +18,7 @@ class UserCreate(UserBase):
     usr_password: str
 
 class UserUpdate(BaseModel):
+    usr_login: Optional[str] = None
     usr_first_name: Optional[str] = None
     usr_middle_name: Optional[str] = None
     usr_last_name: Optional[str] = None

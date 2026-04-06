@@ -1,8 +1,22 @@
 from fastapi import APIRouter
 from app.domains.patients.api.router import router as patients_router
 from app.domains.users.api.router import router as users_router
-
+from app.domains.enterprises.api.router import router as enterprises_router
+from app.domains.masters.api.router import router as masters_router
+from app.domains.Headquarters.api.router import router as headquarters_router
+from app.domains.contractstariffs.api.router import router as contractstariffs_router
+from app.domains.samples.api.router import router as samples_router
+from app.domains.testslabs.api.router import router as testslabs_router
+from app.domains.studieslab.api.router import router as studieslab_router
+    
 api_router = APIRouter()
 
 api_router.include_router(patients_router, prefix="/patients", tags=["Patients"])
 api_router.include_router(users_router, prefix="/users", tags=["Users"])
+api_router.include_router(enterprises_router, prefix="/enterprises", tags=["Enterprises"])
+api_router.include_router(masters_router, prefix="/masters", tags=["Masters"])
+api_router.include_router(headquarters_router, prefix="/headquarters", tags=["Headquarters"])
+api_router.include_router(contractstariffs_router, prefix="/contracts-tariffs", tags=["Contracts & Tariffs"])
+api_router.include_router(samples_router, prefix="/samples", tags=["Samples"])
+api_router.include_router(testslabs_router, prefix="/tests-lab", tags=["Tests Lab"])
+api_router.include_router(studieslab_router, prefix="/studies-lab", tags=["Studies Lab"])
