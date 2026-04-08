@@ -50,3 +50,9 @@ class OrderResponse(OrderBase):
 
     class Config:
         from_attributes = True
+
+class OrderPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[OrderResponse]

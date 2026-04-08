@@ -1,6 +1,6 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 
@@ -14,18 +14,48 @@ class StudiesLabRepository:
         return new_study
 
     @staticmethod
-    async def get_all(db: AsyncSession) -> List[StudiesLab]:
-        result = await db.execute(
-            select(StudiesLab).options(selectinload(StudiesLab.test_details))
+    async def get_paginated(
+        db: AsyncSession, 
+        skip: int = 0, 
+        limit: int = 100, 
+        search: Optional[str] = None
+    ) -> Tuple[Sequence[StudiesLab], int]:
+        # 1. Base de la consulta
+        query = select(StudiesLab).options(
+            selectinload(StudiesLab.test_details)
+            .selectinload(StudiesTestDetail.test),
+            selectinload(StudiesLab.test_details)
+            .selectinload(StudiesTestDetail.work_group),
+            selectinload(StudiesLab.work_group)
         )
-        return result.scalars().all()
+        
+        # 2. Filtro de búsqueda (Opcional por nombre o código)
+        if search:
+            query = query.filter(
+                (StudiesLab.name.ilike(f"%{search}%")) | 
+                (StudiesLab.code.ilike(f"%{search}%"))
+            )
+        
+        # 3. Contar total antes de paginar
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+        
+        # 4. Obtener ítems paginados
+        result = await db.execute(query.offset(skip).limit(limit).order_by(StudiesLab.name.asc()))
+        return result.scalars().all(), total
 
     @staticmethod
     async def get_by_id(db: AsyncSession, study_id: int) -> Optional[StudiesLab]:
         result = await db.execute(
             select(StudiesLab)
             .filter(StudiesLab.id == study_id)
-            .options(selectinload(StudiesLab.test_details))
+            .options(
+                selectinload(StudiesLab.test_details)
+                .selectinload(StudiesTestDetail.test),
+                selectinload(StudiesLab.test_details)
+                .selectinload(StudiesTestDetail.work_group),
+                selectinload(StudiesLab.work_group)
+            )
         )
         return result.scalars().first()
 

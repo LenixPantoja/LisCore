@@ -1,6 +1,6 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.domains.testslabs.domain.models import TestsLab
 
@@ -23,6 +23,35 @@ class TestsLabRepository:
             )
         )
         return result.scalars().all()
+
+    @staticmethod
+    async def get_paginated(
+        db: AsyncSession, 
+        skip: int = 0, 
+        limit: int = 100, 
+        search: Optional[str] = None
+    ) -> Tuple[Sequence[TestsLab], int]:
+        # 1. Base de la consulta con relaciones cargadas
+        query = select(TestsLab).options(
+            selectinload(TestsLab.technique),
+            selectinload(TestsLab.work_group),
+            selectinload(TestsLab.sample_type)
+        )
+        
+        # 2. Filtro de búsqueda
+        if search:
+            query = query.filter(
+                (TestsLab.name.ilike(f"%{search}%")) | 
+                (TestsLab.code.ilike(f"%{search}%"))
+            )
+        
+        # 3. Conteo total antes de paginar
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+        
+        # 4. Resultados paginados
+        result = await db.execute(query.offset(skip).limit(limit).order_by(TestsLab.name.asc()))
+        return result.scalars().all(), total
 
     @staticmethod
     async def get_by_id(db: AsyncSession, test_id: int) -> Optional[TestsLab]:

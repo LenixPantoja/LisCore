@@ -17,8 +17,14 @@ async def create_test(db: AsyncSession, data: dict):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El tipo de muestra seleccionado no existe.")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error de integridad al crear el examen.")
 
-async def list_tests(db: AsyncSession):
-    return await TestsLabRepository.get_all(db)
+async def list_tests(db: AsyncSession, skip: int = 0, limit: int = 100, search: str = None):
+    items, total = await TestsLabRepository.get_paginated(db, skip, limit, search)
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items
+    }
 
 async def get_test_by_id(db: AsyncSession, test_id: int):
     test = await TestsLabRepository.get_by_id(db, test_id)

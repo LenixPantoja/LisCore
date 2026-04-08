@@ -10,6 +10,7 @@ from app.domains.samples.domain.models import SamplesOrder
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.testslabs.domain.models import TestsLab
+from utils.Consecutives.consecutive_orders import generate_order_number
 
 async def create_order(db: AsyncSession, data: dict):
     studies_ids = data.pop("studies", [])
@@ -18,6 +19,9 @@ async def create_order(db: AsyncSession, data: dict):
 
     try:
         # 1. Crear el encabezado de la Orden
+        # Generamos el número de orden automáticamente ignorando el del request
+        data["o_number"] = await generate_order_number(db, data.get("o_date"))
+        
         order = await OrderRepository.create(db, data)
         await db.flush() # Obtenemos o_id sin confirmar la transacción todavía
         
@@ -44,7 +48,10 @@ async def create_order(db: AsyncSession, data: dict):
             test_links = result.scalars().all()
 
             if not test_links:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El estudio no tiene exámenes configurados.")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"El estudio con ID {study_id} no tiene exámenes configurados en StudiesTestDetail."
+                )
 
             # 4. Generar registro en Laboratories (1:1 con OrdersDetail debido al UNIQUE)
             # Tomamos la primera prueba configurada para este estudio
@@ -80,7 +87,7 @@ async def create_order(db: AsyncSession, data: dict):
         await db.rollback()
         error_msg = str(e.orig)
         if "o_his_id" in error_msg:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El paciente especificado no existe.")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"El paciente con ID {data.get('o_his_id')} no existe.")
         if "o_enterprise_id" in error_msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La empresa/convenio no existe.")
         if "o_tariff_id" in error_msg:
@@ -88,6 +95,9 @@ async def create_order(db: AsyncSession, data: dict):
         if "o_diagnoses_id" in error_msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El diagnóstico especificado no es válido.")
         
+        if "so_barcode" in error_msg:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Conflicto de duplicidad en el código de barras de la muestra. El consecutivo falló.")
+
         # Manejo del error específico que probablemente te está pasando:
         if "Laboratories_l_order_detail_id_key" in error_msg or "l_order_detail_id" in error_msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
@@ -102,8 +112,14 @@ async def create_order(db: AsyncSession, data: dict):
         
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error de integridad al crear la orden.")
 
-async def list_orders(db: AsyncSession):
-    return await OrderRepository.get_all(db)
+async def list_orders(db: AsyncSession, skip: int = 0, limit: int = 100, search: str = None):
+    items, total = await OrderRepository.get_paginated(db, skip, limit, search)
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items
+    }
 
 async def get_order_by_id(db: AsyncSession, o_id: int):
     order = await OrderRepository.get_by_id(db, o_id)
