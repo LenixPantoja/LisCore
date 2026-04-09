@@ -60,6 +60,12 @@ class StudiesTestDetailBase(BaseModel):
 class StudiesTestDetailCreate(StudiesTestDetailBase):
     pass
 
+class StudiesTestDetailUpdate(BaseModel):
+    tests_id: Optional[int] = None
+    order_print: Optional[int] = None
+    is_required: Optional[bool] = None
+    work_group_id: Optional[int] = None
+
 class StudiesTestDetailResponse(StudiesTestDetailBase):
     id: int
     studies_id: int

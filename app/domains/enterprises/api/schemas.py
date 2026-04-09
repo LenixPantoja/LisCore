@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class EnterpriseBase(BaseModel):
@@ -63,3 +63,9 @@ class EnterpriseResponse(EnterpriseBase):
 
     class Config:
         from_attributes = True # Enables ORM mode for Pydantic v2+
+
+class EnterprisePaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[EnterpriseResponse]

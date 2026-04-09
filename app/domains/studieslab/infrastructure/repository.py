@@ -86,3 +86,16 @@ class StudiesLabRepository:
             await db.commit()
             return True
         return False
+
+    @staticmethod
+    async def get_detail_by_id(db: AsyncSession, detail_id: int) -> Optional[StudiesTestDetail]:
+        """Recupera un detalle de estudio con sus relaciones cargadas."""
+        result = await db.execute(
+            select(StudiesTestDetail)
+            .filter(StudiesTestDetail.id == detail_id)
+            .options(
+                selectinload(StudiesTestDetail.test),
+                selectinload(StudiesTestDetail.work_group)
+            )
+        )
+        return result.scalars().first()

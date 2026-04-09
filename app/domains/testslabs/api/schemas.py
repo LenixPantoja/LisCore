@@ -38,6 +38,12 @@ class TestsLabUpdate(BaseModel):
     format_for_complete: Optional[str] = None
     alarm_value_min: Optional[Decimal] = None
     alarm_value_max: Optional[Decimal] = None
+    female_value_min: Optional[Decimal] = None
+    female_value_max: Optional[Decimal] = None
+    male_value_min: Optional[Decimal] = None
+    male_value_max: Optional[Decimal] = None
+    boys_value_min: Optional[Decimal] = None
+    boys_value_max: Optional[Decimal] = None
     active: Optional[bool] = None
     test_type: Optional[str] = None
     is_confidential: Optional[bool] = None

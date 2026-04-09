@@ -1,5 +1,6 @@
+from typing import Tuple, Sequence, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy import select, func
 from app.domains.enterprises.domain.models import Enterprise
 
 class EnterpriseRepository:
@@ -56,3 +57,24 @@ class EnterpriseRepository:
         await db.commit()
         await db.refresh(enterprise)
         return enterprise
+
+    @staticmethod
+    async def get_paginated(
+        db: AsyncSession, 
+        skip: int = 0, 
+        limit: int = 100, 
+        search: Optional[str] = None
+    ) -> Tuple[Sequence[Enterprise], int]:
+        query = select(Enterprise)
+        if search:
+            query = query.filter(
+                (Enterprise.en_name.ilike(f"%{search}%")) | 
+                (Enterprise.en_nit.ilike(f"%{search}%")) |
+                (Enterprise.en_code.ilike(f"%{search}%"))
+            )
+        
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+        
+        result = await db.execute(query.offset(skip).limit(limit).order_by(Enterprise.en_name.asc()))
+        return result.scalars().all(), total

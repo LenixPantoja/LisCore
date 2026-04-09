@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, status
+from typing import Optional
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.domains.enterprises.api.schemas import EnterpriseCreate, EnterpriseResponse, EnterpriseUpdate
-from app.domains.enterprises.application.use_cases import create_enterprise, update_enterprise
+from app.domains.enterprises.api.schemas import EnterpriseCreate, EnterpriseResponse, EnterpriseUpdate, EnterprisePaginatedResponse
+from app.domains.enterprises.application.use_cases import create_enterprise, update_enterprise, list_enterprises
+from app.domains.enterprises.application.use_cases import create_enterprise, update_enterprise, list_enterprises, get_enterprise
 
 router = APIRouter()
 
@@ -34,3 +36,22 @@ async def update_existing_enterprise(en_id: int, data: EnterpriseUpdate, db: Asy
     Endpoint para actualizar o inactivar una empresa.
     """
     return await update_enterprise.execute(db, en_id, data.model_dump(exclude_unset=True))
+
+@router.get("/", response_model=EnterprisePaginatedResponse)
+async def list_existing_enterprises(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint para listar empresas con paginación técnica y búsqueda opcional por nombre, NIT o código.
+    """
+    return await list_enterprises.execute(db, skip, limit, search)
+
+@router.get("/{en_id}", response_model=EnterpriseResponse)
+async def get_enterprise_details(en_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Endpoint para obtener el detalle de una empresa específica por su ID.
+    """
+    return await get_enterprise.execute(db, en_id)
