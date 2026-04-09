@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.domains.users.domain.interfaces import UserRepository
+from app.domains.users.infrastructure.repository import UserRepository
 from fastapi import HTTPException, status
 from app.core.security import verify_password, create_access_token
 from app.core.config import settings

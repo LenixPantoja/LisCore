@@ -4,7 +4,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.enterprises.api.schemas import EnterpriseCreate, EnterpriseResponse, EnterpriseUpdate, EnterprisePaginatedResponse
-from app.domains.enterprises.application.use_cases import create_enterprise, update_enterprise, list_enterprises
 from app.domains.enterprises.application.use_cases import create_enterprise, update_enterprise, list_enterprises, get_enterprise
 
 router = APIRouter()

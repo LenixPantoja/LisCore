@@ -1,38 +1,51 @@
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Any
 
 from app.core.database import get_db
-from app.domains.users.api.schemas import UserCreate, UserUpdate, UserResponse, UserLogin
-from app.domains.users.application.use_cases import create_user, update_user, login_user # Use cases
-from app.domains.users.infrastructure.repository import UserRepository # Concrete repository implementation
+from app.domains.users.api.schemas import UserResponse, UserPaginatedResponse, UserUpdate, UserLogin
+from app.domains.users.application.use_cases import list_users, get_user, update_user, login_user
+from app.domains.users.infrastructure.repository import UserRepository
 
 router = APIRouter()
 
+@router.get("/", response_model=UserPaginatedResponse)
+async def list_existing_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint para listar usuarios con paginación y búsqueda opcional por nombre, apellido o login.
+    """
+    return await list_users.execute(db, skip, limit, search)
+
+@router.get("/{usr_id}", response_model=UserResponse)
+async def get_user_details(usr_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Endpoint para obtener el detalle de un usuario específico por su ID.
+    """
+    return await get_user.execute(db, usr_id)
+
+@router.patch("/{usr_id}", response_model=UserResponse)
+async def update_existing_user(usr_id: int, data: UserUpdate, db: AsyncSession = Depends(get_db)):
+    """
+    Endpoint para actualizar los datos de un usuario existente.
+    """
+    return await update_user.execute(
+        UserRepository, 
+        db, 
+        usr_id, 
+        data.model_dump(exclude_unset=True)
+    )
+
 @router.post("/login")
-async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login_for_access_token(
+    form_data: UserLogin, 
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Endpoint para iniciar sesión de usuario.
+    Endpoint para autenticar un usuario y obtener un token de acceso.
     """
-    user_repo = UserRepository() # Instantiate the concrete repository
-    return await login_user.execute(user_repo, db, data.model_dump())
-
-@router.post("/", response_model=UserResponse)
-async def create_new_user(data: UserCreate, db: AsyncSession = Depends(get_db)):
-    """
-    Endpoint para crear un nuevo usuario.
-    """
-    user_repo = UserRepository() # Instantiate the concrete repository
-    # The use case expects a dict, which Pydantic's model_dump provides.
-    # The repository will handle the conversion to ORM model.
-    created_user = await create_user.execute(user_repo, db, data.model_dump())
-    return UserResponse.model_validate(created_user) # Convert domain model back to response schema
-
-@router.patch("/{user_id}", response_model=UserResponse)
-async def update_existing_user(user_id: int, data: UserUpdate, db: AsyncSession = Depends(get_db)):
-    """
-    Endpoint para actualizar un usuario existente.
-    """
-    user_repo = UserRepository() # Instantiate the concrete repository
-    updated_user = await update_user.execute(user_repo, db, user_id, data.model_dump(exclude_unset=True))
-    return UserResponse.model_validate(updated_user) # Convert domain model back to response schema
+    return await login_user.execute(UserRepository, db, form_data.model_dump())

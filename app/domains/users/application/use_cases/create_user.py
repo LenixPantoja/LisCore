@@ -1,9 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.domains.users.domain.interfaces import UserRepository
+from app.domains.users.infrastructure.repository import UserRepository
 from fastapi import HTTPException, status
-from app.domains.users.domain.models import User
+from app.domains.users.infrastructure.models import AppUser
 
-async def execute(user_repo: UserRepository, db: AsyncSession, user_data: dict) -> User:
+async def execute(user_repo: UserRepository, db: AsyncSession, user_data: dict) -> AppUser:
     # Check if user already exists
     existing_user = await user_repo.get_by_login(db, user_data["usr_login"])
     if existing_user:

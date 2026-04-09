@@ -1,13 +1,32 @@
-from typing import List, Optional
+from typing import Tuple, Sequence, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.future import select
+from sqlalchemy import select, func
 from app.domains.samples.domain.models import SampleType
 
 class SampleRepository:
     @staticmethod
-    async def get_all_types(db: AsyncSession) -> List[SampleType]:
-        result = await db.execute(select(SampleType))
-        return result.scalars().all()
+    async def get_types_paginated(
+        db: AsyncSession, 
+        skip: int = 0, 
+        limit: int = 100, 
+        search: Optional[str] = None
+    ) -> Tuple[Sequence[SampleType], int]:
+        query = select(SampleType)
+        
+        if search:
+            query = query.filter(
+                SampleType.st_name.ilike(f"%{search}%")
+            )
+        
+        # Conteo total para paginación
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+        
+        # Resultados paginados ordenados por nombre
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(SampleType.st_name.asc())
+        )
+        return result.scalars().all(), total
 
     @staticmethod
     async def get_type_by_id(db: AsyncSession, st_id: int) -> Optional[SampleType]:
@@ -15,11 +34,11 @@ class SampleRepository:
 
     @staticmethod
     async def create_type(db: AsyncSession, data: dict) -> SampleType:
-        new_type = SampleType(**data)
-        db.add(new_type)
+        new_item = SampleType(**data)
+        db.add(new_item)
         await db.commit()
-        await db.refresh(new_type)
-        return new_type
+        await db.refresh(new_item)
+        return new_item
 
     @staticmethod
     async def update_type(db: AsyncSession, st_id: int, data: dict) -> Optional[SampleType]:
@@ -39,3 +58,10 @@ class SampleRepository:
             await db.commit()
             return True
         return False
+
+    @staticmethod
+    async def get_all_types(db: AsyncSession) -> Sequence[SampleType]:
+        result = await db.execute(
+            select(SampleType).order_by(SampleType.st_name.asc())
+        )
+        return result.scalars().all()

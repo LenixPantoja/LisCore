@@ -1,5 +1,6 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
+from datetime import datetime
 
 class SampleTypeBase(BaseModel):
     st_name: str
@@ -9,11 +10,9 @@ class SampleTypeBase(BaseModel):
     st_active: Optional[bool] = True
 
 class SampleTypeCreate(SampleTypeBase):
-    """Esquema para crear un tipo de muestra."""
     pass
 
 class SampleTypeUpdate(BaseModel):
-    """Esquema para actualizar un tipo de muestra."""
     st_name: Optional[str] = None
     st_color: Optional[str] = None
     st_sufix: Optional[int] = None
@@ -25,3 +24,9 @@ class SampleTypeResponse(SampleTypeBase):
 
     class Config:
         from_attributes = True
+
+class SampleTypePaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[SampleTypeResponse]

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
@@ -45,3 +45,9 @@ class UserLogin(BaseModel):
     # Assuming standard login with password, even if not in schema.
     # We will simulate login logic for now since the schema lacks password
     usr_password: str 
+
+class UserPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[UserResponse]

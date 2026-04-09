@@ -1,9 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.domains.users.domain.interfaces import UserRepository
+from app.domains.users.infrastructure.repository import UserRepository
 from fastapi import HTTPException, status
-from app.domains.users.domain.models import User
+from app.domains.users.infrastructure.models import AppUser
 
-async def execute(user_repo: UserRepository, db: AsyncSession, user_id: int, update_data: dict) -> User:
+async def execute(user_repo: UserRepository, db: AsyncSession, user_id: int, update_data: dict) -> AppUser:
     user = await user_repo.get_by_id(db, user_id)
     if not user:
         raise HTTPException(

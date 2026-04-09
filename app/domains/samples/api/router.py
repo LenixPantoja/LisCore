@@ -1,16 +1,21 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from typing import List, Optional
 
 from app.core.database import get_db
-from app.domains.samples.api.schemas import SampleTypeCreate, SampleTypeUpdate, SampleTypeResponse
-from app.domains.samples.application.use_cases import sample_types_use_cases as use_cases
+from app.domains.samples.api.schemas import SampleTypeCreate, SampleTypeUpdate, SampleTypeResponse, SampleTypePaginatedResponse
+from app.domains.samples.application.use_cases import sample_types_use_cases as use_cases, list_sample_types
 
 router = APIRouter()
 
-@router.get("/types", response_model=List[SampleTypeResponse])
-async def list_types(db: AsyncSession = Depends(get_db)):
-    return await use_cases.list_sample_types(db)
+@router.get("/types", response_model=SampleTypePaginatedResponse)
+async def list_types(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    return await list_sample_types.execute(db, skip, limit, search)
 
 @router.get("/types/{st_id}", response_model=SampleTypeResponse)
 async def get_one_type(st_id: int, db: AsyncSession = Depends(get_db)):
