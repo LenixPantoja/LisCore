@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Boolean, Date, Numeric, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Date, Numeric, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
+from datetime import date
 from app.core.database import Base
 
 class Tariff(Base):
@@ -9,8 +10,8 @@ class Tariff(Base):
     t_name = Column(String(255))
     t_description = Column(String(255))
     t_activo = Column(Boolean, default=True)
-    t_created_at = Column(Date)
-    t_update_at = Column(Date)
+    t_created_at = Column(Date, default=date.today)
+    t_update_at = Column(Date, default=date.today, onupdate=date.today)
 
     details = relationship("TariffDetail", back_populates="tariff", cascade="all, delete-orphan")
     contracts_link = relationship("ContractTariff", back_populates="tariff")
@@ -24,28 +25,33 @@ class TariffDetail(Base):
     td_value = Column(Numeric)
 
     tariff = relationship("Tariff", back_populates="details")
+    studie = relationship("StudiesLab")
 
 class Contract(Base):
     __tablename__ = "Contracts"
 
     co_id = Column(Integer, primary_key=True, index=True)
-    co_code = Column(String(255))
-    co_observations = Column(String(255))
-    co_value_contracted = Column(Numeric)
-    co_value_consumed = Column(Numeric)
-    co_value_alarm = Column(Numeric)
-    co_billing_type = Column(Integer)
-    co_contract_number = Column(String(255))
-    co_number_poliza = Column(String(255))
-    co_active = Column(Boolean, default=True)
-    co_created_at = Column(Date)
-    co_updated_at = Column(Date)
-    co_enterprise_id = Column(Integer)
+    co_code = Column(String(255), nullable=True)
+    co_observations = Column(String(255), nullable=True)
+    co_value_contracted = Column(Numeric, nullable=True)
+    co_value_consumed = Column(Numeric, nullable=True)
+    co_value_alarm = Column(Numeric, nullable=True)
+    co_billing_type = Column(Integer, nullable=True)
+    co_contract_number = Column(String(255), nullable=True)
+    co_number_poliza = Column(String(255), nullable=True)
+    co_active = Column(Boolean, default=True, nullable=True)
+    co_created_at = Column(Date, nullable=True)
+    co_updated_at = Column(Date, nullable=True)
+    co_enterprise_id = Column(Integer, ForeignKey("Enterprises.en_id"), nullable=True)
 
     tariffs_link = relationship("ContractTariff", back_populates="contract")
+    enterprise = relationship("Enterprise", backref="contracts")
 
 class ContractTariff(Base):
     __tablename__ = "ContractsTariffs"
+    __table_args__ = (
+        UniqueConstraint('ct_contract_id', 'ct_tariff_id', name='uq_contract_tariff'),
+    )
 
     ct_id = Column(Integer, primary_key=True, index=True)
     ct_contract_id = Column(Integer, ForeignKey("Contracts.co_id"))

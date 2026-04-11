@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(d:\\Mis Projects\\CoreLab\\Backend\\Backend\\LisCore\\app\\domains\\patients\\infrastructure/**)",
+      "Bash(python *)"
+    ]
+  },
+  "$version": 3
+}
