@@ -48,6 +48,17 @@ class UserRepository:
         return result.scalars().first()
 
     @staticmethod
+    async def create(db: AsyncSession, user_data: dict) -> AppUser:
+        """
+        Creates a new user record in the database.
+        """
+        new_user = AppUser(**user_data)
+        db.add(new_user)
+        await db.commit()
+        await db.refresh(new_user)
+        return new_user
+
+    @staticmethod
     async def update(db: AsyncSession, user: AppUser, update_data: dict) -> AppUser:
         """
         Updates an existing user record.

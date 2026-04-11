@@ -36,8 +36,14 @@ async def add_detail_to_tariff(db: AsyncSession, tariff_id: int, data: dict):
 async def create_contract(db: AsyncSession, data: dict):
     return await ContractTariffRepository.create_contract(db, data)
 
-async def list_contracts(db: AsyncSession, enterprise_id: int = None):
-    return await ContractTariffRepository.get_contracts(db, enterprise_id)
+async def list_contracts(db: AsyncSession, skip: int = 0, limit: int = 100, search: str = None, enterprise_id: int = None):
+    items, total = await ContractTariffRepository.get_contracts_paginated(db, skip, limit, search, enterprise_id)
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items
+    }
 
 async def link_tariff_to_contract(db: AsyncSession, data: dict):
     try:
