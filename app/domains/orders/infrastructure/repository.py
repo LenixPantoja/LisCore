@@ -63,3 +63,12 @@ class OrderRepository:
             await db.commit()
             await db.refresh(order)
         return order
+
+    @staticmethod
+    async def get_next_order_number(db: AsyncSession) -> int:
+        """Get the next order number (last + 1)"""
+        result = await db.execute(
+            select(func.max(Order.o_id))
+        )
+        max_id = result.scalar()
+        return (max_id or 0) + 1

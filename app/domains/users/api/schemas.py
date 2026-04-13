@@ -42,9 +42,15 @@ class UserResponse(UserBase):
 
 class UserLogin(BaseModel):
     usr_login: str
-    # Assuming standard login with password, even if not in schema.
-    # We will simulate login logic for now since the schema lacks password
-    usr_password: str 
+    usr_password: str
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    usr_id: int
+    usr_login: str
+    usr_full_name: str
+    usr_rol_name: Optional[str] = None
 
 class UserPaginatedResponse(BaseModel):
     total: int

@@ -56,3 +56,6 @@ class OrderPaginatedResponse(BaseModel):
     skip: int
     limit: int
     items: List[OrderResponse]
+
+class NextOrderNumberResponse(BaseModel):
+    next_order_number: int

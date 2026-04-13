@@ -2,6 +2,11 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import date, datetime
 
+class PatientAgeInfo(BaseModel):
+    years: int = 0
+    months: int = 0
+    days: int = 0
+
 class PatientBase(BaseModel):
     pt_Number_document: str
     pt_firts_name: str
@@ -39,6 +44,15 @@ class PatientResponse(PatientBase):
     pt_id: int
     pt_created_at: datetime
     pt_updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class PatientWithAgeResponse(PatientBase):
+    pt_id: int
+    pt_created_at: datetime
+    pt_updated_at: datetime
+    pt_age: PatientAgeInfo
 
     class Config:
         from_attributes = True

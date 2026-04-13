@@ -7,7 +7,7 @@ class Patient(Base):
     __tablename__ = "Patients"
 
     pt_id = Column(Integer, primary_key=True, index=True)
-    pt_Number_document = Column(String(255), index=True)
+    pt_Number_document = Column(String(255), unique=True, index=True)
     pt_firts_name = Column(String(255))
     pt_middle_name = Column(String(255), nullable=True)
     pt_last_name = Column(String(255))

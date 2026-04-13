@@ -37,8 +37,8 @@ class TestsLabResponse(BaseModel):
     code: str
     name: str
     active: bool
-    units: str
-    
+    units: Optional[str] = None
+
     # Puedes agregar aquí más campos según lo que necesites mostrar de la prueba
 
     class Config:

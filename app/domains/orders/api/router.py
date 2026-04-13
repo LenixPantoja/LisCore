@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from app.core.database import get_db
-from app.domains.orders.api.schemas import OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse
+from app.domains.orders.api.schemas import OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse, NextOrderNumberResponse
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
 router = APIRouter()
@@ -20,6 +20,15 @@ async def list_all(
     db: AsyncSession = Depends(get_db)
 ):
     return await use_cases.list_orders(db, skip, limit, search)
+
+@router.get("/next-number", response_model=NextOrderNumberResponse)
+async def get_next_order_number(db: AsyncSession = Depends(get_db)):
+    """
+    Get the next order number (last order ID + 1).
+
+    Informative endpoint only - does not create an order.
+    """
+    return await use_cases.get_next_order_number(db)
 
 @router.get("/{id}", response_model=OrderResponse)
 async def get_one(id: int, db: AsyncSession = Depends(get_db)):

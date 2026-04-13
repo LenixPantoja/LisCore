@@ -1,50 +1,76 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.masters.api.schemas import (
-    CountryResponse, DepartmentResponse, CityResponse, DocumentTypeResponse, SexTypeResponse, 
+    CountryResponse, CountryPaginatedResponse,
+    DepartmentResponse, DepartmentPaginatedResponse,
+    CityResponse, CityPaginatedResponse,
+    DocumentTypeResponse, SexTypeResponse,
     AfiliationTypeResponse, RegimeResponse, ServiceResponse, TypeLiabilityResponse, ClassificationResponse,
     TechniqueCreate, TechniqueUpdate, TechniqueResponse, WorkGroupCreate, WorkGroupUpdate, WorkGroupResponse,
     ReferralLocationCreate, ReferralLocationUpdate, ReferralLocationResponse,
     DiagnosisResponse, SchoolingResponse
 )
 from app.domains.masters.application.use_cases import (
-    get_countries, get_departments_by_country, get_cities_by_department, get_document_types, 
-    get_sex_types, get_afiliation_types, get_regimes, get_services, get_type_liabilities, 
+    get_countries, get_departments_by_country, get_cities_by_department, get_document_types,
+    get_sex_types, get_afiliation_types, get_regimes, get_services, get_type_liabilities,
     get_classifications, masters_crud_use_cases as crud
 )
-from app.domains.masters.domain.models import Technique, WorkGroup, ReferralLocation, Diagnosis, Schooling
+from app.domains.masters.infrastructure.repository import MastersRepository
+from app.domains.masters.domain.models import Technique, WorkGroup, ReferralLocation, Diagnosis, Schooling, City
 
 router = APIRouter()
 
-@router.get("/countries", response_model=List[CountryResponse])
-async def read_countries(db: AsyncSession = Depends(get_db)):
+@router.get("/countries", response_model=CountryPaginatedResponse)
+async def read_countries(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    active: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Endpoint para obtener la lista de todos los países activos.
+    Endpoint para obtener la lista de países con paginación.
     """
-    return await get_countries.execute(db)
+    items, total = await MastersRepository.get_countries_paginated(db, skip, limit, search, active)
+    return {"total": total, "skip": skip, "limit": limit, "items": items}
 
-@router.get("/countries/{country_id}/departments", response_model=List[DepartmentResponse])
-async def read_departments_by_country(country_id: int, db: AsyncSession = Depends(get_db)):
+@router.get("/departments", response_model=DepartmentPaginatedResponse)
+async def read_departments(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    country_id: Optional[int] = None,
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Endpoint para obtener todos los departamentos de un país dado su ID.
+    Endpoint para obtener departamentos con paginación.
     """
-    departments = await get_departments_by_country.execute(db, country_id)
-    if not departments:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Departments not found for this country")
-    return departments
+    items, total = await MastersRepository.get_departments_paginated(db, country_id, skip, limit, search)
+    return {"total": total, "skip": skip, "limit": limit, "items": items}
 
-@router.get("/departments/{department_id}/cities", response_model=List[CityResponse])
-async def read_cities_by_department(department_id: int, db: AsyncSession = Depends(get_db)):
+@router.get("/cities", response_model=CityPaginatedResponse)
+async def read_cities(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    department_id: Optional[int] = None,
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Endpoint para obtener todas las ciudades de un departamento dado su ID.
+    Endpoint para obtener ciudades con paginación.
     """
-    cities = await get_cities_by_department.execute(db, department_id)
-    if not cities:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cities not found for this department")
-    return cities
+    items, total = await MastersRepository.get_cities_paginated(db, department_id, skip, limit, search)
+    return {"total": total, "skip": skip, "limit": limit, "items": items}
+
+@router.get("/cities/{city_id}", response_model=CityResponse)
+async def read_city(city_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Endpoint para obtener una ciudad por su ID.
+    """
+    return await crud.get_item_by_id(db, City, city_id)
 
 @router.get("/document-types", response_model=List[DocumentTypeResponse])
 async def read_document_types(db: AsyncSession = Depends(get_db)):

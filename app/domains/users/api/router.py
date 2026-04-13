@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.domains.users.api.schemas import UserResponse, UserPaginatedResponse, UserUpdate, UserLogin
+from app.domains.users.api.schemas import UserResponse, UserPaginatedResponse, UserUpdate, UserLogin, LoginResponse
 from app.domains.users.application.use_cases import list_users, get_user, update_user, login_user
 from app.domains.users.infrastructure.repository import UserRepository
 
@@ -40,12 +40,20 @@ async def update_existing_user(usr_id: int, data: UserUpdate, db: AsyncSession =
         data.model_dump(exclude_unset=True)
     )
 
-@router.post("/login")
+@router.post("/login", response_model=LoginResponse)
 async def login_for_access_token(
-    form_data: UserLogin, 
+    form_data: UserLogin,
     db: AsyncSession = Depends(get_db)
 ):
     """
     Endpoint para autenticar un usuario y obtener un token de acceso.
+
+    Returns:
+    - **access_token**: JWT token for API access
+    - **token_type**: Token type (bearer)
+    - **usr_id**: User ID
+    - **usr_login**: User login
+    - **usr_full_name**: Full name (first + middle + last + second last)
+    - **usr_rol_name**: Role name
     """
     return await login_user.execute(UserRepository, db, form_data.model_dump())

@@ -1,6 +1,7 @@
 from typing import Tuple, Sequence, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from app.domains.users.infrastructure.models import AppUser
 
 class UserRepository:
@@ -42,9 +43,13 @@ class UserRepository:
     @staticmethod
     async def get_by_login(db: AsyncSession, login: str) -> Optional[AppUser]:
         """
-        Retrieves a user by its login.
+        Retrieves a user by its login with role relationship loaded.
         """
-        result = await db.execute(select(AppUser).filter(AppUser.usr_login == login))
+        result = await db.execute(
+            select(AppUser)
+            .filter(AppUser.usr_login == login)
+            .options(selectinload(AppUser.role))
+        )
         return result.scalars().first()
 
     @staticmethod

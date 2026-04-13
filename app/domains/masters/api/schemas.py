@@ -13,6 +13,45 @@ class CountryResponse(CountryBase):
     class Config:
         from_attributes = True
 
+class DepartmentBase(BaseModel):
+    d_country_id: int
+    d_code: str
+    d_name_department: str
+
+class DepartmentResponse(DepartmentBase):
+    d_id: int
+
+    class Config:
+        from_attributes = True
+
+class CityResponse(BaseModel):
+    id: int
+    Department_id: int
+    city_code: str
+    city_name: str
+    postal_code: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class CountryPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[CountryResponse]
+
+class DepartmentPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[DepartmentResponse]
+
+class CityPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[CityResponse]
+
 # --- Diagnoses ---
 class DiagnosisResponse(BaseModel):
     diag_id: int
@@ -87,27 +126,6 @@ class ReferralLocationResponse(ReferralLocationBase):
     id: int
     created_at: Optional[date] = None
     update_at: Optional[date] = None
-    class Config:
-        from_attributes = True
-
-class DepartmentBase(BaseModel):
-    d_country_id: int
-    d_code: str
-    d_name_department: str
-
-class DepartmentResponse(DepartmentBase):
-    d_id: int
-
-    class Config:
-        from_attributes = True
-
-class CityResponse(BaseModel):
-    id: int
-    Department_id: int
-    city_code: str
-    city_name: str
-    postal_code: Optional[str] = None
-
     class Config:
         from_attributes = True
 

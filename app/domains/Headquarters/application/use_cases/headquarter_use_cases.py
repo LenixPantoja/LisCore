@@ -1,12 +1,29 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.Headquarters.infrastructure.repository import HeadquarterRepository
 from fastapi import HTTPException, status
+from typing import Optional
 
 async def create_hq(db: AsyncSession, data: dict):
     return await HeadquarterRepository.create(db, data)
 
 async def list_hqs(db: AsyncSession):
     return await HeadquarterRepository.get_all(db)
+
+async def list_hqs_paginated(
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    active: Optional[bool] = None
+):
+    """List headquarters with pagination"""
+    items, total = await HeadquarterRepository.get_paginated(db, skip, limit, search, active)
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items
+    }
 
 async def get_hq_by_id(db: AsyncSession, hq_id: int):
     hq = await HeadquarterRepository.get_by_id(db, hq_id)

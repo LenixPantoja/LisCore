@@ -1,6 +1,7 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy import func
 from app.domains.masters.domain.models import Country, Department, City, DocumentType, SexType, AfiliationType, Regime, Service, TypeLiability, Classification, Technique, WorkGroup, ReferralLocation, Diagnosis
 from datetime import date
 
@@ -14,6 +15,78 @@ class MastersRepository:
             select(Country).filter(Country.country_active == True)
         )
         return result.scalars().all()
+
+    @staticmethod
+    async def get_countries_paginated(
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None,
+        active: Optional[bool] = None
+    ) -> Tuple[Sequence[Country], int]:
+        """Get countries with pagination"""
+        query = select(Country)
+
+        if search:
+            query = query.filter(Country.name_country.ilike(f"%{search}%"))
+        if active is not None:
+            query = query.filter(Country.country_active == active)
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(Country.id.asc())
+        )
+        return result.scalars().all(), total
+
+    @staticmethod
+    async def get_departments_paginated(
+        db: AsyncSession,
+        country_id: Optional[int] = None,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None
+    ) -> Tuple[Sequence[Department], int]:
+        """Get departments with pagination"""
+        query = select(Department)
+
+        if country_id is not None:
+            query = query.filter(Department.d_country_id == country_id)
+        if search:
+            query = query.filter(Department.d_name_department.ilike(f"%{search}%"))
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(Department.d_id.asc())
+        )
+        return result.scalars().all(), total
+
+    @staticmethod
+    async def get_cities_paginated(
+        db: AsyncSession,
+        department_id: Optional[int] = None,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None
+    ) -> Tuple[Sequence[City], int]:
+        """Get cities with pagination"""
+        query = select(City)
+
+        if department_id is not None:
+            query = query.filter(City.Department_id == department_id)
+        if search:
+            query = query.filter(City.city_name.ilike(f"%{search}%") | City.city_code.ilike(f"%{search}%"))
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(City.id.asc())
+        )
+        return result.scalars().all(), total
 
     # --- CRUD Genérico para nuevas tablas ---
     @staticmethod

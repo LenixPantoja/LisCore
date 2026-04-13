@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class HeadquarterBase(BaseModel):
@@ -30,3 +30,9 @@ class HeadquarterResponse(HeadquarterBase):
 
     class Config:
         from_attributes = True
+
+class HeadquarterPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[HeadquarterResponse]

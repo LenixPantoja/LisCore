@@ -136,3 +136,8 @@ async def update_order(db: AsyncSession, o_id: int, data: dict):
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error al actualizar la orden por conflicto de datos.")
+
+async def get_next_order_number(db: AsyncSession):
+    """Get the next order number (last + 1)"""
+    next_number = await OrderRepository.get_next_order_number(db)
+    return {"next_order_number": next_number}
