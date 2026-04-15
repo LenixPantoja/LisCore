@@ -129,21 +129,25 @@ class MastersRepository:
         return item
 
     @staticmethod
-    async def get_diagnoses_filtered(
-        db: AsyncSession, 
-        skip: int, 
-        limit: int, 
-        code: Optional[str] = None, 
+    async def get_diagnoses_paginated(
+        db: AsyncSession,
+        skip: int,
+        limit: int,
+        code: Optional[str] = None,
         description: Optional[str] = None
-    ) -> List[Diagnosis]:
+    ) -> Tuple[Sequence[Diagnosis], int]:
+        """Get diagnoses with pagination"""
         query = select(Diagnosis)
         if code:
             query = query.filter(Diagnosis.diag_code.ilike(f"%{code}%"))
         if description:
             query = query.filter(Diagnosis.d_description.ilike(f"%{description}%"))
-        
-        result = await db.execute(query.offset(skip).limit(limit))
-        return result.scalars().all()
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(query.offset(skip).limit(limit).order_by(Diagnosis.diag_id.asc()))
+        return result.scalars().all(), total
     @staticmethod
     async def get_all_document_types(db: AsyncSession) -> List[DocumentType]:
         result = await db.execute(select(DocumentType))
@@ -168,6 +172,30 @@ class MastersRepository:
     async def get_all_services(db: AsyncSession) -> List[Service]:
         result = await db.execute(select(Service))
         return result.scalars().all()
+
+    @staticmethod
+    async def get_services_paginated(
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None,
+        active: Optional[bool] = None
+    ) -> Tuple[Sequence[Service], int]:
+        """Get services with pagination"""
+        query = select(Service)
+
+        if search:
+            query = query.filter(Service.name.ilike(f"%{search}%") | Service.code.ilike(f"%{search}%"))
+        if active is not None:
+            query = query.filter(Service.active == active)
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(Service.id.asc())
+        )
+        return result.scalars().all(), total
 
     @staticmethod
     async def get_all_type_liabilities(db: AsyncSession) -> List[TypeLiability]:

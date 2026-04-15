@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from app.domains.contractstariffs.domain.models import Contract, Tariff, TariffDetail, ContractTariff
 from app.domains.orders.domain.models import Order
 from app.domains.studieslab.domain.models import StudiesLab
+from app.domains.studieslab.domain.models import StudiesLab as Studie
 
 class ContractTariffRepository:
     # --- Tariff Methods ---
@@ -132,6 +133,103 @@ class ContractTariffRepository:
         await db.delete(tariff)
         await db.commit()
         return {"success": True, "message": "Tarifa eliminada exitosamente"}
+
+    @staticmethod
+    async def get_tariffs_by_enterprise(
+        db: AsyncSession,
+        enterprise_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None,
+        active: Optional[bool] = None
+    ) -> Tuple[Sequence[Tariff], int]:
+        """Get tariffs associated with an enterprise via contracts, with pagination"""
+        query = select(Tariff).join(
+            ContractTariff, ContractTariff.ct_tariff_id == Tariff.t_id
+        ).join(
+            Contract, Contract.co_id == ContractTariff.ct_contract_id
+        ).filter(
+            Contract.co_enterprise_id == enterprise_id
+        ).options(
+            selectinload(Tariff.details)
+        ).distinct()
+
+        if search:
+            query = query.filter(Tariff.t_name.ilike(f"%{search}%"))
+        if active is not None:
+            query = query.filter(Tariff.t_activo == active)
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(Tariff.t_id.asc())
+        )
+        return result.scalars().all(), total
+
+    @staticmethod
+    async def get_tariff_studies_by_enterprise(
+        db: AsyncSession,
+        enterprise_id: int,
+        tariff_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None,
+        active: Optional[bool] = None
+    ) -> Tuple[Sequence, int]:
+        """
+        Get all studies for a tariff associated with an enterprise.
+        Returns tariff details with full study info and tariff value.
+        """
+        # Verify enterprise-tariff relationship exists
+        verify_query = select(Tariff).join(
+            ContractTariff, ContractTariff.ct_tariff_id == Tariff.t_id
+        ).join(
+            Contract, Contract.co_id == ContractTariff.ct_contract_id
+        ).filter(
+            Contract.co_enterprise_id == enterprise_id,
+            Tariff.t_id == tariff_id
+        )
+        verify_result = await db.execute(verify_query)
+        if not verify_result.scalars().first():
+            return [], 0
+
+        # Get tariff details with study info
+        query = select(
+            TariffDetail,
+            StudiesLab
+        ).join(
+            StudiesLab, StudiesLab.id == TariffDetail.td_studie_id
+        ).filter(
+            TariffDetail.td_tariff_id == tariff_id
+        ).options(
+            selectinload(TariffDetail.studie)
+        )
+
+        if search:
+            query = query.filter(
+                StudiesLab.name.ilike(f"%{search}%") | StudiesLab.code.ilike(f"%{search}%")
+            )
+        if active is not None:
+            query = query.filter(StudiesLab.active == active)
+
+        # Count
+        count_query = select(func.count()).select_from(TariffDetail).filter(
+            TariffDetail.td_tariff_id == tariff_id
+        )
+        total = (await db.execute(count_query)).scalar() or 0
+
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(TariffDetail.td_id.asc())
+        )
+        rows = result.all()
+
+        # Get tariff name
+        tariff_result = await db.execute(select(Tariff).filter(Tariff.t_id == tariff_id))
+        tariff = tariff_result.scalars().first()
+        tariff_name = tariff.t_name if tariff else None
+
+        return rows, total, tariff_name
 
     @staticmethod
     async def get_tariff_details_paginated(

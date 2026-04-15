@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.domains.orders.domain.models import Order
+from datetime import date
 
 class OrderRepository:
     @staticmethod
@@ -65,10 +66,48 @@ class OrderRepository:
         return order
 
     @staticmethod
-    async def get_next_order_number(db: AsyncSession) -> int:
-        """Get the next order number (last + 1)"""
+    async def get_next_order_number(db: AsyncSession) -> str:
+        """
+        Generate next order number based on format MMDDCCCCYY.
+        
+        Logic:
+        1. Get last order's o_number
+        2. Extract date parts (MM, DD, YY) and sequence (CCCC)
+        3. If date matches today, increment sequence
+        4. If date differs, reset sequence to 0001 with today's date
+        """
+        # Get today's date parts
+        today = date.today()
+        today_mm = today.strftime("%m")
+        today_dd = today.strftime("%d")
+        today_yy = today.strftime("%y")
+        
+        # Get the last order number
         result = await db.execute(
-            select(func.max(Order.o_id))
+            select(Order.o_number).order_by(Order.o_id.desc()).limit(1)
         )
-        max_id = result.scalar()
-        return (max_id or 0) + 1
+        last_number = result.scalar()
+        
+        if last_number and len(last_number) == 10:
+            try:
+                # Extract parts from last order number
+                last_mm = last_number[0:2]
+                last_dd = last_number[2:4]
+                last_seq = int(last_number[4:8])
+                last_yy = last_number[8:10]
+                
+                # Check if date matches today
+                if last_mm == today_mm and last_dd == today_dd and last_yy == today_yy:
+                    # Same day, increment sequence
+                    new_seq = str(last_seq + 1).zfill(4)
+                else:
+                    # Different day, reset sequence
+                    new_seq = "0001"
+                
+                return f"{today_mm}{today_dd}{new_seq}{today_yy}"
+            except (ValueError, IndexError):
+                # Invalid format, start fresh with today's date
+                return f"{today_mm}{today_dd}0001{today_yy}"
+        else:
+            # No orders exist, start with 0001
+            return f"{today_mm}{today_dd}0001{today_yy}"

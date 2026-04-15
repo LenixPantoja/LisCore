@@ -63,6 +63,12 @@ class DiagnosisResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class DiagnosisPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[DiagnosisResponse]
+
 # --- Schooling ---
 class SchoolingResponse(BaseModel):
     id: int
@@ -169,6 +175,12 @@ class ServiceResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ServicePaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[ServiceResponse]
 
 class TypeLiabilityResponse(BaseModel):
     id: int

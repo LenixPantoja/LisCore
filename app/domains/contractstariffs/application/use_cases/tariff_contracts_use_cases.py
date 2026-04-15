@@ -19,6 +19,69 @@ async def list_tariffs(db: AsyncSession) -> List:
     """Get all tariffs"""
     return await ContractTariffRepository.get_tariffs(db)
 
+async def list_tariffs_by_enterprise(
+    db: AsyncSession,
+    enterprise_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    active: Optional[bool] = None
+):
+    """Get tariffs associated with an enterprise via contracts"""
+    items, total = await ContractTariffRepository.get_tariffs_by_enterprise(
+        db, enterprise_id, skip, limit, search, active
+    )
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items
+    }
+
+async def get_tariff_studies_by_enterprise(
+    db: AsyncSession,
+    enterprise_id: int,
+    tariff_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    active: Optional[bool] = None
+):
+    """Get studies for a tariff associated with an enterprise"""
+    rows, total, tariff_name = await ContractTariffRepository.get_tariff_studies_by_enterprise(
+        db, enterprise_id, tariff_id, skip, limit, search, active
+    )
+    if not rows and total == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No se encontró la tarifa {tariff_id} asociada a la empresa {enterprise_id}"
+        )
+
+    items = []
+    for detail, study in rows:
+        items.append({
+            "id": study.id,
+            "code": study.code,
+            "cups_code": study.cups_code if study.cups_code is not None else "-",
+            "name": study.name,
+            "active": study.active,
+            "order_of_print": study.order_of_print,
+            "referral_location_id": study.referral_location_id,
+            "work_groups_id": study.work_groups_id,
+            "td_value": float(detail.td_value),
+            "td_id": detail.td_id
+        })
+
+    return {
+        "enterprise_id": enterprise_id,
+        "tariff_id": tariff_id,
+        "tariff_name": tariff_name,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items
+    }
+
 async def list_tariffs_paginated(
     db: AsyncSession, 
     skip: int = 0, 

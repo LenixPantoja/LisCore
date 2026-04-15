@@ -20,7 +20,8 @@ from app.domains.contractstariffs.api.schemas import (
     LinkTariffToContractRequest,
     ContractTariffResponse,
     UnlinkTariffFromContractRequest,
-    UnlinkTariffFromContractResponse
+    UnlinkTariffFromContractResponse,
+    EnterpriseTariffStudiesResponse
 )
 from app.domains.contractstariffs.application.use_cases import tariff_contracts_use_cases
 
@@ -46,6 +47,54 @@ async def list_all_tariffs(db: AsyncSession = Depends(get_db)):
     Get all tariffs with their details.
     """
     return await tariff_contracts_use_cases.list_tariffs(db)
+
+@router.get("/enterprises/{enterprise_id}/tariffs", response_model=TariffPaginatedResponse)
+async def list_tariffs_by_enterprise(
+    enterprise_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    active: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all tariffs associated with an enterprise via its contracts.
+
+    - **enterprise_id**: Enterprise ID (path parameter)
+    - **skip**: Number of records to skip
+    - **limit**: Maximum number of records (1-500)
+    - **search**: Filter by tariff name (case-insensitive)
+    - **active**: Filter by active status
+    """
+    return await tariff_contracts_use_cases.list_tariffs_by_enterprise(
+        db, enterprise_id, skip, limit, search, active
+    )
+
+@router.get("/enterprises/{enterprise_id}/tariffs/{tariff_id}/studies", response_model=EnterpriseTariffStudiesResponse)
+async def list_tariff_studies_by_enterprise(
+    enterprise_id: int,
+    tariff_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    active: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get all studies associated with a specific tariff for an enterprise, including tariff values.
+
+    - **enterprise_id**: Enterprise ID (path parameter)
+    - **tariff_id**: Tariff ID (path parameter)
+    - **skip**: Number of records to skip
+    - **limit**: Maximum number of records (1-500)
+    - **search**: Filter by study name or code (case-insensitive)
+    - **active**: Filter by study active status
+
+    Returns full study information with the tariff detail value.
+    """
+    return await tariff_contracts_use_cases.get_tariff_studies_by_enterprise(
+        db, enterprise_id, tariff_id, skip, limit, search, active
+    )
 
 @router.get("/tariffs/paginated", response_model=TariffPaginatedResponse)
 async def list_tariffs(

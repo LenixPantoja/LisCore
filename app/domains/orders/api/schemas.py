@@ -58,4 +58,4 @@ class OrderPaginatedResponse(BaseModel):
     items: List[OrderResponse]
 
 class NextOrderNumberResponse(BaseModel):
-    next_order_number: int
+    next_order_number: str

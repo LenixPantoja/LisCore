@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     DB_PASSWORD: str
     DB_NAME: str
 
+    # Timezone
+    TIME_ZONE: str = "America/Bogota"
+
     # JWT Settings
     SECRET_KEY: str = ">8)d0gDf\$GD9`}ym9%qrU6=p{C=4CPo>t1w5V<P=uoe&YegJ"
     ALGORITHM: str = "HS256"

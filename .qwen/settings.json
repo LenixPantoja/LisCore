@@ -4,7 +4,8 @@
       "Read(d:\\Mis Projects\\CoreLab\\Backend\\Backend\\LisCore\\app\\domains\\patients\\infrastructure/**)",
       "Bash(python *)",
       "Bash(dir *)",
-      "Bash(findstr *)"
+      "Bash(findstr *)",
+      "Bash(pip install *)"
     ]
   },
   "$version": 3

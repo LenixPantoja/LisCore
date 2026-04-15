@@ -8,10 +8,10 @@ from app.domains.masters.api.schemas import (
     DepartmentResponse, DepartmentPaginatedResponse,
     CityResponse, CityPaginatedResponse,
     DocumentTypeResponse, SexTypeResponse,
-    AfiliationTypeResponse, RegimeResponse, ServiceResponse, TypeLiabilityResponse, ClassificationResponse,
+    AfiliationTypeResponse, RegimeResponse, ServiceResponse, ServicePaginatedResponse, TypeLiabilityResponse, ClassificationResponse,
     TechniqueCreate, TechniqueUpdate, TechniqueResponse, WorkGroupCreate, WorkGroupUpdate, WorkGroupResponse,
     ReferralLocationCreate, ReferralLocationUpdate, ReferralLocationResponse,
-    DiagnosisResponse, SchoolingResponse
+    DiagnosisResponse, DiagnosisPaginatedResponse, SchoolingResponse
 )
 from app.domains.masters.application.use_cases import (
     get_countries, get_departments_by_country, get_cities_by_department, get_document_types,
@@ -88,9 +88,19 @@ async def read_afiliation_types(db: AsyncSession = Depends(get_db)):
 async def read_regimes(db: AsyncSession = Depends(get_db)):
     return await get_regimes.execute(db)
 
-@router.get("/services", response_model=List[ServiceResponse])
-async def read_services(db: AsyncSession = Depends(get_db)):
-    return await get_services.execute(db)
+@router.get("/services", response_model=ServicePaginatedResponse)
+async def read_services(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    active: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint para obtener la lista de servicios con paginación.
+    """
+    items, total = await MastersRepository.get_services_paginated(db, skip, limit, search, active)
+    return {"total": total, "skip": skip, "limit": limit, "items": items}
 
 @router.get("/type-liabilities", response_model=List[TypeLiabilityResponse])
 async def read_type_liabilities(db: AsyncSession = Depends(get_db)):
@@ -143,15 +153,19 @@ async def update_referral_location(id: int, data: ReferralLocationUpdate, db: As
     return await crud.update_item(db, ReferralLocation, id, data.model_dump(exclude_unset=True))
 
 # --- Diagnoses ---
-@router.get("/diagnoses", response_model=List[DiagnosisResponse])
+@router.get("/diagnoses", response_model=DiagnosisPaginatedResponse)
 async def read_diagnoses(
-    skip: int = 0, 
-    limit: int = 100, 
-    code: Optional[str] = None, 
-    description: Optional[str] = None, 
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    code: Optional[str] = None,
+    description: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    return await crud.get_diagnoses_paginated(db, skip, limit, code, description)
+    """
+    Endpoint para obtener la lista de diagnósticos con paginación.
+    """
+    items, total = await MastersRepository.get_diagnoses_paginated(db, skip, limit, code, description)
+    return {"total": total, "skip": skip, "limit": limit, "items": items}
 
 @router.get("/diagnoses/{id}", response_model=DiagnosisResponse)
 async def read_diagnosis(id: int, db: AsyncSession = Depends(get_db)):

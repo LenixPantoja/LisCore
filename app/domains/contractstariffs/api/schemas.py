@@ -22,6 +22,31 @@ class StudieInfo(BaseModel):
     class Config:
         from_attributes = True
 
+class StudieWithTariffValueResponse(BaseModel):
+    """Study info with its tariff detail value"""
+    id: int
+    code: Optional[str] = None
+    cups_code: Optional[str] = None
+    name: Optional[str] = None
+    active: Optional[bool] = None
+    order_of_print: Optional[int] = None
+    referral_location_id: Optional[int] = None
+    work_groups_id: Optional[int] = None
+    td_value: float
+    td_id: int
+
+    class Config:
+        from_attributes = True
+
+class EnterpriseTariffStudiesResponse(BaseModel):
+    enterprise_id: int
+    tariff_id: int
+    tariff_name: Optional[str] = None
+    total: int
+    skip: int
+    limit: int
+    items: List[StudieWithTariffValueResponse]
+
 class TariffDetailUpdate(BaseModel):
     td_studie_id: Optional[int] = None
     td_value: Optional[float] = None
