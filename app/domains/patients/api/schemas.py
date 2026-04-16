@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import date, datetime
 
 class PatientAgeInfo(BaseModel):
@@ -56,3 +56,9 @@ class PatientWithAgeResponse(PatientBase):
 
     class Config:
         from_attributes = True
+
+class PatientPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[PatientResponse]
