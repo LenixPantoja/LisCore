@@ -85,3 +85,40 @@ async def get_patient_by_document(db: AsyncSession, doc_number: str):
         patient.pt_age = {"years": years, "months": months, "days": days}
 
     return patient
+
+async def get_patient_orders_with_details(db: AsyncSession, search_query: str, skip: int = 0, limit: int = 100):
+    from app.domains.orders.infrastructure.repository import OrderRepository
+    
+    orders, total = await OrderRepository.get_patient_orders_paginated(db, search_query, skip, limit)
+    
+    state_mapping = {
+        1: "Ingresada",
+        2: "Pendiente",
+        3: "Con Resultados",
+        4: "Anulada",
+        5: "Cerrada"
+    }
+    
+    items = []
+    for order in orders:
+        # Construir nombre completo amigable
+        parts = [order.patient.pt_firts_name, order.patient.pt_middle_name, order.patient.pt_last_name, order.patient.pt_second_last_name]
+        full_name = " ".join([p for p in parts if p])
+        
+        items.append({
+            "o_id": order.o_id,
+            "pt_Number_document": order.patient.pt_Number_document,
+            "pt_Document_Type_id": order.patient.pt_Document_Type_id,
+            "o_number": order.o_number,
+            "o_date": order.o_date,
+            "patient_full_name": full_name,
+            "o_order_state": order.o_order_state,
+            "order_state_name": state_mapping.get(order.o_order_state, "Desconocido")
+        })
+        
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items
+    }

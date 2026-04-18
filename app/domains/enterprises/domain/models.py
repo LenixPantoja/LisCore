@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, Foreign
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
+from utils.timezone import get_bogota_now
 
 class Enterprise(Base):
     __tablename__ = "Enterprises"
@@ -28,8 +29,8 @@ class Enterprise(Base):
     en_city_id = Column(Integer, nullable=True)
     en_liability_type_id = Column(Integer, nullable=True)
     en_type_organization_id = Column(Integer, nullable=True)
-    en_created_at = Column(DateTime, default=datetime.utcnow)
-    en_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    en_created_at = Column(DateTime, default=get_bogota_now)
+    en_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
     en_password = Column(String(500), nullable=True) # This field is unusual for an enterprise, but included as per SQL schema
 
     def __repr__(self):

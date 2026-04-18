@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Text, F
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
+from utils.timezone import get_bogota_now
 
 class Order(Base):
     __tablename__ = "Orders"
@@ -28,9 +29,8 @@ class Order(Base):
     o_pat_num_whatsapp = Column(String(255), nullable=True)
     o_pat_mail = Column(String(255), nullable=True)
     o_note = Column(Text, nullable=True)
-    o_created_at = Column(DateTime, default=datetime.utcnow)
-    o_updated_at = Column(DateTime, default=datetime.utcnow, 
-                          onupdate=datetime.utcnow)
+    o_created_at = Column(DateTime, default=get_bogota_now)
+    o_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
     o_tariff_id = Column(Integer, ForeignKey("Tariffs.t_id"), nullable=True)
 
     # Relaciones
@@ -54,8 +54,8 @@ class OrdersDetail(Base):
     od_state = Column(Integer)
     od_print_date = Column(DateTime, nullable=True)
     o_checking_date = Column(DateTime, nullable=True)
-    od_created_at = Column(DateTime, default=datetime.utcnow)
-    od_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    od_created_at = Column(DateTime, default=get_bogota_now)
+    od_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Relaciones
     order = relationship("Order", back_populates="details")

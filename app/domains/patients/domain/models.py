@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Date, DateTime, Foreign
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
+from utils.timezone import get_bogota_now
 
 class Patient(Base):
     __tablename__ = "Patients"
@@ -23,8 +24,8 @@ class Patient(Base):
     pt_Document_Type_id = Column(Integer, ForeignKey("DocumentsTypes.dt_id"), nullable=True)
     pt_city_id = Column(Integer, ForeignKey("Cities.id"), nullable=True)
     pt_password = Column(String(500), nullable=True)
-    pt_created_at = Column(DateTime, default=datetime.utcnow)
-    pt_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    pt_created_at = Column(DateTime, default=get_bogota_now)
+    pt_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Relaciones
     sex_type = relationship("app.domains.masters.domain.models.SexType")

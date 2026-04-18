@@ -11,6 +11,7 @@ from app.domains.laboratories.domain.models import Laboratory
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.testslabs.domain.models import TestsLab
 from utils.Consecutives.consecutive_orders import generate_order_number
+from utils.timezone import get_bogota_now
 
 async def create_order(db: AsyncSession, data: dict):
     studies_ids = data.pop("studies", [])
@@ -19,6 +20,9 @@ async def create_order(db: AsyncSession, data: dict):
 
     try:
         # 1. Crear el encabezado de la Orden
+        # La fecha se asigna automáticamente si no se envía
+        if not data.get("o_date"):
+            data["o_date"] = get_bogota_now().date()
         # Generamos el número de orden automáticamente ignorando el del request
         data["o_number"] = await generate_order_number(db, data.get("o_date"))
         
@@ -141,3 +145,55 @@ async def get_next_order_number(db: AsyncSession):
     """Get the next order number (last + 1)"""
     next_number = await OrderRepository.get_next_order_number(db)
     return {"next_order_number": next_number}
+
+async def get_order_details_paginated_by_number(
+    db: AsyncSession, 
+    o_number: str, 
+    skip_labs: int = 0, 
+    limit_labs: int = 100,
+    skip_tests: int = 0, 
+    limit_tests: int = 100
+):
+    # 1. Obtener orden principal
+    order = await OrderRepository.get_order_by_number(db, o_number)
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
+        
+    # 2. Consultar laboratorios paginados
+    labs, total_labs = await OrderRepository.get_laboratories_paginated(db, order.o_id, skip_labs, limit_labs)
+    
+    # 3. Consultar pruebas (TestsLab) paginadas
+    tests, total_tests = await OrderRepository.get_tests_paginated(db, order.o_id, skip_tests, limit_tests)
+    
+    return {
+        "order": order,
+        "patient": order.patient,
+        "laboratories": {
+            "total": total_labs,
+            "skip": skip_labs,
+            "limit": limit_labs,
+            "items": labs
+        },
+        "tests": {
+            "total": total_tests,
+            "skip": skip_tests,
+            "limit": limit_tests,
+            "items": tests
+        }
+    }
+
+async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
+    # Sin paginación
+    order = await OrderRepository.get_by_id(db, o_id) # Este ya trae pacientes y masters en el selectinload
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
+        
+    labs, _ = await OrderRepository.get_laboratories_paginated(db, order.o_id, 0, 10000)
+    tests, _ = await OrderRepository.get_tests_paginated(db, order.o_id, 0, 10000)
+    
+    return {
+        "order": order,
+        "patient": order.patient,
+        "laboratories": labs,
+        "tests": tests
+    }

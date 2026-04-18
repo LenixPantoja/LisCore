@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
+from utils.timezone import get_bogota_now
 
 class SampleType(Base):
     __tablename__ = "SampleTypes"
@@ -26,8 +27,8 @@ class SamplesOrder(Base):
     so_state = Column(Integer)
     so_number_studies = Column(Integer)
     so_current_location_id = Column(Integer)
-    so_created_at = Column(DateTime, default=datetime.utcnow)
-    so_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    so_created_at = Column(DateTime, default=get_bogota_now)
+    so_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Relaciones
     order = relationship("app.domains.orders.domain.models.Order")

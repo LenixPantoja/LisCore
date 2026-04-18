@@ -111,3 +111,80 @@ class OrderRepository:
         else:
             # No orders exist, start with 0001
             return f"{today_mm}{today_dd}0001{today_yy}"
+
+    @staticmethod
+    async def get_patient_orders_paginated(
+        db: AsyncSession, 
+        search_query: str,
+        skip: int = 0, 
+        limit: int = 100
+    ) -> Tuple[Sequence[Order], int]:
+        from sqlalchemy import or_
+        from app.domains.patients.domain.models import Patient
+        
+        # Base query joining Patient
+        query = select(Order).join(Patient, Order.o_his_id == Patient.pt_id).filter(
+            or_(
+                Patient.pt_Number_document == search_query,
+                Order.o_number.ilike(f"%{search_query}%")
+            )
+        ).options(
+            selectinload(Order.patient)
+        )
+        
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+        
+        result = await db.execute(query.offset(skip).limit(limit).order_by(Order.o_id.desc()))
+        return result.scalars().all(), total
+
+    @staticmethod
+    async def get_order_by_number(db: AsyncSession, o_number: str) -> Optional[Order]:
+        result = await db.execute(
+            select(Order).filter(Order.o_number == o_number).options(
+                selectinload(Order.patient),
+                selectinload(Order.service),
+                selectinload(Order.diagnosis),
+                selectinload(Order.enterprise),
+                selectinload(Order.schooling),
+                selectinload(Order.tariff)
+            )
+        )
+        return result.scalars().first()
+
+    @staticmethod
+    async def get_laboratories_paginated(db: AsyncSession, o_id: int, skip: int = 0, limit: int = 100):
+        from app.domains.laboratories.domain.models import Laboratory
+        from app.domains.orders.domain.models import OrdersDetail
+        
+        query = select(Laboratory).join(
+            OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id
+        ).filter(OrdersDetail.od_order_id == o_id).options(
+            selectinload(Laboratory.test),
+            selectinload(Laboratory.user_validation),
+            selectinload(Laboratory.order_detail).selectinload(OrdersDetail.study)
+        )
+        
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+        
+        result = await db.execute(query.offset(skip).limit(limit))
+        return result.scalars().all(), total
+
+    @staticmethod
+    async def get_tests_paginated(db: AsyncSession, o_id: int, skip: int = 0, limit: int = 100):
+        from app.domains.testslabs.domain.models import TestsLab
+        from app.domains.studieslab.domain.models import StudiesTestDetail
+        from app.domains.orders.domain.models import OrdersDetail
+        
+        query = select(TestsLab).join(
+            StudiesTestDetail, StudiesTestDetail.tests_id == TestsLab.id
+        ).join(
+            OrdersDetail, OrdersDetail.od_study_id == StudiesTestDetail.studies_id
+        ).filter(OrdersDetail.od_order_id == o_id).distinct()
+        
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+        
+        result = await db.execute(query.offset(skip).limit(limit))
+        return result.scalars().all(), total

@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, Numeric
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
+from utils.timezone import get_bogota_now
 
 class TestsLab(Base):
     __tablename__ = "TestsLab"
@@ -31,8 +32,8 @@ class TestsLab(Base):
     active = Column(Boolean, default=True)
     test_type = Column(String(255), nullable=True)
     is_confidential = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=get_bogota_now)
+    updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Definición de relaciones ORM
     technique = relationship("app.domains.masters.domain.models.Technique")

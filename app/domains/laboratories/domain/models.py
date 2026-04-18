@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Numeric, Text, DateTime, Foreign
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
+from utils.timezone import get_bogota_now
 
 class Laboratory(Base):
     __tablename__ = "Laboratories"
@@ -17,14 +18,15 @@ class Laboratory(Base):
     l_state = Column(Integer, default=0)
     l_date_transmited = Column(DateTime, nullable=True)
     l_date_validatie = Column(DateTime, nullable=True)
-    l_user_validation_id = Column(Integer, nullable=True)
+    l_user_validation_id = Column(Integer, ForeignKey("AppUsers.usr_id"), nullable=True)
     a_analyzer_result_id = Column(Integer, nullable=True)
-    l_created_at = Column(DateTime, default=datetime.utcnow)
-    l_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    l_created_at = Column(DateTime, default=get_bogota_now)
+    l_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Relaciones
     order_detail = relationship("app.domains.orders.domain.models.OrdersDetail")
     test = relationship("app.domains.testslabs.domain.models.TestsLab")
+    user_validation = relationship("app.domains.users.infrastructure.models.AppUser")
 
     def __repr__(self):
         return f"<Laboratory(id={self.l_id}, order_detail_id={self.l_order_detail_id}, result='{self.l_result}')>"

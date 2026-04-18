@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, Foreign
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
+from utils.timezone import get_bogota_now
 
 class Rol(Base):
     __tablename__ = "Rols"
@@ -28,8 +29,8 @@ class AppUser(Base):
     usr_mail = Column(String(255), unique=True, index=True)
     usr_is_Locked = Column(Boolean, default=False)
     usr_Signature = Column(Text, nullable=True)
-    usr_created_at = Column(DateTime, default=datetime.utcnow)
-    usr_updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    usr_created_at = Column(DateTime, default=get_bogota_now)
+    usr_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
     usr_rol_id = Column(Integer, ForeignKey("Rols.r_id"), nullable=False)
 
     role = relationship("Rol", back_populates="users")
