@@ -14,8 +14,8 @@ class InterfacesRest(Base):
     it_created_at = Column(DateTime, nullable=True)
     it_updated_at = Column(DateTime, nullable=True)
 
-    enterprise = relationship("app.domains.enterprises.domain.models.Enterprise")
-    tariff = relationship("app.domains.contractstariffs.domain.models.Tariff")
+    enterprise = relationship("Enterprise", foreign_keys=[it_enterprise_id])
+    tariff = relationship("Tariff", foreign_keys=[it_tariff_id])
     details = relationship("InterfacesRestDetail", back_populates="interface_rest", cascade="all, delete-orphan")
 
 
@@ -31,4 +31,4 @@ class InterfacesRestDetail(Base):
     itd_updated_at = Column(DateTime, nullable=True)
 
     interface_rest = relationship("InterfacesRest", back_populates="details")
-    study = relationship("app.domains.studieslab.domain.models.StudiesLab")
+    study = relationship("StudiesLab", foreign_keys=[itd_study_id])

@@ -1,12 +1,13 @@
 from typing import Tuple, Sequence, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.exc import IntegrityError
 from app.domains.contractstariffs.domain.models import Contract, Tariff, TariffDetail, ContractTariff
 from app.domains.orders.domain.models import Order
 from app.domains.studieslab.domain.models import StudiesLab
 from app.domains.studieslab.domain.models import StudiesLab as Studie
+from app.domains.enterprises.domain.models import Enterprise
 
 class ContractTariffRepository:
     # --- Tariff Methods ---
@@ -321,24 +322,63 @@ class ContractTariffRepository:
         search: Optional[str] = None,
         enterprise_id: Optional[int] = None
     ) -> Tuple[Sequence[Contract], int]:
-        query = select(Contract).options(
-            selectinload(Contract.enterprise)
+        query = (
+            select(Contract)
+            .join(Enterprise, Contract.co_enterprise_id == Enterprise.en_id, isouter=True)
+            .options(selectinload(Contract.enterprise))
         )
 
-        # Filtros de búsqueda
         if search:
-            query = query.filter(Contract.co_code.ilike(f"%{search}%"))
+            query = query.filter(
+                or_(
+                    Contract.co_code.ilike(f"%{search}%"),
+                    Enterprise.en_code.ilike(f"%{search}%"),
+                    Enterprise.en_name.ilike(f"%{search}%"),
+                    Enterprise.en_nit.ilike(f"%{search}%"),
+                )
+            )
 
         if enterprise_id:
             query = query.filter(Contract.co_enterprise_id == enterprise_id)
 
-        # Conteo total para paginación
         count_stmt = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_stmt)).scalar() or 0
 
-        # Resultados paginados
         result = await db.execute(
             query.offset(skip).limit(limit).order_by(Contract.co_code.asc())
+        )
+        return result.scalars().all(), total
+
+    @staticmethod
+    async def get_contracts_with_tariffs_by_enterprise(
+        db: AsyncSession,
+        enterprise_id: int,
+        skip: int = 0,
+        limit: int = 20,
+        search: Optional[str] = None,
+        active: Optional[bool] = None
+    ) -> Tuple[Sequence[Contract], int]:
+        """Get paginated contracts for an enterprise, each with its linked tariffs."""
+        query = select(Contract).filter(
+            Contract.co_enterprise_id == enterprise_id
+        ).options(
+            selectinload(Contract.tariffs_link).selectinload(ContractTariff.tariff)
+        )
+
+        if search:
+            query = query.filter(
+                Contract.co_code.ilike(f"%{search}%") |
+                Contract.co_contract_number.ilike(f"%{search}%")
+            )
+
+        if active is not None:
+            query = query.filter(Contract.co_active == active)
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(Contract.co_id.asc())
         )
         return result.scalars().all(), total
 
@@ -348,8 +388,13 @@ class ContractTariffRepository:
         new_contract = Contract(**data)
         db.add(new_contract)
         await db.commit()
-        await db.refresh(new_contract)
-        return new_contract
+
+        result = await db.execute(
+            select(Contract)
+            .filter(Contract.co_id == new_contract.co_id)
+            .options(selectinload(Contract.enterprise))
+        )
+        return result.scalars().first()
 
     @staticmethod
     async def update_contract(db: AsyncSession, contract_id: int, update_data: dict) -> Optional[Contract]:

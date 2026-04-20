@@ -31,7 +31,7 @@ class SamplesOrder(Base):
     so_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Relaciones
-    order = relationship("app.domains.orders.domain.models.Order")
+    order = relationship("Order", foreign_keys=[so_order_id])
     sample_type = relationship("SampleType")
 
     def __repr__(self):

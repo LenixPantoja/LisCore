@@ -15,8 +15,8 @@ class StudiesLab(Base):
     active = Column(Boolean, default=True)
 
     # Relaciones con Masters utilizando los modelos definidos anteriormente
-    referral_location = relationship("app.domains.masters.domain.models.ReferralLocation")
-    work_group = relationship("app.domains.masters.domain.models.WorkGroup")
+    referral_location = relationship("ReferralLocation", foreign_keys=[referral_location_id])
+    work_group = relationship("WorkGroup", foreign_keys=[work_groups_id])
     
     # Relación uno a muchos con el detalle de exámenes
     test_details = relationship("StudiesTestDetail", back_populates="study", cascade="all, delete-orphan")
@@ -36,8 +36,8 @@ class StudiesTestDetail(Base):
 
     # Relaciones
     study = relationship("StudiesLab", back_populates="test_details")
-    test = relationship("app.domains.testslabs.domain.models.TestsLab")
-    work_group = relationship("app.domains.masters.domain.models.WorkGroup")
+    test = relationship("TestsLab", foreign_keys=[tests_id])
+    work_group = relationship("WorkGroup", foreign_keys=[work_group_id])
 
     def __repr__(self):
         return f"<StudiesTestDetail(id={self.id}, study_id={self.studies_id}, test_id={self.tests_id})>"

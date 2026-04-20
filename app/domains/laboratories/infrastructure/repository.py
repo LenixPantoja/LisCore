@@ -1,14 +1,21 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, select
 from app.domains.laboratories.domain.models import Laboratory
+from app.domains.laboratories.domain.constants import (
+    LABORATORY_STATE_SIN_RESULTADOS,
+    LABORATORY_STATE_PENDIENTE,
+    LABORATORY_STATE_CON_RESULTADOS,
+    LABORATORY_STATE_VALIDADA,
+)
+from app.domains.orders.domain.constants import ORDER_DETAIL_STATE_INGRESADO
 from typing import List, Dict, Any, Tuple
 
 class LaboratoryRepository:
     @staticmethod
     async def bulk_update(db: AsyncSession, updates: List[Dict[str, Any]]) -> Tuple[int, Dict[str, List[int]]]:
         """
-        Actualiza múltiples laboratorios solo si su estado es < 2.
-        Cuando se actualiza el resultado, automáticamente establece l_state a 1.
+        Actualiza múltiples laboratorios solo si su estado es < 3 (no validado).
+        Cuando se actualiza el resultado, automáticamente establece l_state a 2 (Con Resultados).
         
         Retorna:
             - Cantidad de laboratorios actualizados exitosamente
@@ -36,14 +43,14 @@ class LaboratoryRepository:
                 not_found_ids.append(l_id)
                 continue
             
-            # Validar que el estado sea < 2
-            if lab.l_state >= 2:
+            # Validar que el estado sea < 3 (no validado ni impreso)
+            if lab.l_state >= LABORATORY_STATE_VALIDADA:
                 invalid_state_ids.append(l_id)
                 continue
             
-            # Si hay resultado a registrar, agregar estado a 1
+            # Si hay resultado a registrar, establecer estado a 2 (Con Resultados)
             if any(key in item for key in ["l_result", "l_result_comp", "l_result_num"]):
-                item["l_state"] = 1
+                item["l_state"] = LABORATORY_STATE_CON_RESULTADOS
                 
             stmt = (
                 update(Laboratory)
@@ -66,7 +73,7 @@ class LaboratoryRepository:
     @staticmethod
     async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int]) -> Tuple[int, Dict[str, List[int]]]:
         """
-        Desvalida laboratorios (cambia estado a 1) solo si su estado actual es >= 2.
+        Desvalida laboratorios (cambia estado a 2/Con Resultados) solo si su estado actual es >= 3 (Validada).
         
         Retorna:
             - Cantidad de laboratorios desvalidados exitosamente
@@ -89,16 +96,16 @@ class LaboratoryRepository:
                 not_found_ids.append(l_id)
                 continue
             
-            # Validar que el estado sea >= 2
-            if lab.l_state < 2:
+            # Validar que el estado sea >= 3 (Validada o Impreso)
+            if lab.l_state < LABORATORY_STATE_VALIDADA:
                 invalid_state_ids.append(l_id)
                 continue
             
-            # Actualizar el estado a 1 (desvalidado)
+            # Actualizar el estado a 2 (Con Resultados — desvalidado)
             stmt = (
                 update(Laboratory)
                 .where(Laboratory.l_id == l_id)
-                .values(l_state=1)
+                .values(l_state=LABORATORY_STATE_CON_RESULTADOS)
             )
             await db.execute(stmt)
             invalidated_count += 1
@@ -114,51 +121,84 @@ class LaboratoryRepository:
         return invalidated_count, details
 
     @staticmethod
-    async def validate_laboratories(db: AsyncSession, laboratory_ids: List[int]) -> Tuple[int, Dict[str, List[int]]]:
+    async def validate_laboratories(db: AsyncSession, items: List[Dict[str, Any]]) -> Tuple[int, Dict[str, List[int]]]:
         """
-        Valida laboratorios (cambia estado a 2).
-        
+        Valida laboratorios por ítem.
+        Solo valida si el l_state actual es 2 (Con Resultados).
+        - Si el ítem trae l_result o l_result_comp: registra los campos y valida (l_state = 3 Validada).
+        - Si solo trae l_nota_validation: guarda la nota sin cambiar el estado.
+        - Si no trae ninguno: omite el ítem.
+
         Retorna:
             - Cantidad de laboratorios validados exitosamente
-            - Diccionario con detalles de laboratorios que no se pudieron validar
+            - Diccionario con detalles de laboratorios que no se pudieron procesar
         """
-        if not laboratory_ids:
-            return 0, {"not_found": []}
-        
+        if not items:
+            return 0, {"not_found": [], "skipped": []}
+
         validated_count = 0
         not_found_ids = []
-        
-        for l_id in laboratory_ids:
+        skipped_ids = []
+        invalid_state_ids = []
+
+        for item in items:
+            l_id = item.get("l_id")
+            has_result = ("l_result" in item and item["l_result"] is not None) or \
+                         ("l_result_comp" in item and item["l_result_comp"] is not None)
+            has_note = "l_nota_validation" in item and item["l_nota_validation"] is not None
+            force_validate = item.pop("validate_unconditionally", False)
+
+            # Sin resultado, sin nota y sin forzado: omitir
+            if not force_validate and not has_result and not has_note:
+                skipped_ids.append(l_id)
+                continue
+
             # Obtener el laboratorio
             stmt = select(Laboratory).where(Laboratory.l_id == l_id)
             result = await db.execute(stmt)
             lab = result.scalar_one_or_none()
-            
+
             if lab is None:
                 not_found_ids.append(l_id)
                 continue
-            
-            # Actualizar el estado a 2 (validado)
-            stmt = (
-                update(Laboratory)
-                .where(Laboratory.l_id == l_id)
-                .values(l_state=2)
-            )
-            await db.execute(stmt)
-            validated_count += 1
-        
+
+            if force_validate or has_result:
+                # Solo se puede validar si el estado actual es 2 (Con Resultados)
+                if lab.l_state != LABORATORY_STATE_CON_RESULTADOS:
+                    invalid_state_ids.append(l_id)
+                    continue
+
+                # Registrar campos provistos y validar (l_state = 3 Validada)
+                fields: Dict[str, Any] = {"l_state": LABORATORY_STATE_VALIDADA}
+                for key in ("l_result", "l_result_comp", "l_nota_validation", "l_user_validation_id"):
+                    if key in item and item[key] is not None:
+                        fields[key] = item[key]
+                stmt = update(Laboratory).where(Laboratory.l_id == l_id).values(**fields)
+                await db.execute(stmt)
+                validated_count += 1
+            else:
+                # Solo nota: guardar únicamente la nota sin modificar el estado
+                stmt = update(Laboratory).where(Laboratory.l_id == l_id).values(
+                    l_nota_validation=item["l_nota_validation"]
+                )
+                await db.execute(stmt)
+
         await db.commit()
-        
-        details = {}
+
+        details: Dict[str, List[int]] = {}
         if not_found_ids:
             details["not_found"] = not_found_ids
-        
+        if skipped_ids:
+            details["skipped"] = skipped_ids
+        if invalid_state_ids:
+            details["invalid_state"] = invalid_state_ids
+
         return validated_count, details
 
     @staticmethod
     async def clear_laboratory_results(db: AsyncSession, laboratory_ids: List[int]) -> Tuple[int, Dict[str, List[int]]]:
         """
-        Limpia los resultados de laboratorios y establece el estado a 0, solo si su estado es < 2.
+        Limpia los resultados de laboratorios y establece el estado a 0 (Sin Resultados), solo si su estado es < 3 (no validado).
         Establece l_result, l_result_num y l_result_comp a None/NULL y l_state a 0.
         
         Retorna:
@@ -182,16 +222,16 @@ class LaboratoryRepository:
                 not_found_ids.append(l_id)
                 continue
             
-            # Validar que el estado sea < 2
-            if lab.l_state >= 2:
+            # Validar que el estado sea < 3 (no validado ni impreso)
+            if lab.l_state >= LABORATORY_STATE_VALIDADA:
                 invalid_state_ids.append(l_id)
                 continue
             
-            # Limpiar los resultados y establecer estado a 0
+            # Limpiar los resultados y establecer estado a 0 (Sin Resultados)
             stmt = (
                 update(Laboratory)
                 .where(Laboratory.l_id == l_id)
-                .values(l_result=None, l_result_num=None, l_result_comp=None, l_state=0)
+                .values(l_result=None, l_result_num=None, l_result_comp=None, l_state=LABORATORY_STATE_SIN_RESULTADOS)
             )
             await db.execute(stmt)
             cleared_count += 1
@@ -205,3 +245,54 @@ class LaboratoryRepository:
             details["not_found"] = not_found_ids
         
         return cleared_count, details
+
+    @staticmethod
+    async def update_order_detail_state(db: AsyncSession, order_id: int, study_id: int, new_state: int):
+        """
+        Cambia el estado (od_state) de un estudio en OrdersDetails.
+        Busca por od_order_id y od_study_id.
+
+        Cuando new_state == 0 (Ingresado), actualiza también los laboratorios asociados
+        a l_state = 1 (Pendiente).
+
+        Estados válidos:
+            0 → Ingresado
+            1 → Pendiente
+            2 → Descartado
+
+        Retorna el registro actualizado o None si no existe.
+        """
+        from app.domains.orders.domain.models import OrdersDetail
+
+        stmt = select(OrdersDetail).where(
+            OrdersDetail.od_order_id == order_id,
+            OrdersDetail.od_study_id == study_id
+        )
+        result = await db.execute(stmt)
+        detail = result.scalar_one_or_none()
+
+        if detail is None:
+            return None
+
+        stmt = (
+            update(OrdersDetail)
+            .where(
+                OrdersDetail.od_order_id == order_id,
+                OrdersDetail.od_study_id == study_id
+            )
+            .values(od_state=new_state)
+        )
+        await db.execute(stmt)
+
+        # Si el nuevo od_state es 0 (Ingresado), poner laboratorios asociados en 0 (Sin Resultados)
+        if new_state == ORDER_DETAIL_STATE_INGRESADO:
+            stmt_labs = (
+                update(Laboratory)
+                .where(Laboratory.l_order_detail_id == detail.od_id)
+                .values(l_state=LABORATORY_STATE_SIN_RESULTADOS)
+            )
+            await db.execute(stmt_labs)
+
+        await db.commit()
+        await db.refresh(detail)
+        return detail

@@ -34,12 +34,12 @@ class Order(Base):
     o_tariff_id = Column(Integer, ForeignKey("Tariffs.t_id"), nullable=True)
 
     # Relaciones
-    patient = relationship("app.domains.patients.domain.models.Patient")
-    service = relationship("app.domains.masters.domain.models.Service")
-    diagnosis = relationship("app.domains.masters.domain.models.Diagnosis")
-    enterprise = relationship("app.domains.enterprises.domain.models.Enterprise")
-    schooling = relationship("app.domains.masters.domain.models.Schooling")
-    tariff = relationship("app.domains.contractstariffs.domain.models.Tariff")
+    patient = relationship("Patient", foreign_keys=[o_his_id])
+    service = relationship("Service", foreign_keys=[o_service_id])
+    diagnosis = relationship("Diagnosis", foreign_keys=[o_diagnoses_id])
+    enterprise = relationship("Enterprise", foreign_keys=[o_enterprise_id])
+    schooling = relationship("Schooling", foreign_keys=[o_scholarity])
+    tariff = relationship("Tariff", foreign_keys=[o_tariff_id])
     details = relationship("OrdersDetail", back_populates="order", cascade="all, delete-orphan")
 
     def __repr__(self):
@@ -59,7 +59,7 @@ class OrdersDetail(Base):
 
     # Relaciones
     order = relationship("Order", back_populates="details")
-    study = relationship("app.domains.studieslab.domain.models.StudiesLab")
+    study = relationship("StudiesLab", foreign_keys=[od_study_id])
 
     def __repr__(self):
         return f"<OrdersDetail(id={self.od_id}, order_id={self.od_order_id}, study_id={self.od_study_id})>"

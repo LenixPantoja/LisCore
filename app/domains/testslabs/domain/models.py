@@ -36,9 +36,9 @@ class TestsLab(Base):
     updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Definición de relaciones ORM
-    technique = relationship("app.domains.masters.domain.models.Technique")
-    work_group = relationship("app.domains.masters.domain.models.WorkGroup")
-    sample_type = relationship("app.domains.samples.domain.models.SampleType")
+    technique = relationship("Technique", foreign_keys=[technical_id])
+    work_group = relationship("WorkGroup", foreign_keys=[work_group_id])
+    sample_type = relationship("SampleType", foreign_keys=[samples_type_id])
 
     def __repr__(self):
         return f"<TestsLab(id={self.id}, name='{self.name}')>"

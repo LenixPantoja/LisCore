@@ -11,7 +11,9 @@ from app.domains.laboratories.api.schemas import (
     ValidateLaboratoriesRequest,
     ValidateLaboratoriesResponse,
     ClearLaboratoryResultsRequest,
-    ClearLaboratoryResultsResponse
+    ClearLaboratoryResultsResponse,
+    UpdateOrderDetailStateRequest,
+    UpdateOrderDetailStateResponse
 )
 from app.domains.laboratories.application.use_cases import laboratory_use_cases as use_cases
 
@@ -53,15 +55,19 @@ async def validate_laboratories(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Valida uno o múltiples laboratorios cambiando su estado a 2.
-    
+    Valida laboratorios con sus resultados:
+    - Si el ítem trae l_result o l_result_comp: registra el resultado y valida (l_state = 2).
+    - Si solo trae l_nota_validation: guarda la nota sin validar el laboratorio.
+    - Si no trae ninguno de los anteriores: omite el ítem.
+
     Args:
-        request: Objeto con lista de laboratory_ids a validar
-        
+        request: Objeto con lista de ítems a procesar
+
     Returns:
         ValidateLaboratoriesResponse con detalles de la operación
     """
-    return await use_cases.validate_laboratories(db, request.laboratory_ids)
+    items = [item.model_dump() for item in request.items]
+    return await use_cases.validate_laboratories(db, items)
 
 @router.post("/clear-results", response_model=ClearLaboratoryResultsResponse, status_code=status.HTTP_200_OK)
 async def clear_laboratory_results(
@@ -80,3 +86,24 @@ async def clear_laboratory_results(
         ClearLaboratoryResultsResponse con detalles de la operación
     """
     return await use_cases.clear_laboratory_results(db, request.laboratory_ids)
+
+
+@router.patch(
+    "/orders/{order_id}/studies/{study_id}/state",
+    response_model=UpdateOrderDetailStateResponse,
+    status_code=status.HTTP_200_OK
+)
+async def update_order_detail_state(
+    order_id: int,
+    study_id: int,
+    data: UpdateOrderDetailStateRequest,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Cambia el estado de un estudio en OrdersDetails.
+
+    - **0** → Ingresado
+    - **1** → Pendiente
+    - **2** → Descartado
+    """
+    return await use_cases.update_order_detail_state(db, order_id, study_id, data.state)

@@ -134,14 +134,24 @@ class MastersRepository:
         skip: int,
         limit: int,
         code: Optional[str] = None,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        search: Optional[str] = None
     ) -> Tuple[Sequence[Diagnosis], int]:
         """Get diagnoses with pagination"""
         query = select(Diagnosis)
-        if code:
-            query = query.filter(Diagnosis.diag_code.ilike(f"%{code}%"))
-        if description:
-            query = query.filter(Diagnosis.d_description.ilike(f"%{description}%"))
+        if search:
+            from sqlalchemy import or_
+            query = query.filter(
+                or_(
+                    Diagnosis.diag_code.ilike(f"%{search}%"),
+                    Diagnosis.d_description.ilike(f"%{search}%"),
+                )
+            )
+        else:
+            if code:
+                query = query.filter(Diagnosis.diag_code.ilike(f"%{code}%"))
+            if description:
+                query = query.filter(Diagnosis.d_description.ilike(f"%{description}%"))
 
         count_stmt = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_stmt)).scalar() or 0

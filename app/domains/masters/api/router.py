@@ -157,6 +157,7 @@ async def update_referral_location(id: int, data: ReferralLocationUpdate, db: As
 async def read_diagnoses(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
     code: Optional[str] = None,
     description: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
@@ -164,7 +165,7 @@ async def read_diagnoses(
     """
     Endpoint para obtener la lista de diagnósticos con paginación.
     """
-    items, total = await MastersRepository.get_diagnoses_paginated(db, skip, limit, code, description)
+    items, total = await MastersRepository.get_diagnoses_paginated(db, skip, limit, code, description, search)
     return {"total": total, "skip": skip, "limit": limit, "items": items}
 
 @router.get("/diagnoses/{id}", response_model=DiagnosisResponse)

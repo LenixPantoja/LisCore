@@ -6,6 +6,8 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.domains.orders.domain.models import Order, OrdersDetail
+from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_DETAIL_STATE_INGRESADO
+from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
@@ -25,24 +27,16 @@ async def create_order(db: AsyncSession, data: dict):
             data["o_date"] = get_bogota_now().date()
         # Generamos el número de orden automáticamente ignorando el del request
         data["o_number"] = await generate_order_number(db, data.get("o_date"))
-        
+        # Estado inicial de la orden: Ingresada
+        data["o_order_state"] = ORDER_STATE_INGRESADA
+
         order = await OrderRepository.create(db, data)
-        await db.flush() # Obtenemos o_id sin confirmar la transacción todavía
-        
+        await db.flush() # Obtenemos o_id sin confirmar la transacción todavía        
         # Diccionario para evitar duplicar tipos de muestra en una misma orden
         unique_sample_types = set()
 
         for study_id in studies_ids:
-            # 2. Insertar en OrdersDetails
-            order_detail = OrdersDetail(
-                od_order_id=order.o_id,
-                od_study_id=study_id,
-                od_state=1 # Estado inicial: Pendiente
-            )
-            db.add(order_detail)
-            await db.flush() # Para obtener od_id
-
-            # 3. Consultar StudiesTestDetail para obtener las pruebas y tipos de muestra
+            # 2. Consultar StudiesTestDetail para obtener las pruebas y tipos de muestra
             stmt = (
                 select(StudiesTestDetail)
                 .filter(StudiesTestDetail.studies_id == study_id)
@@ -57,18 +51,24 @@ async def create_order(db: AsyncSession, data: dict):
                     detail=f"El estudio con ID {study_id} no tiene exámenes configurados en StudiesTestDetail."
                 )
 
-            # 4. Generar registro en Laboratories (1:1 con OrdersDetail debido al UNIQUE)
-            # Tomamos la primera prueba configurada para este estudio
-            main_test = test_links[0]
-            blank_result = Laboratory(
-                l_order_detail_id=order_detail.od_id,
-                l_test_id=main_test.tests_id,
-                l_state=0 # Pendiente
-            )
-            db.add(blank_result)
-
-            # 5. Recolectar tipos de muestra para SamplesOrder
+            # 3. Crear un OrdersDetail y un Laboratory por cada prueba del estudio
             for link in test_links:
+                order_detail = OrdersDetail(
+                    od_order_id=order.o_id,
+                    od_study_id=study_id,
+                    od_state=ORDER_DETAIL_STATE_INGRESADO
+                )
+                db.add(order_detail)
+                await db.flush()  # Para obtener od_id
+
+                blank_result = Laboratory(
+                    l_order_detail_id=order_detail.od_id,
+                    l_test_id=link.tests_id,
+                    l_state=LABORATORY_STATE_SIN_RESULTADOS
+                )
+                db.add(blank_result)
+
+                # 4. Recolectar tipos de muestra para SamplesOrder
                 if link.test and link.test.samples_type_id:
                     unique_sample_types.add(link.test.samples_type_id)
 
@@ -184,16 +184,36 @@ async def get_order_details_paginated_by_number(
 
 async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     # Sin paginación
-    order = await OrderRepository.get_by_id(db, o_id) # Este ya trae pacientes y masters en el selectinload
+    order = await OrderRepository.get_by_id(db, o_id) # Carga relaciones: patient, service, diagnosis, enterprise, schooling, tariff, details→study
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
         
     labs, _ = await OrderRepository.get_laboratories_paginated(db, order.o_id, 0, 10000)
     tests, _ = await OrderRepository.get_tests_paginated(db, order.o_id, 0, 10000)
-    
+    samples = await OrderRepository.get_samples_by_order_id(db, order.o_id)
+
+    # Agrupar laboratories por estudio
+    from collections import defaultdict
+    study_map = {}
+    study_order = []
+    for lab in labs:
+        study = lab.order_detail.study if lab.order_detail else None
+        study_id = study.id if study else 0
+        if study_id not in study_map:
+            study_map[study_id] = {
+                "study_id": study_id,
+                "study_name": study.name if study else None,
+                "study_code": study.code if study else None,
+                "laboratories": [],
+            }
+            study_order.append(study_id)
+        study_map[study_id]["laboratories"].append(lab)
+
     return {
         "order": order,
         "patient": order.patient,
         "laboratories": labs,
-        "tests": tests
+        "laboratories_by_study": [study_map[sid] for sid in study_order],
+        "tests": tests,
+        "samples": samples
     }

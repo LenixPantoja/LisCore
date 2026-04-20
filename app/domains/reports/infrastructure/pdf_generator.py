@@ -1,39 +1,76 @@
-import io
 import base64
+import io
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
+from PIL import Image as PILImage
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
-    SimpleDocTemplate,
     Paragraph,
+    SimpleDocTemplate,
     Spacer,
     Table,
     TableStyle,
-    HRFlowable,
 )
-from reportlab.pdfgen import canvas as pdf_canvas
-
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
+from reportlab.lib.utils import ImageReader
 
 # ─────────────────────────────────────────────
-# Constantes
+# Constantes de mapeo
 # ─────────────────────────────────────────────
-PAGE_WIDTH, PAGE_HEIGHT = letter
-MARGIN = 1.5 * cm
+TEMPLATES_DIR = Path(__file__).parent / "templates"
+WATERMARK_PNG = str(TEMPLATES_DIR / "marca_agua.png")
+LOGO_PNG = str(TEMPLATES_DIR / "marca_agua.png")  # Usamos la misma imagen como logo
+
+
+def _load_watermark_image(opacity: float = 0.10) -> io.BytesIO:
+    """Carga el PNG de la marca de agua y le aplica la opacidad indicada."""
+    img = PILImage.open(WATERMARK_PNG).convert("RGBA")
+    r, g, b, a = img.split()
+    a = a.point(lambda x: int(x * opacity))
+    img = PILImage.merge("RGBA", (r, g, b, a))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
+_WATERMARK_BUF: io.BytesIO | None = None
+
+
+def _get_watermark() -> io.BytesIO:
+    global _WATERMARK_BUF
+    if _WATERMARK_BUF is None:
+        _WATERMARK_BUF = _load_watermark_image(0.10)
+    _WATERMARK_BUF.seek(0)
+    return _WATERMARK_BUF
+
+
+def _get_logo() -> ImageReader:
+    """Carga el logo para la cabecera."""
+    return ImageReader(LOGO_PNG)
+
+
+# Colores corporativos
+C_NAVY   = colors.HexColor("#233248")
+C_WHITE  = colors.white
+C_DARK   = colors.HexColor("#1d293c")
+C_GRAY   = colors.HexColor("#4a5568")
+C_LIGHT  = colors.HexColor("#f0f6ff")
+C_RED    = colors.HexColor("#993c1d")
+C_GREEN  = colors.HexColor("#0f6e56")
+C_BLUE2  = colors.HexColor("#233248")
 
 LAB_STATE_LABELS = {
-    0: "Pendiente",
-    1: "Registrado",
-    2: "Validado",
-}
-
-ORDER_STATE_LABELS = {
-    1: "Activa",
-    2: "Cerrada",
-    3: "Anulada",
+    0: ("Sin Resultados", "pendiente"),
+    1: ("Pendiente", "pendiente"),
+    2: ("Con Resultados", "registrado"),
+    3: ("Validada", "validado"),
+    4: ("Impreso", "validado"),
 }
 
 SEX_LABELS = {
@@ -43,325 +80,371 @@ SEX_LABELS = {
 
 
 # ─────────────────────────────────────────────
-# Canvas con marca de agua y pie de página
-# ─────────────────────────────────────────────
-class _WatermarkCanvas(pdf_canvas.Canvas):
-    """Canvas personalizado que dibuja marca de agua y pie de página en cada página."""
-
-    def __init__(self, *args, generation_date: str, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._generation_date = generation_date
-        self._saved_page_states: list = []
-
-    def showPage(self):
-        self._saved_page_states.append(dict(self.__dict__))
-        self._startPage()
-
-    def save(self):
-        total_pages = len(self._saved_page_states)
-        for state in self._saved_page_states:
-            self.__dict__.update(state)
-            self._draw_watermark()
-            self._draw_footer(total_pages)
-            pdf_canvas.Canvas.showPage(self)
-        pdf_canvas.Canvas.save(self)
-
-    def _draw_watermark(self):
-        self.saveState()
-        self.translate(PAGE_WIDTH / 2, PAGE_HEIGHT / 2)
-        self.rotate(45)
-        self.setFont("Helvetica-Bold", 90)
-        self.setFillColorRGB(0.88, 0.88, 0.88)
-        self.drawCentredString(0, 0, "LisCore")
-        self.restoreState()
-
-    def _draw_footer(self, total_pages: int):
-        page_number = self._saved_page_states.index(
-            {k: v for k, v in self.__dict__.items() if k in self._saved_page_states[0]}
-        ) + 1 if hasattr(self, "_pageNumber") else self._pageNumber
-
-        self.saveState()
-        self.setFont("Helvetica", 7)
-        self.setFillColorRGB(0.45, 0.45, 0.45)
-        footer_y = 0.7 * cm
-        left_text = f"Generado por: LisCore  |  Sistema LIS  |  {self._generation_date}"
-        right_text = f"Página {self._pageNumber} de {total_pages}"
-        self.drawString(MARGIN, footer_y, left_text)
-        self.drawRightString(PAGE_WIDTH - MARGIN, footer_y, right_text)
-        # Línea separadora
-        self.setStrokeColorRGB(0.8, 0.8, 0.8)
-        self.line(MARGIN, footer_y + 0.4 * cm, PAGE_WIDTH - MARGIN, footer_y + 0.4 * cm)
-        self.restoreState()
-
-
-# ─────────────────────────────────────────────
 # Función pública principal
 # ─────────────────────────────────────────────
 def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
     """
-    Construye el PDF de resultados de laboratorio y retorna los bytes.
-
-    :param order: instancia ORM de Order (con patient y enterprise cargados).
-    :param patient: instancia ORM de Patient.
-    :param laboratories: lista de instancias ORM de Laboratory
-                         (con order_detail.study y test cargados).
-    :return: bytes del PDF generado.
+    Genera el PDF del reporte de laboratorio usando reportlab.
+    La cabecera (logo + datos del paciente) se repite en todas las páginas.
     """
-    buffer = io.BytesIO()
     generation_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+    is_female = patient and patient.pt_sex_type == 1
+    print_date = datetime.now().strftime("%d/%m/%Y %H:%M")
 
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        leftMargin=MARGIN,
-        rightMargin=MARGIN,
-        topMargin=MARGIN,
-        bottomMargin=2 * cm,
-        canvasmaker=lambda *args, **kwargs: _WatermarkCanvas(
-            *args, generation_date=generation_date, **kwargs
-        ),
-    )
+    # ── Datos de contexto ──────────────────────────────
+    patient_name  = _full_name(patient)
+    patient_doc   = patient.pt_Number_document if patient else "—"
+    sex           = SEX_LABELS.get(patient.pt_sex_type, "—") if patient else "—"
+    age           = str(order.o_age or "—")
+    enterprise    = order.enterprise.en_name if order.enterprise else "—"
+    service_name  = order.service.name if order.service else "—"
+    order_date    = order.o_date.strftime("%d/%m/%Y") if order.o_date else "—"
+    order_number  = str(order.o_number or "—")
 
-    styles = getSampleStyleSheet()
+    # Ciudad
+    city_name = "—"
+    if order.enterprise and hasattr(order.enterprise, "city") and order.enterprise.city:
+        city_name = (
+            getattr(order.enterprise.city, "name", None)
+            or getattr(order.enterprise.city, "c_name", None)
+            or "—"
+        )
+
+    studies = _group_by_study(laboratories, is_female)
+
+    # ── Estilos de texto ───────────────────────────────
+    s_label    = ParagraphStyle("label",    fontName="Helvetica-Bold", fontSize=7, textColor=C_NAVY)
+    s_value    = ParagraphStyle("value",    fontName="Helvetica",      fontSize=8,  textColor=C_DARK)
+    s_study    = ParagraphStyle("study",    fontName="Helvetica-Bold", fontSize=8,  textColor=C_NAVY)
+    s_wg       = ParagraphStyle("wg",       fontName="Helvetica-Bold", fontSize=9,  textColor=C_NAVY)
+    s_th       = ParagraphStyle("th",       fontName="Helvetica-Bold", fontSize=7,  textColor=C_NAVY)
+    s_test     = ParagraphStyle("test",     fontName="Helvetica-Bold", fontSize=8,  textColor=C_DARK)
+    s_res_ok   = ParagraphStyle("res_ok",   fontName="Helvetica-Bold", fontSize=8,  textColor=C_GREEN)
+    s_res_bad  = ParagraphStyle("res_bad",  fontName="Helvetica-Bold", fontSize=8,  textColor=C_RED)
+    s_unit     = ParagraphStyle("unit",     fontName="Helvetica",      fontSize=8,  textColor=C_BLUE2)
+    s_ref      = ParagraphStyle("ref",      fontName="Helvetica",      fontSize=8,  textColor=C_GRAY)
+    s_empty    = ParagraphStyle("empty",    fontName="Helvetica-Oblique", fontSize=8, textColor=C_NAVY)
+    s_ent      = ParagraphStyle("ent",      fontName="Helvetica-Bold", fontSize=10, textColor=C_NAVY,  alignment=TA_RIGHT)
+    s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
+
+    # ── Página: letter, márgenes ───────────────────────
+    PAGE_W, PAGE_H = letter
+    LEFT = RIGHT = 1.5 * cm
+    TOP  = 6 * cm  # Aumentado para dejar espacio a la cabecera que dibujaremos manualmente
+    BOT  = 2.5 * cm
+    COL_W = PAGE_W - LEFT - RIGHT
+
+    # Guardamos los datos del paciente en variables globales para usarlos en el canvas
+    header_data = {
+        'logo': _get_logo(),
+        's_ent': s_ent,
+        's_ent_s': s_ent_s,
+        's_label': s_label,
+        's_value': s_value,
+        'patient_name': patient_name,
+        'patient_doc': patient_doc,
+        'order_number': order_number,
+        'enterprise': enterprise,
+        'age': age,
+        'city_name': city_name,
+        'sex': sex,
+        'service_name': service_name,
+        'order_date': order_date,
+        'print_date': print_date,
+        'PAGE_W': PAGE_W,
+        'PAGE_H': PAGE_H,
+        'LEFT': LEFT,
+        'RIGHT': RIGHT,
+        'COL_W': COL_W,
+        'C_NAVY': C_NAVY,
+        'C_WHITE': C_WHITE,
+        'C_GRAY': C_GRAY,
+    }
+
+    # ── Story principal (solo los resultados) ───────────
     story = []
 
-    # ── Encabezado ────────────────────────────────────────────
-    story += _build_header(order, patient, styles, generation_date)
-    story.append(Spacer(1, 0.3 * cm))
-    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#2563EB")))
-    story.append(Spacer(1, 0.4 * cm))
+    # ── Resultados por estudio ──────────────────────────
+    if studies:
+        for wg_group in studies:
+            wg_hdr = Table(
+                [[Paragraph(wg_group["wg_name"].upper(), s_wg)]],
+                colWidths=[COL_W],
+            )
+            wg_hdr.setStyle(TableStyle([
+                ("BACKGROUND",  (0, 0), (-1, -1), colors.transparent),
+                ("TOPPADDING",  (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ]))
+            story.append(wg_hdr)
 
-    # ── Cuerpo: resultados agrupados por estudio ───────────────
-    story += _build_body(laboratories, patient, styles)
+            for study in wg_group["studies"]:
+                study_hdr = Table(
+                    [[Paragraph(study["name"].upper(), s_study)]],
+                    colWidths=[COL_W],
+                )
+                study_hdr.setStyle(TableStyle([
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.transparent),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                ]))
+                story.append(study_hdr)
 
-    doc.build(story)
-    return buffer.getvalue()
+                th_row = [
+                    Paragraph("EXAMEN", s_th),
+                    Paragraph("RESULTADO", s_th),
+                    Paragraph("UNIDADES", s_th),
+                    Paragraph("VALOR DE REFERENCIA", s_th),
+                ]
+                res_rows = [th_row]
+                for i, row in enumerate(study["rows"]):
+                    res_rows.append([
+                        Paragraph(row["test_name"], s_test),
+                        Paragraph(row["result"], s_res_bad if row["is_abnormal"] else s_res_ok),
+                        Paragraph(row["units"], s_unit),
+                        Paragraph(row["reference"], s_ref),
+                    ])
+                col_widths = [COL_W * 0.35, COL_W * 0.18, COL_W * 0.14, COL_W * 0.33]
+                res_tbl = Table(res_rows, colWidths=col_widths, repeatRows=1)
+
+                tbl_style = [
+                    ("BACKGROUND",  (0, 0), (-1, 0),  colors.transparent),
+                    ("TOPPADDING",  (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("LINEBELOW",   (0, 0), (-1, -1), 0.3, colors.HexColor("#dbeafe")),
+                    ("BOX",         (0, 0), (-1, -1), 0.5, colors.HexColor("#bfdbfe")),
+                    ("VALIGN",      (0, 0), (-1, -1), "TOP"),
+                ]
+                for i in range(1, len(res_rows)):
+                    if i % 2 == 1:
+                        tbl_style.append(("BACKGROUND", (0, i), (-1, i), C_LIGHT))
+                    else:
+                        tbl_style.append(("BACKGROUND", (0, i), (-1, i), colors.transparent))
+
+                res_tbl.setStyle(TableStyle(tbl_style))
+                story.append(res_tbl)
+                story.append(Spacer(1, 8))
+    else:
+        story.append(Paragraph("No hay resultados registrados para esta orden.", s_empty))
+
+    # ── Generar PDF con reportlab ───────────────────────
+    buf = io.BytesIO()
+
+    def _draw_watermark(canvas):
+        """Dibuja la marca de agua en la página actual"""
+        canvas.saveState()
+        wm = ImageReader(_get_watermark())
+        WM_W, WM_H = 250, 100
+        canvas.drawImage(wm, 0, PAGE_H - WM_H, width=WM_W, height=WM_H, mask="auto")
+        canvas.drawImage(wm, PAGE_W - WM_W, (PAGE_H - WM_H) / 2, width=WM_W, height=WM_H, mask="auto")
+        canvas.drawImage(wm, 0, 0, width=WM_W, height=WM_H, mask="auto")
+        canvas.restoreState()
+
+    def _draw_header(canvas):
+        """Dibuja la cabecera (logo + datos del paciente) en la página actual"""
+        canvas.saveState()
+        
+        # ── Cabecera superior (logo + PANTHOSOFT LAB) ──
+        # Logo izquierda
+        logo = header_data['logo']
+        logo_width = 2.5 * cm
+        logo_height = 1.5 * cm
+        canvas.drawImage(logo, LEFT, PAGE_H - 2.2 * cm, width=logo_width, height=logo_height, mask="auto")
+        
+        # Texto derecha (PANTHOSOFT LAB)
+        canvas.setFont("Helvetica-Bold", 10)
+        canvas.setFillColor(C_NAVY)
+        canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 1.8 * cm, "PANTHOSOFT LAB")
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(C_GRAY)
+        canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 2.3 * cm, "Resultados de Laboratorio")
+        
+        # Franja decorativa azul
+        canvas.setFillColor(C_NAVY)
+        canvas.rect(LEFT, PAGE_H - 2.5 * cm, COL_W, 0.15 * cm, fill=1, stroke=0)
+        
+        # ── Información del paciente ──
+        # Título
+        canvas.setFillColor(C_NAVY)
+        canvas.rect(LEFT, PAGE_H - 3.2 * cm, COL_W, 0.4 * cm, fill=1, stroke=0)
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFillColor(C_WHITE)
+        canvas.drawString(LEFT + 0.2 * cm, PAGE_H - 3.05 * cm, "INFORMACIÓN DEL PACIENTE")
+        
+        # Datos del paciente
+        y_start = PAGE_H - 3.7 * cm
+        line_height = 0.4 * cm
+        
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFillColor(C_NAVY)
+        
+        # Fila 1: NOMBRE DEL PACIENTE
+        canvas.drawString(LEFT + 0.2 * cm, y_start, "PACIENTE")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(C_DARK)
+        canvas.drawString(LEFT + 2.5 * cm, y_start, header_data['patient_name'])
+        
+        # Fila 2: DOCUMENTO, N° ORDEN
+        y = y_start - line_height
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFillColor(C_NAVY)
+        canvas.drawString(LEFT + 0.2 * cm, y, "DOCUMENTO")
+        canvas.drawString(LEFT + 8.5 * cm, y, "N° ORDEN")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(C_DARK)
+        canvas.drawString(LEFT + 2.5 * cm, y, header_data['patient_doc'])
+        canvas.drawString(LEFT + 10.5 * cm, y, header_data['order_number'])
+        
+        # Fila 3: EMPRESA, EDAD
+        y = y - line_height
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFillColor(C_NAVY)
+        canvas.drawString(LEFT + 0.2 * cm, y, "EMPRESA")
+        canvas.drawString(LEFT + 8.5 * cm, y, "EDAD")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(C_DARK)
+        canvas.drawString(LEFT + 2.5 * cm, y, header_data['enterprise'])
+        canvas.drawString(LEFT + 10.5 * cm, y, header_data['age'])
+        
+        # Fila 4: MUNICIPIO, GÉNERO
+        y = y - line_height
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFillColor(C_NAVY)
+        canvas.drawString(LEFT + 0.2 * cm, y, "MUNICIPIO")
+        canvas.drawString(LEFT + 8.5 * cm, y, "GÉNERO")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(C_DARK)
+        canvas.drawString(LEFT + 2.5 * cm, y, header_data['city_name'])
+        canvas.drawString(LEFT + 10.5 * cm, y, header_data['sex'])
+        
+        # Fila 5: SERVICIO, FECHA INGRESO
+        y = y - line_height
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFillColor(C_NAVY)
+        canvas.drawString(LEFT + 0.2 * cm, y, "SERVICIO")
+        canvas.drawString(LEFT + 8.5 * cm, y, "FECHA INGRESO")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(C_DARK)
+        canvas.drawString(LEFT + 2.5 * cm, y, header_data['service_name'])
+        canvas.drawString(LEFT + 10.9 * cm, y, header_data['order_date'])
+        
+        # Fila 6: FECHA IMPRESIÓN
+        y = y - line_height
+        canvas.setFont("Helvetica-Bold", 7)
+        canvas.setFillColor(C_NAVY)
+        canvas.drawString(LEFT + 8.5 * cm, y, "FECHA IMPRESIÓN")
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(C_DARK)
+        canvas.drawString(LEFT + 10.9 * cm, y, header_data['print_date'])
+        
+        # Línea divisoria
+        canvas.setStrokeColor(colors.HexColor("#bfdbfe"))
+        canvas.setLineWidth(0.5)
+        canvas.rect(LEFT, PAGE_H - 6.0 * cm, COL_W, 2.8 * cm, fill=0, stroke=1)
+        
+        canvas.restoreState()
+
+    def _draw_footer(canvas, doc):
+        """Dibuja el footer en la página actual"""
+        canvas.saveState()
+        canvas.setFont("Helvetica", 7)
+        canvas.setFillColor(C_GRAY)
+        canvas.drawString(LEFT, 0.6 * cm, f"Generado por: LisCore · Sistema LIS · {generation_date}")
+        canvas.drawRightString(PAGE_W - RIGHT, 0.6 * cm, f"Página {doc.page}")
+        canvas.setStrokeColor(C_NAVY)
+        canvas.setLineWidth(0.5)
+        canvas.line(LEFT, 0.75 * cm, PAGE_W - RIGHT, 0.75 * cm)
+        canvas.restoreState()
+
+    def _draw_page(canvas, doc):
+        """Dibuja todos los elementos que se repiten en CADA página"""
+        _draw_watermark(canvas)
+        _draw_header(canvas)
+        _draw_footer(canvas, doc)
+
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=letter,
+        leftMargin=LEFT,
+        rightMargin=RIGHT,
+        topMargin=TOP,
+        bottomMargin=BOT,
+    )
+    
+    # Usamos la misma función para todas las páginas
+    doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)
+
+    return buf.getvalue()
 
 
 # ─────────────────────────────────────────────
-# Sección: cabecera
+# Agrupar laboratorios por estudio
 # ─────────────────────────────────────────────
-def _build_header(order: Any, patient: Any, styles: Any, generation_date: str) -> list:
-    elements = []
+def _group_by_study(laboratories: list, is_female: bool) -> list[dict]:
+    wg_groups: dict[str, dict] = {}
+    wg_order: list[str] = []
 
-    title_style = ParagraphStyle(
-        "title",
-        parent=styles["Normal"],
-        fontSize=18,
-        textColor=colors.HexColor("#2563EB"),
-        fontName="Helvetica-Bold",
-        spaceAfter=2,
-    )
-    subtitle_style = ParagraphStyle(
-        "subtitle",
-        parent=styles["Normal"],
-        fontSize=9,
-        textColor=colors.HexColor("#64748B"),
-        spaceAfter=0,
-    )
-    label_style = ParagraphStyle(
-        "label",
-        parent=styles["Normal"],
-        fontSize=8,
-        textColor=colors.HexColor("#64748B"),
-        fontName="Helvetica-Bold",
-        spaceAfter=0,
-    )
-    value_style = ParagraphStyle(
-        "value",
-        parent=styles["Normal"],
-        fontSize=9,
-        textColor=colors.HexColor("#1E293B"),
-        spaceAfter=2,
-    )
-
-    # — Fila superior: nombre sistema | empresa
-    enterprise_name = order.enterprise.en_name if order.enterprise else "—"
-    header_data = [
-        [
-            Paragraph("LisCore", title_style),
-            Paragraph(f"<b>{enterprise_name}</b>", value_style),
-        ]
-    ]
-    header_table = Table(header_data, colWidths=[(PAGE_WIDTH - 2 * MARGIN) * 0.4, (PAGE_WIDTH - 2 * MARGIN) * 0.6])
-    header_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
-    elements.append(header_table)
-    elements.append(Paragraph("Sistema de Información de Laboratorio Clínico", subtitle_style))
-    elements.append(Spacer(1, 0.5 * cm))
-
-    # — Datos demográficos del paciente
-    full_name = _patient_full_name(patient)
-    doc_number = patient.pt_Number_document if patient else "—"
-    dob = patient.pt_date_of_birth.strftime("%d/%m/%Y") if patient and patient.pt_date_of_birth else "—"
-    sex = SEX_LABELS.get(patient.pt_sex_type, "—") if patient else "—"
-    age = order.o_age if order.o_age else "—"
-
-    # — Datos de la orden
-    order_number = order.o_number
-    order_date = order.o_date.strftime("%d/%m/%Y") if order.o_date else "—"
-    order_state = ORDER_STATE_LABELS.get(order.o_order_state, str(order.o_order_state))
-
-    col_w = (PAGE_WIDTH - 2 * MARGIN) / 4
-
-    demo_data = [
-        [
-            Paragraph("DATOS DEL PACIENTE", label_style),
-            Paragraph("", label_style),
-            Paragraph("DATOS DE LA ORDEN", label_style),
-            Paragraph("", label_style),
-        ],
-        [
-            Paragraph("Nombre:", label_style),
-            Paragraph(full_name, value_style),
-            Paragraph("N° Orden:", label_style),
-            Paragraph(order_number, value_style),
-        ],
-        [
-            Paragraph("Documento:", label_style),
-            Paragraph(doc_number, value_style),
-            Paragraph("Fecha:", label_style),
-            Paragraph(order_date, value_style),
-        ],
-        [
-            Paragraph("Fecha Nacimiento:", label_style),
-            Paragraph(dob, value_style),
-            Paragraph("Estado:", label_style),
-            Paragraph(order_state, value_style),
-        ],
-        [
-            Paragraph("Edad:", label_style),
-            Paragraph(age, value_style),
-            Paragraph("Impreso:", label_style),
-            Paragraph(generation_date, value_style),
-        ],
-        [
-            Paragraph("Sexo:", label_style),
-            Paragraph(sex, value_style),
-            Paragraph("", label_style),
-            Paragraph("", value_style),
-        ],
-    ]
-
-    demo_table = Table(demo_data, colWidths=[col_w * 0.8, col_w * 1.2, col_w * 0.8, col_w * 1.2])
-    demo_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EFF6FF")),
-        ("SPAN", (0, 0), (1, 0)),
-        ("SPAN", (2, 0), (3, 0)),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 0), (-1, -1), 3),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-        ("LEFTPADDING", (0, 0), (-1, -1), 4),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-        ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.HexColor("#BFDBFE")),
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#BFDBFE")),
-        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E2E8F0")),
-    ]))
-    elements.append(demo_table)
-
-    return elements
-
-
-# ─────────────────────────────────────────────
-# Sección: cuerpo de resultados
-# ─────────────────────────────────────────────
-def _build_body(laboratories: list, patient: Any, styles: Any) -> list:
-    elements = []
-
-    study_style = ParagraphStyle(
-        "study_header",
-        parent=styles["Normal"],
-        fontSize=10,
-        fontName="Helvetica-Bold",
-        textColor=colors.HexColor("#1E40AF"),
-        spaceBefore=8,
-        spaceAfter=4,
-    )
-    col_header_style = ParagraphStyle(
-        "col_header",
-        parent=styles["Normal"],
-        fontSize=8,
-        fontName="Helvetica-Bold",
-        textColor=colors.white,
-    )
-    cell_style = ParagraphStyle(
-        "cell",
-        parent=styles["Normal"],
-        fontSize=8,
-        textColor=colors.HexColor("#1E293B"),
-    )
-    note_style = ParagraphStyle(
-        "note",
-        parent=styles["Normal"],
-        fontSize=7,
-        textColor=colors.HexColor("#64748B"),
-        leftIndent=4,
-    )
-
-    # Agrupar laboratorios por estudio
-    grouped: dict[str, list] = {}
     for lab in laboratories:
         study_name = "Sin estudio asignado"
+        wg_name = "Sin grupo"
         if lab.order_detail and lab.order_detail.study:
-            study_name = lab.order_detail.study.name
-        grouped.setdefault(study_name, []).append(lab)
+            study = lab.order_detail.study
+            study_name = study.name
+            if study.work_group:
+                wg_name = study.work_group.wg_name
 
-    is_female = patient and patient.pt_sex_type == 1
+        if wg_name not in wg_groups:
+            wg_groups[wg_name] = {"studies": {}, "study_order": []}
+            wg_order.append(wg_name)
 
-    col_widths = _result_col_widths()
+        wg = wg_groups[wg_name]
+        if study_name not in wg["studies"]:
+            wg["studies"][study_name] = []
+            wg["study_order"].append(study_name)
+        wg["studies"][study_name].append(lab)
 
-    for study_name, labs in grouped.items():
-        elements.append(Paragraph(study_name, study_style))
+    result = []
+    for wg_name in wg_order:
+        wg = wg_groups[wg_name]
+        studies = []
+        for study_name in wg["study_order"]:
+            rows = [_build_row(lab, is_female) for lab in wg["studies"][study_name]]
+            studies.append({"name": study_name, "rows": rows})
+        result.append({"wg_name": wg_name, "studies": studies})
 
-        # Cabecera de tabla
-        table_data = [[
-            Paragraph("Examen", col_header_style),
-            Paragraph("Resultado", col_header_style),
-            Paragraph("Unidades", col_header_style),
-            Paragraph("Valor de Referencia", col_header_style),
-            Paragraph("Estado", col_header_style),
-        ]]
+    return result
 
-        for lab in labs:
-            test = lab.test
-            test_name = test.name if test else "—"
-            units = test.units if test and test.units else "—"
 
-            result = _format_result(lab)
-            reference = _format_reference(test, is_female) if test else "—"
-            state_label = LAB_STATE_LABELS.get(lab.l_state, str(lab.l_state) if lab.l_state is not None else "—")
+def _build_row(lab: Any, is_female: bool) -> dict:
+    test = lab.test
+    test_name = test.name if test else "—"
+    units = test.units if test and test.units else "—"
+    result = _format_result(lab)
+    reference = _format_reference(test, is_female) if test else "—"
+    state_label, state_class = LAB_STATE_LABELS.get(
+        lab.l_state, (str(lab.l_state) if lab.l_state is not None else "—", "pendiente")
+    )
+    is_abnormal = _is_abnormal(lab)
 
-            row = [
-                Paragraph(test_name, cell_style),
-                Paragraph(result, cell_style),
-                Paragraph(units, cell_style),
-                Paragraph(reference, cell_style),
-                Paragraph(state_label, cell_style),
-            ]
-            table_data.append(row)
-
-            # Nota de validación como fila fusionada si existe
-            if lab.l_nota_validation:
-                note_row = [
-                    Paragraph(f"Nota: {lab.l_nota_validation}", note_style),
-                    "", "", "", "",
-                ]
-                table_data.append(note_row)
-
-        t = Table(table_data, colWidths=col_widths, repeatRows=1)
-        t.setStyle(_result_table_style(table_data))
-        elements.append(t)
-        elements.append(Spacer(1, 0.3 * cm))
-
-    if not grouped:
-        elements.append(Paragraph("No hay resultados registrados para esta orden.", styles["Normal"]))
-
-    return elements
+    return {
+        "test_name": test_name,
+        "result": result,
+        "units": units,
+        "reference": reference,
+        "state_label": state_label,
+        "state_class": state_class,
+        "is_abnormal": is_abnormal,
+        "note": lab.l_nota_validation or "",
+    }
 
 
 # ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
-def _patient_full_name(patient: Any) -> str:
+def _full_name(patient: Any) -> str:
     if not patient:
         return "—"
     parts = [
@@ -378,14 +461,12 @@ def _format_result(lab: Any) -> str:
         return str(lab.l_result_num)
     if lab.l_result:
         return lab.l_result
-    return "—"
+    return lab.l_result_comp or "—"
 
 
 def _format_reference(test: Any, is_female: bool) -> str:
-    if is_female:
-        lo, hi = test.female_value_min, test.female_value_max
-    else:
-        lo, hi = test.male_value_min, test.male_value_max
+    lo = test.female_value_min if is_female else test.male_value_min
+    hi = test.female_value_max if is_female else test.male_value_max
 
     if lo is not None and hi is not None:
         return f"{lo} – {hi}"
@@ -396,44 +477,22 @@ def _format_reference(test: Any, is_female: bool) -> str:
     return "—"
 
 
-def _result_col_widths() -> list:
-    usable = PAGE_WIDTH - 2 * MARGIN
-    return [usable * 0.30, usable * 0.15, usable * 0.13, usable * 0.27, usable * 0.15]
-
-
-def _result_table_style(data: list) -> TableStyle:
-    style = [
-        # Encabezado
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563EB")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
-        ("TOPPADDING", (0, 0), (-1, 0), 5),
-        # Filas alternas
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
-        # Bordes
-        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
-        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#E2E8F0")),
-        # Alineación
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("TOPPADDING", (0, 1), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
-        ("LEFTPADDING", (0, 0), (-1, -1), 5),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
-    ]
-
-    # Fusionar celdas de las filas de notas (span de columna 0 al final)
-    for i, row in enumerate(data[1:], start=1):
-        if isinstance(row[1], str) and row[1] == "":
-            style.append(("SPAN", (0, i), (4, i)))
-            style.append(("BACKGROUND", (0, i), (4, i), colors.HexColor("#FFFBEB")))
-
-    return TableStyle(style)
+def _is_abnormal(lab: Any) -> bool:
+    if lab.l_result_num is None or not lab.test:
+        return False
+    test = lab.test
+    val = float(lab.l_result_num)
+    lo = float(test.male_value_min) if test.male_value_min is not None else None
+    hi = float(test.male_value_max) if test.male_value_max is not None else None
+    if lo is not None and val < lo:
+        return True
+    if hi is not None and val > hi:
+        return False
+    return False
 
 
 # ─────────────────────────────────────────────
-# Encoder a Base64
+# Encoder Base64
 # ─────────────────────────────────────────────
 def pdf_to_base64(pdf_bytes: bytes) -> str:
     return base64.b64encode(pdf_bytes).decode("utf-8")

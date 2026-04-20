@@ -33,7 +33,8 @@ class StudiesLabRepository:
         if search:
             query = query.filter(
                 (StudiesLab.name.ilike(f"%{search}%")) | 
-                (StudiesLab.code.ilike(f"%{search}%"))
+                (StudiesLab.code.ilike(f"%{search}%")) |
+                (StudiesLab.cups_code.ilike(f"%{search}%"))
             )
         
         # 3. Contar total antes de paginar

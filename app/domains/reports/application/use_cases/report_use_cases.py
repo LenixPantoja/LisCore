@@ -5,7 +5,13 @@ from sqlalchemy.orm import selectinload
 
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.laboratories.domain.models import Laboratory
-from app.domains.reports.infrastructure.pdf_generator import build_laboratory_pdf, pdf_to_base64
+from app.domains.studieslab.domain.models import StudiesLab
+from app.domains.enterprises.domain.models import Enterprise
+from app.domains.reports.infrastructure.pdf_generator import (
+    build_laboratory_pdf, 
+    pdf_to_base64,
+    _full_name  # Importar la función desde pdf_generator
+)
 
 
 async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
@@ -15,7 +21,12 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         .filter(Order.o_id == order_id)
         .options(
             selectinload(Order.patient),
-            selectinload(Order.enterprise),
+            selectinload(Order.enterprise).selectinload(Enterprise.regimen),
+            selectinload(Order.enterprise).selectinload(Enterprise.classification),
+            selectinload(Order.enterprise).selectinload(Enterprise.document_type),
+            selectinload(Order.enterprise).selectinload(Enterprise.city),
+            selectinload(Order.enterprise).selectinload(Enterprise.liability_type),
+            selectinload(Order.service),
         )
     )
     order = result.scalars().first()
@@ -34,7 +45,9 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         .filter(OrdersDetail.od_order_id == order_id)
         .options(
             selectinload(Laboratory.test),
-            selectinload(Laboratory.order_detail).selectinload(OrdersDetail.study),
+            selectinload(Laboratory.order_detail)
+            .selectinload(OrdersDetail.study)
+            .selectinload(StudiesLab.work_group),
         )
         .order_by(Laboratory.l_id)
     )
@@ -48,7 +61,7 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
     patient_doc = patient.pt_Number_document if patient else "paciente"
     filename = f"resultado_{order.o_number}_{patient_doc}.pdf"
 
-    patient_name = _full_name(patient)
+    patient_name = _full_name(patient)  # Usar la función importada
 
     return {
         "filename": filename,
@@ -56,15 +69,3 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         "order_number": order.o_number,
         "patient_name": patient_name,
     }
-
-
-def _full_name(patient) -> str:
-    if not patient:
-        return "—"
-    parts = [
-        patient.pt_firts_name,
-        patient.pt_middle_name or "",
-        patient.pt_last_name,
-        patient.pt_second_last_name or "",
-    ]
-    return " ".join(p for p in parts if p).strip()

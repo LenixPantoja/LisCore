@@ -28,7 +28,7 @@ class Analyzer(Base):
     a_active = Column(Boolean, default=True)
 
     group = relationship("AnalyzerGroup", back_populates="analyzers")
-    work_group = relationship("app.domains.masters.domain.models.WorkGroup")
+    work_group = relationship("WorkGroup", foreign_keys=[a_work_group_id])
     details = relationship("AnalyzerDetail", back_populates="analyzer", cascade="all, delete-orphan")
 
 
@@ -46,4 +46,4 @@ class AnalyzerDetail(Base):
     ad_updated_at = Column(Date, nullable=True)
 
     analyzer = relationship("Analyzer", back_populates="details")
-    test = relationship("app.domains.testslabs.domain.models.TestsLab")
+    test = relationship("TestsLab", foreign_keys=[ad_test_id])

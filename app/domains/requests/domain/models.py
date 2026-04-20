@@ -28,13 +28,13 @@ class InboundOrder(Base):
     io_updated_at = Column(DateTime, nullable=True)
 
     # Relationships
-    patient = relationship("app.domains.patients.domain.models.Patient")
-    tariff = relationship("app.domains.contractstariffs.domain.models.Tariff")
-    service = relationship("app.domains.masters.domain.models.Service")
-    diagnosis = relationship("app.domains.masters.domain.models.Diagnosis")
-    country = relationship("app.domains.masters.domain.models.Country")
-    enterprise = relationship("app.domains.enterprises.domain.models.Enterprise")
-    scholarity = relationship("app.domains.masters.domain.models.Schooling")
+    patient = relationship("Patient", foreign_keys=[io_patient_id])
+    tariff = relationship("Tariff", foreign_keys=[io_tariff_id])
+    service = relationship("Service", foreign_keys=[io_service_id])
+    diagnosis = relationship("Diagnosis", foreign_keys=[io_diagnostic_id])
+    country = relationship("Country", foreign_keys=[io_country_id])
+    enterprise = relationship("Enterprise", foreign_keys=[io_enterprise_id])
+    scholarity = relationship("Schooling", foreign_keys=[io_scholarity_id])
 
     details = relationship("InboundOrderDetail", back_populates="inbound_order", cascade="all, delete-orphan")
 
@@ -55,5 +55,5 @@ class InboundOrderDetail(Base):
 
     # Relationships
     inbound_order = relationship("InboundOrder", back_populates="details")
-    study = relationship("app.domains.studieslab.domain.models.StudiesLab")
-    order = relationship("app.domains.orders.domain.models.Order")
+    study = relationship("StudiesLab", foreign_keys=[iod_study_id])
+    order = relationship("Order", foreign_keys=[iod_order_id])

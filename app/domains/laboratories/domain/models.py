@@ -24,9 +24,9 @@ class Laboratory(Base):
     l_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Relaciones
-    order_detail = relationship("app.domains.orders.domain.models.OrdersDetail")
-    test = relationship("app.domains.testslabs.domain.models.TestsLab")
-    user_validation = relationship("app.domains.users.infrastructure.models.AppUser")
+    order_detail = relationship("OrdersDetail", foreign_keys=[l_order_detail_id])
+    test = relationship("TestsLab", foreign_keys=[l_test_id])
+    user_validation = relationship("AppUser", foreign_keys=[l_user_validation_id])
 
     def __repr__(self):
         return f"<Laboratory(id={self.l_id}, order_detail_id={self.l_order_detail_id}, result='{self.l_result}')>"

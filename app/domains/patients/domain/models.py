@@ -28,11 +28,11 @@ class Patient(Base):
     pt_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     # Relaciones
-    sex_type = relationship("app.domains.masters.domain.models.SexType")
-    afiliation = relationship("app.domains.masters.domain.models.AfiliationType")
-    enterprise = relationship("app.domains.enterprises.domain.models.Enterprise")
-    document_type = relationship("app.domains.masters.domain.models.DocumentType")
-    city = relationship("app.domains.masters.domain.models.City")
+    sex_type = relationship("SexType", foreign_keys=[pt_sex_type])
+    afiliation = relationship("AfiliationType", foreign_keys=[pt_afiliation_type])
+    enterprise = relationship("Enterprise", foreign_keys=[pt_enterprise_id])
+    document_type = relationship("DocumentType", foreign_keys=[pt_Document_Type_id])
+    city = relationship("City", foreign_keys=[pt_city_id])
 
     def __repr__(self):
         return f"<Patient(id={self.pt_id}, name='{self.pt_firts_name} {self.pt_last_name}')>"

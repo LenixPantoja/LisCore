@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from app.domains.orders.domain.models import Order
+from app.domains.orders.domain.models import Order, OrdersDetail
 from datetime import date
 
 class OrderRepository:
@@ -43,14 +43,20 @@ class OrderRepository:
 
     @staticmethod
     async def get_by_id(db: AsyncSession, o_id: int) -> Optional[Order]:
+        from app.domains.enterprises.domain.models import Enterprise
         result = await db.execute(
             select(Order).filter(Order.o_id == o_id).options(
                 selectinload(Order.patient),
                 selectinload(Order.service),
                 selectinload(Order.diagnosis),
-                selectinload(Order.enterprise),
+                selectinload(Order.enterprise).selectinload(Enterprise.regimen),
+                selectinload(Order.enterprise).selectinload(Enterprise.classification),
+                selectinload(Order.enterprise).selectinload(Enterprise.document_type),
+                selectinload(Order.enterprise).selectinload(Enterprise.city),
+                selectinload(Order.enterprise).selectinload(Enterprise.liability_type),
                 selectinload(Order.schooling),
-                selectinload(Order.tariff)
+                selectinload(Order.tariff),
+                selectinload(Order.details).selectinload(OrdersDetail.study)
             )
         )
         return result.scalars().first()
@@ -188,3 +194,14 @@ class OrderRepository:
         
         result = await db.execute(query.offset(skip).limit(limit))
         return result.scalars().all(), total
+
+    @staticmethod
+    async def get_samples_by_order_id(db: AsyncSession, o_id: int):
+        from app.domains.samples.domain.models import SamplesOrder
+
+        result = await db.execute(
+            select(SamplesOrder)
+            .filter(SamplesOrder.so_order_id == o_id)
+            .options(selectinload(SamplesOrder.sample_type))
+        )
+        return result.scalars().all()

@@ -3,8 +3,14 @@ from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.domains.enterprises.api.schemas import EnterpriseCreate, EnterpriseResponse, EnterpriseUpdate, EnterprisePaginatedResponse
-from app.domains.enterprises.application.use_cases import create_enterprise, update_enterprise, list_enterprises, get_enterprise
+from app.domains.enterprises.api.schemas import (
+    EnterpriseCreate, EnterpriseResponse, EnterpriseUpdate,
+    EnterprisePaginatedResponse, EnterpriseContractsPaginatedResponse,
+)
+from app.domains.enterprises.application.use_cases import (
+    create_enterprise, update_enterprise, list_enterprises,
+    get_enterprise, get_enterprise_contracts,
+)
 
 router = APIRouter()
 
@@ -54,3 +60,29 @@ async def get_enterprise_details(en_id: int, db: AsyncSession = Depends(get_db))
     Endpoint para obtener el detalle de una empresa específica por su ID.
     """
     return await get_enterprise.execute(db, en_id)
+
+
+@router.get("/{en_id}/contracts", response_model=EnterpriseContractsPaginatedResponse)
+async def list_enterprise_contracts(
+    en_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
+    search: Optional[str] = None,
+    active: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Endpoint para obtener los contratos de una empresa con sus tarifas asociadas.
+
+    - **en_id**: ID de la empresa.
+    - **skip**: Registros a omitir (paginación).
+    - **limit**: Máximo de registros a retornar (1-200, por defecto 20).
+    - **search**: Filtro por código o número de contrato.
+    - **active**: Filtro por estado activo/inactivo.
+    """
+    contracts, total = await get_enterprise_contracts.execute(
+        db, en_id, skip, limit, search, active
+    )
+    return EnterpriseContractsPaginatedResponse(
+        total=total, skip=skip, limit=limit, items=contracts
+    )

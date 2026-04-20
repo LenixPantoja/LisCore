@@ -1,15 +1,27 @@
 from typing import Tuple, Sequence, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm import selectinload
 from app.domains.enterprises.domain.models import Enterprise
 
 class EnterpriseRepository:
     @staticmethod
     async def get_by_id(db: AsyncSession, enterprise_id: int) -> Enterprise | None:
         """
-        Retrieves an enterprise by its ID.
+        Retrieves an enterprise by its ID, including all related entities.
         """
-        return await db.get(Enterprise, enterprise_id)
+        result = await db.execute(
+            select(Enterprise)
+            .options(
+                selectinload(Enterprise.regimen),
+                selectinload(Enterprise.classification),
+                selectinload(Enterprise.document_type),
+                selectinload(Enterprise.city),
+                selectinload(Enterprise.liability_type),
+            )
+            .filter(Enterprise.en_id == enterprise_id)
+        )
+        return result.scalars().first()
 
     @staticmethod
     async def get_by_code(db: AsyncSession, enterprise_code: str) -> Enterprise | None:
@@ -60,21 +72,33 @@ class EnterpriseRepository:
 
     @staticmethod
     async def get_paginated(
-        db: AsyncSession, 
-        skip: int = 0, 
-        limit: int = 100, 
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
         search: Optional[str] = None
     ) -> Tuple[Sequence[Enterprise], int]:
-        query = select(Enterprise)
+        base_filter = []
         if search:
-            query = query.filter(
-                (Enterprise.en_name.ilike(f"%{search}%")) | 
+            base_filter.append(
+                (Enterprise.en_name.ilike(f"%{search}%")) |
                 (Enterprise.en_nit.ilike(f"%{search}%")) |
                 (Enterprise.en_code.ilike(f"%{search}%"))
             )
-        
-        count_stmt = select(func.count()).select_from(query.subquery())
+
+        count_stmt = select(func.count()).select_from(Enterprise)
+        if base_filter:
+            count_stmt = count_stmt.where(*base_filter)
         total = (await db.execute(count_stmt)).scalar() or 0
-        
+
+        query = select(Enterprise).options(
+            selectinload(Enterprise.regimen),
+            selectinload(Enterprise.classification),
+            selectinload(Enterprise.document_type),
+            selectinload(Enterprise.city),
+            selectinload(Enterprise.liability_type),
+        )
+        if base_filter:
+            query = query.filter(*base_filter)
+
         result = await db.execute(query.offset(skip).limit(limit).order_by(Enterprise.en_name.asc()))
         return result.scalars().all(), total
