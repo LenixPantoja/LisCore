@@ -29,6 +29,8 @@ class TestsLab(Base):
     boys_value_min = Column(Numeric, nullable=True)
     boys_value_max = Column(Numeric, nullable=True)
     
+    alternative_range_value = Column(Text, nullable=True)
+
     active = Column(Boolean, default=True)
     test_type = Column(String(255), nullable=True)
     is_confidential = Column(Boolean, default=False)

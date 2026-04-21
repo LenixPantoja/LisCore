@@ -20,6 +20,7 @@ class TestsLabBase(BaseModel):
     male_value_max: Optional[Decimal] = None
     boys_value_min: Optional[Decimal] = None
     boys_value_max: Optional[Decimal] = None
+    alternative_range_value: Optional[str] = None
     active: Optional[bool] = True
     test_type: Optional[str] = None
     is_confidential: Optional[bool] = False
@@ -44,6 +45,7 @@ class TestsLabUpdate(BaseModel):
     male_value_max: Optional[Decimal] = None
     boys_value_min: Optional[Decimal] = None
     boys_value_max: Optional[Decimal] = None
+    alternative_range_value: Optional[str] = None
     active: Optional[bool] = None
     test_type: Optional[str] = None
     is_confidential: Optional[bool] = None
