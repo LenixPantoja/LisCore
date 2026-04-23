@@ -1,7 +1,10 @@
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, field_validator
+from typing import Optional, List
 from datetime import datetime
 from decimal import Decimal
+
+from app.domains.testslabs.domain.constants import RANGE_TYPES, AGE_TYPES
+
 
 class TestsLabBase(BaseModel):
     code: str
@@ -25,8 +28,10 @@ class TestsLabBase(BaseModel):
     test_type: Optional[str] = None
     is_confidential: Optional[bool] = False
 
+
 class TestsLabCreate(TestsLabBase):
     pass
+
 
 class TestsLabUpdate(BaseModel):
     code: Optional[str] = None
@@ -50,6 +55,7 @@ class TestsLabUpdate(BaseModel):
     test_type: Optional[str] = None
     is_confidential: Optional[bool] = None
 
+
 class TestsLabResponse(TestsLabBase):
     id: int
     created_at: datetime
@@ -57,3 +63,83 @@ class TestsLabResponse(TestsLabBase):
 
     class Config:
         from_attributes = True
+
+
+# --- RangesReferences ---
+
+class RangeReferenceBase(BaseModel):
+    range_type: Optional[str] = None
+    gender: Optional[str] = None
+    age_type: Optional[str] = None
+    min_age: Optional[int] = None
+    max_age: Optional[int] = None
+    priority: Optional[int] = None
+
+    @field_validator("range_type")
+    @classmethod
+    def validate_range_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in RANGE_TYPES:
+            raise ValueError(f"range_type inválido. Opciones: {RANGE_TYPES}")
+        return v
+
+    @field_validator("age_type")
+    @classmethod
+    def validate_age_type(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in AGE_TYPES:
+            raise ValueError(f"age_type inválido. Opciones: {AGE_TYPES}")
+        return v
+
+
+class RangeReferenceCreate(RangeReferenceBase):
+    range_type: str
+    priority: int
+
+
+class RangeReferenceUpdate(RangeReferenceBase):
+    pass
+
+
+class RangeReferenceResponse(RangeReferenceBase):
+    id: int
+    test_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class RangeReferenceListResponse(BaseModel):
+    total: int
+    items: List[RangeReferenceResponse]
+
+
+# --- ReferencesValues ---
+
+class ReferenceValueBase(BaseModel):
+    min_value: Optional[Decimal] = None
+    max_values: Optional[Decimal] = None
+    text_value: Optional[str] = None
+
+
+class ReferenceValueCreate(ReferenceValueBase):
+    pass
+
+
+class ReferenceValueUpdate(ReferenceValueBase):
+    pass
+
+
+class ReferenceValueResponse(ReferenceValueBase):
+    id: int
+    ranges_references_id: int
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ReferenceValueListResponse(BaseModel):
+    total: int
+    items: List[ReferenceValueResponse]
