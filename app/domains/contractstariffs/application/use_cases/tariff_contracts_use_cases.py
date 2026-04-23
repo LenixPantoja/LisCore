@@ -312,3 +312,90 @@ async def unlink_tariff_from_contract(db: AsyncSession, contract_id: int, tariff
         )
 
     return result
+
+
+async def list_contracts_by_enterprise(
+    db: AsyncSession,
+    enterprise_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    search: Optional[str] = None,
+    active: Optional[bool] = None
+):
+    """List paginated contracts for a given enterprise, each with its linked tariffs."""
+    contracts, total = await ContractTariffRepository.get_contracts_with_tariffs_by_enterprise(
+        db, enterprise_id, skip, limit, search, active
+    )
+
+    items = []
+    for contract in contracts:
+        tariffs = []
+        for ct_link in contract.tariffs_link:
+            if ct_link.tariff:
+                tariffs.append({
+                    "t_id": ct_link.tariff.t_id,
+                    "t_name": ct_link.tariff.t_name,
+                    "t_description": ct_link.tariff.t_description,
+                    "t_activo": ct_link.tariff.t_activo,
+                    "ct_id": ct_link.ct_id,
+                    "ct_active": ct_link.ct_active,
+                    "ct_start_date": ct_link.ct_start_date,
+                    "ct_end_date": ct_link.ct_end_date,
+                })
+
+        items.append({
+            "co_id": contract.co_id,
+            "co_code": contract.co_code,
+            "co_observations": contract.co_observations,
+            "co_value_contracted": float(contract.co_value_contracted) if contract.co_value_contracted else None,
+            "co_value_consumed": float(contract.co_value_consumed) if contract.co_value_consumed else None,
+            "co_value_alarm": float(contract.co_value_alarm) if contract.co_value_alarm else None,
+            "co_billing_type": contract.co_billing_type,
+            "co_contract_number": contract.co_contract_number,
+            "co_number_poliza": contract.co_number_poliza,
+            "co_active": contract.co_active,
+            "co_enterprise_id": contract.co_enterprise_id,
+            "co_created_at": contract.co_created_at,
+            "co_updated_at": contract.co_updated_at,
+            "enterprise": {
+                "en_id": contract.enterprise.en_id,
+                "en_code": contract.enterprise.en_code,
+                "en_name": contract.enterprise.en_name,
+            } if contract.enterprise else None,
+            "tariffs": tariffs,
+        })
+
+    return {
+        "enterprise_id": enterprise_id,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items,
+    }
+
+
+async def list_tariffs_by_contract(
+    db: AsyncSession,
+    contract_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    active: Optional[bool] = None
+):
+    """List paginated tariffs linked to a specific contract."""
+    contract = await ContractTariffRepository.get_contract_by_id(db, contract_id)
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Contrato con ID {contract_id} no encontrado"
+        )
+
+    items, total = await ContractTariffRepository.get_tariffs_by_contract_paginated(
+        db, contract_id, skip, limit, active
+    )
+    return {
+        "contract_id": contract_id,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": items,
+    }

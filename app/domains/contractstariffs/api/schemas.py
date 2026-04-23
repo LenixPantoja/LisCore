@@ -164,3 +164,46 @@ class UnlinkTariffFromContractResponse(BaseModel):
     ct_id: Optional[int] = None
     ct_contract_id: Optional[int] = None
     ct_tariff_id: Optional[int] = None
+
+# --- Enterprise contracts listing ---
+
+class TariffInContractResponse(BaseModel):
+    """Tariff summary as linked to a contract, including link metadata."""
+    t_id: int
+    t_name: Optional[str] = None
+    t_description: Optional[str] = None
+    t_activo: Optional[bool] = None
+    ct_id: int
+    ct_active: Optional[bool] = None
+    ct_start_date: Optional[date] = None
+    ct_end_date: Optional[date] = None
+
+    class Config:
+        from_attributes = True
+
+class ContractWithTariffsResponse(ContractBase):
+    """Contract with its linked tariffs."""
+    co_id: int
+    co_created_at: Optional[date] = None
+    co_updated_at: Optional[date] = None
+    enterprise: Optional[EnterpriseInfo] = None
+    tariffs: List[TariffInContractResponse] = []
+
+    class Config:
+        from_attributes = True
+
+class EnterpriseContractsPaginatedResponse(BaseModel):
+    enterprise_id: int
+    total: int
+    skip: int
+    limit: int
+    items: List[ContractWithTariffsResponse]
+
+# --- Contract tariffs listing (paginated) ---
+
+class ContractTariffsPaginatedResponse(BaseModel):
+    contract_id: int
+    total: int
+    skip: int
+    limit: int
+    items: List[TariffResponse]

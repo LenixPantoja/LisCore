@@ -550,3 +550,30 @@ class ContractTariffRepository:
             "ct_contract_id": contract_id,
             "ct_tariff_id": tariff_id
         }
+
+    @staticmethod
+    async def get_tariffs_by_contract_paginated(
+        db: AsyncSession,
+        contract_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        active: Optional[bool] = None
+    ) -> Tuple[Sequence[Tariff], int]:
+        """Get paginated tariffs linked to a specific contract, with optional active filter."""
+        query = (
+            select(Tariff)
+            .join(ContractTariff, ContractTariff.ct_tariff_id == Tariff.t_id)
+            .filter(ContractTariff.ct_contract_id == contract_id)
+            .options(selectinload(Tariff.details))
+        )
+
+        if active is not None:
+            query = query.filter(Tariff.t_activo == active)
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(
+            query.offset(skip).limit(limit).order_by(Tariff.t_id.asc())
+        )
+        return result.scalars().all(), total

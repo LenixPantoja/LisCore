@@ -21,7 +21,9 @@ from app.domains.contractstariffs.api.schemas import (
     ContractTariffResponse,
     UnlinkTariffFromContractRequest,
     UnlinkTariffFromContractResponse,
-    EnterpriseTariffStudiesResponse
+    EnterpriseTariffStudiesResponse,
+    EnterpriseContractsPaginatedResponse,
+    ContractTariffsPaginatedResponse,
 )
 from app.domains.contractstariffs.application.use_cases import tariff_contracts_use_cases
 
@@ -94,6 +96,30 @@ async def list_tariff_studies_by_enterprise(
     """
     return await tariff_contracts_use_cases.get_tariff_studies_by_enterprise(
         db, enterprise_id, tariff_id, skip, limit, search, active
+    )
+
+@router.get("/enterprises/{enterprise_id}/contracts", response_model=EnterpriseContractsPaginatedResponse)
+async def list_contracts_by_enterprise(
+    enterprise_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    active: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all contracts for a given enterprise with pagination.
+
+    - **enterprise_id**: Enterprise ID (path parameter)
+    - **skip**: Number of records to skip
+    - **limit**: Maximum number of records (1-500)
+    - **search**: Filter by contract code or contract number (case-insensitive)
+    - **active**: Filter by contract active status
+
+    Returns paginated contracts, each including its linked tariffs.
+    """
+    return await tariff_contracts_use_cases.list_contracts_by_enterprise(
+        db, enterprise_id, skip, limit, search, active
     )
 
 @router.get("/tariffs/paginated", response_model=TariffPaginatedResponse)
@@ -313,9 +339,25 @@ async def unlink_tariff_from_contract(data: UnlinkTariffFromContractRequest, db:
         db, data.ct_contract_id, data.ct_tariff_id
     )
 
-@router.get("/contracts/{contract_id}/tariffs")
-async def get_contract_tariffs(contract_id: int, db: AsyncSession = Depends(get_db)):
+@router.get("/contracts/{contract_id}/tariffs", response_model=ContractTariffsPaginatedResponse)
+async def get_contract_tariffs(
+    contract_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    active: Optional[bool] = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Get all tariffs linked to a specific contract.
+    List all tariffs linked to a specific contract with pagination.
+
+    - **contract_id**: Contract ID (path parameter)
+    - **skip**: Number of records to skip
+    - **limit**: Maximum number of records (1-500)
+    - **active**: Filter by tariff active status
+
+    **Errors:**
+    - 404: Contract not found
     """
-    return await tariff_contracts_use_cases.get_contract_tariffs(db, contract_id)
+    return await tariff_contracts_use_cases.list_tariffs_by_contract(
+        db, contract_id, skip, limit, active
+    )
