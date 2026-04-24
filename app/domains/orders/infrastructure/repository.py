@@ -205,3 +205,20 @@ class OrderRepository:
             .options(selectinload(SamplesOrder.sample_type))
         )
         return result.scalars().all()
+
+    @staticmethod
+    async def get_study_ids_for_tariff(db: AsyncSession, tariff_id: int) -> set[int]:
+        """Retorna el conjunto de study IDs que pertenecen a una tarifa."""
+        from app.domains.contractstariffs.domain.models import TariffDetail
+        result = await db.execute(
+            select(TariffDetail.td_studie_id).where(TariffDetail.td_tariff_id == tariff_id)
+        )
+        return {row[0] for row in result.fetchall()}
+
+    @staticmethod
+    async def get_existing_study_ids_for_order(db: AsyncSession, o_id: int) -> set[int]:
+        """Retorna el conjunto de study IDs ya registrados en una orden."""
+        result = await db.execute(
+            select(OrdersDetail.od_study_id).where(OrdersDetail.od_order_id == o_id)
+        )
+        return {row[0] for row in result.fetchall()}

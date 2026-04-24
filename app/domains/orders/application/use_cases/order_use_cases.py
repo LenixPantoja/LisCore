@@ -217,3 +217,159 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
         "tests": tests,
         "samples": samples
     }
+
+
+async def edit_order(db: AsyncSession, o_id: int, data: dict):
+    """
+    Edita los campos permitidos de una orden y/o agrega nuevos estudios.
+
+    - Actualiza: o_enterprise_id, o_diagnoses_id, o_service_id, o_autorizacion,
+      o_pregnated, o_week_pregnated, o_priority, o_scholarity, o_note, o_tariff_id.
+    - Si se envían estudios, valida que cada estudio exista en la tarifa vigente
+      (o_tariff_id del request o el de la orden en BD). Los estudios ya presentes
+      en la orden se omiten sin error.
+    """
+    try:
+        studies_to_add: list[int] = data.pop("studies", None) or []
+
+        # 1. Obtener la orden actual
+        order = await db.get(Order, o_id)
+        if not order:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada.")
+
+        # 2. Actualizar campos editables (solo los enviados)
+        editable_fields = [
+            "o_enterprise_id", "o_diagnoses_id", "o_service_id", "o_autorizacion",
+            "o_pregnated", "o_week_pregnated", "o_priority", "o_scholarity",
+            "o_note", "o_tariff_id",
+        ]
+        updated_fields: list[str] = []
+        for field in editable_fields:
+            if field in data and data[field] is not None:
+                setattr(order, field, data[field])
+                updated_fields.append(field)
+
+        await db.flush()
+
+        # 3. Procesar estudios si se enviaron
+        added_studies: list[int] = []
+        skipped_studies: list[int] = []
+        invalid_studies: list[int] = []
+
+        if studies_to_add:
+            # Tarifa efectiva: la del request (ya aplicada) o la de la orden
+            effective_tariff_id: int | None = data.get("o_tariff_id") or order.o_tariff_id
+
+            if not effective_tariff_id:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="La orden no tiene una tarifa asignada. Asigne una tarifa antes de agregar estudios."
+                )
+
+            # Estudios válidos en la tarifa
+            tariff_study_ids = await OrderRepository.get_study_ids_for_tariff(db, effective_tariff_id)
+
+            # Estudios ya existentes en la orden
+            existing_study_ids = await OrderRepository.get_existing_study_ids_for_order(db, o_id)
+
+            for study_id in studies_to_add:
+                if study_id not in tariff_study_ids:
+                    invalid_studies.append(study_id)
+                    continue
+
+                if study_id in existing_study_ids:
+                    skipped_studies.append(study_id)
+                    continue
+
+                # Obtener configuración de pruebas del estudio
+                stmt = (
+                    select(StudiesTestDetail)
+                    .filter(StudiesTestDetail.studies_id == study_id)
+                    .options(selectinload(StudiesTestDetail.test))
+                )
+                result = await db.execute(stmt)
+                test_links = result.scalars().all()
+
+                if not test_links:
+                    invalid_studies.append(study_id)
+                    continue
+
+                new_sample_types: set[int] = set()
+                for link in test_links:
+                    order_detail = OrdersDetail(
+                        od_order_id=o_id,
+                        od_study_id=study_id,
+                        od_state=ORDER_DETAIL_STATE_INGRESADO,
+                    )
+                    db.add(order_detail)
+                    await db.flush()
+
+                    blank_result = Laboratory(
+                        l_order_detail_id=order_detail.od_id,
+                        l_test_id=link.tests_id,
+                        l_state=LABORATORY_STATE_SIN_RESULTADOS,
+                    )
+                    db.add(blank_result)
+
+                    if link.test and link.test.samples_type_id:
+                        new_sample_types.add(link.test.samples_type_id)
+
+                # Agregar muestras nuevas si el tipo no existe ya en la orden
+                for st_id in new_sample_types:
+                    from app.domains.samples.domain.models import SamplesOrder
+                    existing_sample = await db.execute(
+                        select(SamplesOrder).where(
+                            SamplesOrder.so_order_id == o_id,
+                            SamplesOrder.so_sample_type_id == st_id,
+                        )
+                    )
+                    if not existing_sample.scalar_one_or_none():
+                        db.add(SamplesOrder(
+                            so_order_id=o_id,
+                            so_sample_type_id=st_id,
+                            so_barcode=f"{order.o_number}-{st_id}",
+                            so_state=1,
+                        ))
+
+                added_studies.append(study_id)
+                existing_study_ids.add(study_id)
+
+        await db.commit()
+
+        # Construir mensaje
+        parts: list[str] = []
+        if updated_fields:
+            parts.append(f"Campos actualizados: {', '.join(updated_fields)}.")
+        if added_studies:
+            parts.append(f"Estudios agregados: {added_studies}.")
+        if skipped_studies:
+            parts.append(f"Estudios omitidos (ya existían): {skipped_studies}.")
+        if invalid_studies:
+            parts.append(f"Estudios no válidos en la tarifa: {invalid_studies}.")
+        if not parts:
+            parts.append("No se realizaron cambios.")
+
+        return {
+            "success": True,
+            "o_id": o_id,
+            "updated_fields": updated_fields,
+            "added_studies": added_studies,
+            "skipped_studies": skipped_studies,
+            "invalid_studies": invalid_studies,
+            "message": " ".join(parts),
+        }
+
+    except HTTPException:
+        raise
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Error de integridad al editar la orden: {str(e.orig)}"
+        )
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al editar la orden: {str(e)}"
+        )

@@ -274,3 +274,28 @@ class OrderFullDetailsResponse(BaseModel):
     laboratories_by_study: List[StudyWithLabsResponse] = []
     tests: List[TestsLabResponse]
     samples: List[SamplesOrderResponse]
+
+
+class OrderEditRequest(BaseModel):
+    """Esquema para editar campos de una orden y/o agregar estudios."""
+    o_enterprise_id: Optional[int] = None
+    o_diagnoses_id: Optional[int] = None
+    o_service_id: Optional[int] = None
+    o_autorizacion: Optional[str] = None
+    o_pregnated: Optional[bool] = None
+    o_week_pregnated: Optional[str] = None
+    o_priority: Optional[int] = None
+    o_scholarity: Optional[int] = None
+    o_note: Optional[str] = None
+    o_tariff_id: Optional[int] = None
+    studies: Optional[List[int]] = None  # IDs de estudios a agregar
+
+
+class OrderEditResponse(BaseModel):
+    success: bool
+    o_id: int
+    updated_fields: List[str]
+    added_studies: List[int]
+    skipped_studies: List[int]
+    invalid_studies: List[int]
+    message: str

@@ -6,7 +6,7 @@ from app.core.database import get_db
 from app.domains.orders.api.schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse, 
     NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
-    OrderCreatedResponse
+    OrderCreatedResponse, OrderEditRequest, OrderEditResponse
 )
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
@@ -41,6 +41,19 @@ async def get_one(id: int, db: AsyncSession = Depends(get_db)):
 @router.patch("/{id}", response_model=OrderResponse)
 async def update(id: int, data: OrderUpdate, db: AsyncSession = Depends(get_db)):
     return await use_cases.update_order(db, id, data.model_dump(exclude_unset=True))
+
+@router.put("/{id}", response_model=OrderEditResponse, status_code=status.HTTP_200_OK)
+async def edit(id: int, data: OrderEditRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Edita campos de una orden y/o agrega nuevos estudios.
+
+    - Campos editables: o_enterprise_id, o_diagnoses_id, o_service_id,
+      o_autorizacion, o_pregnated, o_week_pregnated, o_priority, o_scholarity,
+      o_note, o_tariff_id.
+    - **studies**: lista de IDs de estudios a agregar. Se valida que cada estudio
+      exista en la tarifa asignada a la orden. Los estudios duplicados se omiten.
+    """
+    return await use_cases.edit_order(db, id, data.model_dump(exclude_unset=True))
 
 @router.get("/by-number/{o_number}/details", response_model=OrderDetailsPaginatedResponse)
 async def get_order_details_paginated(
