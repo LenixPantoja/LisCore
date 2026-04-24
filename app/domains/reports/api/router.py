@@ -12,8 +12,12 @@ from app.domains.reports.api.schemas import (
 from app.domains.reports.application.use_cases import report_use_cases as use_cases
 from app.domains.reports.application.use_cases import stats_use_cases
 from app.domains.reports.application.use_cases import kpis_use_cases
+from app.domains.reports.api.pos.router import router as pos_router
 
 router = APIRouter()
+
+# Include POS sub-router (results endpoints remain at this level)
+router.include_router(pos_router)
 
 
 @router.post(

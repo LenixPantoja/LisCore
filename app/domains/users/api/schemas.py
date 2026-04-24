@@ -33,6 +33,10 @@ class UserUpdate(BaseModel):
 
 class UserResponse(UserBase):
     usr_id: int
+    usr_first_name: Optional[str] = None
+    usr_last_name: Optional[str] = None
+    usr_document_number: Optional[str] = None
+    usr_mail: Optional[str] = None
     usr_is_Locked: bool
     usr_created_at: datetime
     usr_updated_at: datetime

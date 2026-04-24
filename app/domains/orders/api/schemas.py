@@ -79,6 +79,27 @@ class OrderPaginatedResponse(BaseModel):
 class NextOrderNumberResponse(BaseModel):
     next_order_number: str
 
+class OrderCreatedResponse(BaseModel):
+    """Response returned immediately after a successful order creation."""
+    o_id: int
+    o_number: str
+    o_date: Optional[date] = None
+    o_his_id: int
+    o_enterprise_id: Optional[int] = None
+    o_tariff_id: Optional[int] = None
+    o_order_state: Optional[str] = None
+    o_created_at: Optional[datetime] = None
+
+    @field_validator('o_order_state', mode='before')
+    @classmethod
+    def convert_o_order_state(cls, v):
+        if isinstance(v, int):
+            return ORDER_STATES.get(v, str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
 # Nuevos esquemas añadidos para los casos de uso solicitados
 
 class PatientOrderListItem(BaseModel):

@@ -5,13 +5,14 @@ from typing import List, Optional
 from app.core.database import get_db
 from app.domains.orders.api.schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse, 
-    NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse
+    NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
+    OrderCreatedResponse
 )
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
 router = APIRouter()
 
-@router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=OrderCreatedResponse, status_code=status.HTTP_201_CREATED)
 async def create(data: OrderCreate, db: AsyncSession = Depends(get_db)):
     return await use_cases.create_order(db, data.model_dump())
 
