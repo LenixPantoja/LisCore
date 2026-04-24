@@ -259,7 +259,11 @@ async def update_order_detail_state(db: AsyncSession, order_id: int, study_id: i
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No se encontró el estudio con study_id={study_id} en la orden order_id={order_id}."
         )
-
+    if detail == "DISCARDED":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"El estudio con study_id={study_id} fue descartado y no puede cambiar de estado."
+        )
     return {
         "success": True,
         "od_id": detail.od_id,

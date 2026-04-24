@@ -6,8 +6,13 @@ from app.domains.laboratories.domain.constants import (
     LABORATORY_STATE_PENDIENTE,
     LABORATORY_STATE_CON_RESULTADOS,
     LABORATORY_STATE_VALIDADA,
+    LABORATORY_STATE_DESCARTADO,
 )
-from app.domains.orders.domain.constants import ORDER_DETAIL_STATE_INGRESADO
+from app.domains.orders.domain.constants import (
+    ORDER_DETAIL_STATE_INGRESADO,
+    ORDER_DETAIL_STATE_PENDIENTE,
+    ORDER_DETAIL_STATE_DESCARTADO,
+)
 from typing import List, Dict, Any, Tuple
 
 class LaboratoryRepository:
@@ -274,6 +279,9 @@ class LaboratoryRepository:
         if detail is None:
             return None
 
+        if detail.od_state == ORDER_DETAIL_STATE_DESCARTADO:
+            return "DISCARDED"
+
         stmt = (
             update(OrdersDetail)
             .where(
@@ -284,12 +292,18 @@ class LaboratoryRepository:
         )
         await db.execute(stmt)
 
-        # Si el nuevo od_state es 0 (Ingresado), poner laboratorios asociados en 0 (Sin Resultados)
-        if new_state == ORDER_DETAIL_STATE_INGRESADO:
+        # Mapear el nuevo od_state al l_state correspondiente para los laboratorios asociados
+        lab_state_map = {
+            ORDER_DETAIL_STATE_INGRESADO: LABORATORY_STATE_SIN_RESULTADOS,   # 0 → 0 Sin Resultados
+            ORDER_DETAIL_STATE_PENDIENTE: LABORATORY_STATE_PENDIENTE,         # 1 → 1 Pendiente
+            ORDER_DETAIL_STATE_DESCARTADO: LABORATORY_STATE_DESCARTADO,       # 2 → 5 Descartado
+        }
+
+        if new_state in lab_state_map:
             stmt_labs = (
                 update(Laboratory)
                 .where(Laboratory.l_order_detail_id == detail.od_id)
-                .values(l_state=LABORATORY_STATE_SIN_RESULTADOS)
+                .values(l_state=lab_state_map[new_state])
             )
             await db.execute(stmt_labs)
 
