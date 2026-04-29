@@ -265,7 +265,52 @@ class StudyWithLabsResponse(BaseModel):
     study_name: Optional[str] = None
     study_code: Optional[str] = None
     study_value: Optional[Any] = None
-    laboratories: List[LaboratoryResponse] = []
+    laboratories: List["SlimLaboratoryResponse"] = []
+
+
+class SlimLaboratoryResponse(BaseModel):
+    """Lab sin order_detail (el estudio es el padre en laboratories_by_study)."""
+    l_id: int
+    l_order_detail_id: Optional[int] = None
+    l_test_id: Optional[int] = None
+    l_result: Optional[str] = None
+    l_result_num: Optional[float] = None
+    l_result_comp: Optional[str] = None
+    l_result_graphic: Optional[str] = None
+    l_nota_validation: Optional[str] = None
+    l_state: Optional[str] = None
+    l_date_transmited: Optional[datetime] = None
+    l_date_validatie: Optional[datetime] = None
+    l_user_validation_id: Optional[int] = None
+    a_analyzer_result_id: Optional[int] = None
+    l_created_at: datetime
+    l_updated_at: datetime
+    test: Optional[TestsLabResponse] = None
+    user_validation: Optional[UserValidationResponse] = None
+
+    @field_validator('l_state', mode='before')
+    @classmethod
+    def convert_l_state(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return LABORATORY_STATES.get(v, str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
+
+StudyWithLabsResponse.model_rebuild()
+
+
+class OrderSummaryForFullResponse(OrderResponse):
+    """OrderWithRelations sin 'details' para evitar duplicados en /full."""
+    service: Optional[ServiceResponse] = None
+    diagnosis: Optional[DiagnosisResponse] = None
+    enterprise: Optional[EnterpriseResponse] = None
+    schooling: Optional[SchoolingResponse] = None
+    tariff: Optional[TariffBasicResponse] = None
 
 
 class InvoiceSummaryResponse(BaseModel):
@@ -282,10 +327,20 @@ class InvoiceSummaryResponse(BaseModel):
     inv_sub_type_name: Optional[str] = None
 
 
+class HeadquarterBasicResponse(BaseModel):
+    id: int
+    name: Optional[str] = None
+    address: Optional[str] = None
+    prefix: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class OrderFullDetailsResponse(BaseModel):
-    order: OrderWithRelationsResponse
+    order: OrderSummaryForFullResponse
     patient: PatientResponse
-    laboratories: List[LaboratoryResponse]
+    headquarter: Optional[HeadquarterBasicResponse] = None
     laboratories_by_study: List[StudyWithLabsResponse] = []
     tests: List[TestsLabResponse]
     samples: List[SamplesOrderResponse]

@@ -308,6 +308,11 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     tests, _ = await OrderRepository.get_tests_paginated(db, order.o_id, 0, 10000)
     samples = await OrderRepository.get_samples_by_order_id(db, order.o_id)
 
+    # Cargar sede
+    headquarter = None
+    if order.o_headquarter_id:
+        headquarter = await db.get(Headquarter, order.o_headquarter_id)
+
     # Obtener los od_id de esta orden para buscar los valores en InvoicesDetail
     od_ids = [lab.order_detail.od_id for lab in labs if lab.order_detail]
     study_invoice_value: dict[int, object] = {}
@@ -345,10 +350,11 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
                     "inv_sub_type_name": INVOICE_SUB_TYPES.get(inv.inv_sub_type_invoice) if inv.inv_sub_type_invoice is not None else None,
                 }
 
-    # Agrupar laboratories por estudio
+    # Agrupar laboratories por estudio y obtener study_ids únicos
     from collections import defaultdict
     study_map = {}
     study_order = []
+    unique_study_ids_in_order: list[int] = []
     for lab in labs:
         study = lab.order_detail.study if lab.order_detail else None
         study_id = study.id if study else 0
@@ -361,12 +367,27 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
                 "laboratories": [],
             }
             study_order.append(study_id)
+            if study_id and study_invoice_value.get(study_id) is None:
+                unique_study_ids_in_order.append(study_id)
         study_map[study_id]["laboratories"].append(lab)
+
+    # Fallback: si algún estudio no tiene valor desde InvoicesDetail, buscarlo en TariffsDetail
+    tariff_id = order.o_tariff_id if hasattr(order, "o_tariff_id") else None
+    if tariff_id and unique_study_ids_in_order:
+        td_result = await db.execute(
+            select(TariffDetail).filter(
+                TariffDetail.td_tariff_id == tariff_id,
+                TariffDetail.td_studie_id.in_(unique_study_ids_in_order),
+            )
+        )
+        for td in td_result.scalars().all():
+            if td.td_studie_id in study_map and study_map[td.td_studie_id]["study_value"] is None:
+                study_map[td.td_studie_id]["study_value"] = td.td_value
 
     return {
         "order": order,
         "patient": order.patient,
-        "laboratories": labs,
+        "headquarter": headquarter,
         "laboratories_by_study": [study_map[sid] for sid in study_order],
         "tests": tests,
         "samples": samples,
