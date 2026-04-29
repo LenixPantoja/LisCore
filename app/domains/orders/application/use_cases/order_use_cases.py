@@ -12,7 +12,20 @@ from app.domains.samples.domain.models import SamplesOrder
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.testslabs.domain.models import TestsLab
+from app.domains.billing.domain.models import Invoice, InvoiceDetail
+from app.domains.billing.domain.constants import (
+    INVOICE_STATE_CREADA,
+    INVOICE_TYPE_FACTURA_VENTA,
+    INVOICE_SUB_TYPE_FACTURA_CONTADO,
+    INVOICE_SUB_TYPE_FACTURA_CREDITO,
+    INVOICE_STATES,
+    INVOICE_TYPES,
+    INVOICE_SUB_TYPES,
+)
+from app.domains.Headquarters.domain.models import Headquarter
+from app.domains.contractstariffs.domain.models import TariffDetail, ContractTariff, Contract
 from utils.Consecutives.consecutive_orders import generate_order_number
+from utils.Consecutives.consecutive_invoices import generate_invoice_number
 from utils.timezone import get_bogota_now
 
 async def create_order(db: AsyncSession, data: dict):
@@ -34,6 +47,8 @@ async def create_order(db: AsyncSession, data: dict):
         await db.flush() # Obtenemos o_id sin confirmar la transacción todavía        
         # Diccionario para evitar duplicar tipos de muestra en una misma orden
         unique_sample_types = set()
+        # Mapa study_id → primer od_id creado (para InvoiceDetail)
+        study_od_map: dict[int, int] = {}
 
         for study_id in studies_ids:
             # 2. Consultar StudiesTestDetail para obtener las pruebas y tipos de muestra
@@ -61,6 +76,10 @@ async def create_order(db: AsyncSession, data: dict):
                 db.add(order_detail)
                 await db.flush()  # Para obtener od_id
 
+                # Registrar el primer od_id de este estudio para la factura
+                if study_id not in study_od_map:
+                    study_od_map[study_id] = order_detail.od_id
+
                 blank_result = Laboratory(
                     l_order_detail_id=order_detail.od_id,
                     l_test_id=link.tests_id,
@@ -82,6 +101,103 @@ async def create_order(db: AsyncSession, data: dict):
                 so_number_studies=len(studies_ids) # Opcional: conteo de estudios vinculados
             )
             db.add(sample_order)
+
+        # 7. Crear Factura automáticamente
+        prefix = "INV"
+        headquarter_id = data.get("o_headquarter_id")
+        if headquarter_id:
+            hq = await db.get(Headquarter, headquarter_id)
+            if hq and hq.prefix:
+                prefix = hq.prefix.strip()
+
+        inv_number = await generate_invoice_number(db, prefix)
+
+        unique_study_ids = list(dict.fromkeys(studies_ids))  # elimina duplicados preservando orden
+
+        # Determinar el contrato activo para esta tarifa + empresa
+        tariff_id = data.get("o_tariff_id")
+        enterprise_id = data.get("o_enterprise_id")
+        contract_tariff_id: int | None = None
+        inv_sub_type: int | None = None
+
+        if tariff_id:
+            ct_stmt = (
+                select(ContractTariff)
+                .join(Contract, ContractTariff.ct_contract_id == Contract.co_id)
+                .where(
+                    ContractTariff.ct_tariff_id == tariff_id,
+                    Contract.co_enterprise_id == enterprise_id,
+                    Contract.co_active == True,
+                )
+                .limit(1)
+            )
+            ct_result = await db.execute(ct_stmt)
+            ct = ct_result.scalars().first()
+
+            if ct:
+                contract_tariff_id = ct.ct_id
+                contract = await db.get(Contract, ct.ct_contract_id)
+                if contract and contract.co_billing_type is not None:
+                    # co_billing_type=1 → crédito, co_billing_type=2 → contado
+                    if contract.co_billing_type == 1:
+                        inv_sub_type = INVOICE_SUB_TYPE_FACTURA_CREDITO
+                    elif contract.co_billing_type == 2:
+                        inv_sub_type = INVOICE_SUB_TYPE_FACTURA_CONTADO
+
+        # Calcular subtotal desde tarifas
+        invoice_subtotal = None
+        inv_details_data: list[dict] = []
+
+        for study_id in unique_study_ids:
+            td_value = None
+            if tariff_id:
+                td_result = await db.execute(
+                    select(TariffDetail).filter(
+                        TariffDetail.td_tariff_id == tariff_id,
+                        TariffDetail.td_studie_id == study_id,
+                    )
+                )
+                td = td_result.scalars().first()
+                if td:
+                    td_value = td.td_value
+
+            if td_value is not None:
+                invoice_subtotal = (invoice_subtotal or 0) + td_value
+
+            inv_details_data.append({
+                "study_id": study_id,
+                "od_id": study_od_map.get(study_id),
+                "value": td_value,
+            })
+
+        invoice = Invoice(
+            inv_number=inv_number,
+            inv_date=data.get("o_date"),
+            inv_enterprise_id=enterprise_id,
+            inv_patient_id=data.get("o_his_id"),
+            inv_contract_id=contract_tariff_id,
+            inv_created_by=data.get("o_AppUser_id"),
+            tariff_id=tariff_id,
+            inv_subtotal=invoice_subtotal,
+            inv_total=invoice_subtotal,
+            inv_state=INVOICE_STATE_CREADA,
+            inv_type=INVOICE_TYPE_FACTURA_VENTA,
+            inv_sub_type_invoice=inv_sub_type,
+        )
+        db.add(invoice)
+        await db.flush()
+
+        for det in inv_details_data:
+            inv_detail = InvoiceDetail(
+                invd_invoice_id=invoice.inv_id,
+                invd_order_detail_id=det["od_id"],
+                invd_study_id=det["study_id"],
+                invd_value=det["value"],
+                invd_discount=None,
+                invd_total=det["value"],
+                invd_created_by=data.get("o_AppUser_id"),
+            )
+            db.add(inv_detail)
 
         await db.commit()
         await db.refresh(order)
@@ -192,6 +308,43 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     tests, _ = await OrderRepository.get_tests_paginated(db, order.o_id, 0, 10000)
     samples = await OrderRepository.get_samples_by_order_id(db, order.o_id)
 
+    # Obtener los od_id de esta orden para buscar los valores en InvoicesDetail
+    od_ids = [lab.order_detail.od_id for lab in labs if lab.order_detail]
+    study_invoice_value: dict[int, object] = {}
+    invoice_summary: dict = {}
+
+    if od_ids:
+        inv_detail_result = await db.execute(
+            select(InvoiceDetail).where(InvoiceDetail.invd_order_detail_id.in_(od_ids))
+        )
+        inv_details = inv_detail_result.scalars().all()
+
+        for inv_det in inv_details:
+            if inv_det.invd_study_id and inv_det.invd_study_id not in study_invoice_value:
+                study_invoice_value[inv_det.invd_study_id] = inv_det.invd_value
+
+        # Obtener el encabezado de la factura para el resumen
+        invoice_ids = list({d.invd_invoice_id for d in inv_details if d.invd_invoice_id})
+        if invoice_ids:
+            inv_result = await db.execute(
+                select(Invoice).where(Invoice.inv_id.in_(invoice_ids)).limit(1)
+            )
+            inv = inv_result.scalars().first()
+            if inv:
+                invoice_summary = {
+                    "inv_id": inv.inv_id,
+                    "inv_number": inv.inv_number,
+                    "inv_subtotal": inv.inv_subtotal,
+                    "inv_tax": inv.inv_tax,
+                    "inv_total": inv.inv_total,
+                    "inv_state": inv.inv_state,
+                    "inv_state_name": INVOICE_STATES.get(inv.inv_state) if inv.inv_state is not None else None,
+                    "inv_type": inv.inv_type,
+                    "inv_type_name": INVOICE_TYPES.get(inv.inv_type) if inv.inv_type is not None else None,
+                    "inv_sub_type_invoice": inv.inv_sub_type_invoice,
+                    "inv_sub_type_name": INVOICE_SUB_TYPES.get(inv.inv_sub_type_invoice) if inv.inv_sub_type_invoice is not None else None,
+                }
+
     # Agrupar laboratories por estudio
     from collections import defaultdict
     study_map = {}
@@ -204,6 +357,7 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
                 "study_id": study_id,
                 "study_name": study.name if study else None,
                 "study_code": study.code if study else None,
+                "study_value": study_invoice_value.get(study_id),
                 "laboratories": [],
             }
             study_order.append(study_id)
@@ -215,7 +369,8 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
         "laboratories": labs,
         "laboratories_by_study": [study_map[sid] for sid in study_order],
         "tests": tests,
-        "samples": samples
+        "samples": samples,
+        "invoice": invoice_summary if invoice_summary else None,
     }
 
 

@@ -15,6 +15,7 @@ from app.domains.locations.api.router import router as locations_router
 from app.domains.cities.api.router import router as cities_router
 from app.domains.laboratories.api.router import router as laboratories_router
 from app.domains.reports.api.router import router as reports_router
+from app.domains.billing.api.router import router as billing_router
     
 api_router = APIRouter()
 
@@ -34,3 +35,4 @@ api_router.include_router(locations_router, prefix="/locations", tags=["Location
 api_router.include_router(cities_router, prefix="/cities", tags=["Cities"])
 api_router.include_router(laboratories_router, prefix="/laboratories", tags=["Laboratories"])
 api_router.include_router(reports_router, prefix="/reports", tags=["Reports"])
+api_router.include_router(billing_router, prefix="/billing", tags=["Billing"])

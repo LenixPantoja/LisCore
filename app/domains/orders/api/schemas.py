@@ -264,7 +264,22 @@ class StudyWithLabsResponse(BaseModel):
     study_id: int
     study_name: Optional[str] = None
     study_code: Optional[str] = None
+    study_value: Optional[Any] = None
     laboratories: List[LaboratoryResponse] = []
+
+
+class InvoiceSummaryResponse(BaseModel):
+    inv_id: int
+    inv_number: Optional[str] = None
+    inv_subtotal: Optional[Any] = None
+    inv_tax: Optional[Any] = None
+    inv_total: Optional[Any] = None
+    inv_state: Optional[int] = None
+    inv_state_name: Optional[str] = None
+    inv_type: Optional[int] = None
+    inv_type_name: Optional[str] = None
+    inv_sub_type_invoice: Optional[int] = None
+    inv_sub_type_name: Optional[str] = None
 
 
 class OrderFullDetailsResponse(BaseModel):
@@ -274,6 +289,7 @@ class OrderFullDetailsResponse(BaseModel):
     laboratories_by_study: List[StudyWithLabsResponse] = []
     tests: List[TestsLabResponse]
     samples: List[SamplesOrderResponse]
+    invoice: Optional[InvoiceSummaryResponse] = None
 
 
 class OrderEditRequest(BaseModel):
