@@ -56,7 +56,18 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
     )
     laboratories = labs_result.scalars().all()
 
-    # 3. Filtrar solo estudios completamente validados
+    # 3. Bloquear si algún estudio contiene al menos una prueba confidencial
+    has_confidential = any(
+        lab.test and lab.test.is_confidential
+        for lab in laboratories
+    )
+    if has_confidential:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="La orden contiene pruebas confidenciales. No es posible generar el reporte en PDF.",
+        )
+
+    # 4. Filtrar solo estudios completamente validados
     labs_by_study: dict[int, list] = defaultdict(list)
     for lab in laboratories:
         study_key = lab.l_order_detail_id
@@ -69,11 +80,11 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         for lab in study_labs
     ]
 
-    # 4. Generar PDF
+    # 5. Generar PDF
     pdf_bytes = build_laboratory_pdf(order, patient, validated_labs)
     b64 = pdf_to_base64(pdf_bytes)
 
-    # 5. Nombre de archivo sugerido
+    # 6. Nombre de archivo sugerido
     patient_doc = patient.pt_Number_document if patient else "paciente"
     filename = f"resultado_{order.o_number}_{patient_doc}.pdf"
 
