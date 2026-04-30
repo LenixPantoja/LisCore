@@ -45,7 +45,7 @@ class InboundOrderDetail(Base):
     __tablename__ = "InboundOrdersDetails"
 
     iod_id = Column(Integer, primary_key=True, index=True)
-    iod_inboundOrder_id = Column(Integer, ForeignKey("InboundOrders.io_id"), unique=True, nullable=True)
+    iod_inboundOrder_id = Column(Integer, ForeignKey("InboundOrders.io_id"), nullable=True)
     iod_study_id = Column(Integer, ForeignKey("StudiesLab.id"), nullable=True)
     iod_state = Column(Integer, nullable=True)
     iod_observation = Column(Text, nullable=True)

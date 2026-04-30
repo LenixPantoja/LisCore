@@ -1,11 +1,37 @@
 from typing import Optional
 from datetime import datetime
 
-from sqlalchemy import select, func
+from fastapi import HTTPException, status
+from sqlalchemy import select, func, exists, or_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.domains.requests.domain.models import InboundOrder, InboundOrderDetail
+from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
+from app.domains.testslabs.domain.models import TestsLab
+from app.domains.samples.domain.models import SampleType
+from app.domains.patients.domain.models import Patient
+
+
+def _base_query_with_relations():
+    return (
+        select(InboundOrder)
+        .options(
+            selectinload(InboundOrder.patient).selectinload(Patient.sex_type),
+            selectinload(InboundOrder.tariff),
+            selectinload(InboundOrder.service),
+            selectinload(InboundOrder.diagnosis),
+            selectinload(InboundOrder.headquarter),
+            selectinload(InboundOrder.enterprise),
+            selectinload(InboundOrder.scholarity),
+            selectinload(InboundOrder.details)
+            .selectinload(InboundOrderDetail.study)
+            .selectinload(StudiesLab.test_details)
+            .selectinload(StudiesTestDetail.test)
+            .selectinload(TestsLab.sample_type),
+        )
+    )
 
 
 class InboundOrderRepository:
@@ -15,7 +41,14 @@ class InboundOrderRepository:
         now = datetime.utcnow()
         order = InboundOrder(**data, io_created_at=now, io_updated_at=now)
         db.add(order)
-        await db.flush()
+        try:
+            await db.flush()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Error de integridad al crear la solicitud: {exc.orig}",
+            )
 
         for detail_data in details:
             detail = InboundOrderDetail(
@@ -26,16 +59,21 @@ class InboundOrderRepository:
             )
             db.add(detail)
 
-        await db.commit()
-        await db.refresh(order)
+        try:
+            await db.commit()
+        except IntegrityError as exc:
+            await db.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Error de integridad al guardar los detalles: {exc.orig}",
+            )
+
         return await InboundOrderRepository.get_by_id(db, order.io_id)
 
     @staticmethod
     async def get_by_id(db: AsyncSession, io_id: int) -> Optional[InboundOrder]:
         result = await db.execute(
-            select(InboundOrder)
-            .filter(InboundOrder.io_id == io_id)
-            .options(selectinload(InboundOrder.details))
+            _base_query_with_relations().filter(InboundOrder.io_id == io_id)
         )
         return result.scalars().first()
 
@@ -44,18 +82,52 @@ class InboundOrderRepository:
         db: AsyncSession,
         skip: int = 0,
         limit: int = 20,
+        detail_states: Optional[list[int]] = None,
+        enterprise_id: Optional[int] = None,
+        date_from: Optional[datetime] = None,
+        date_to: Optional[datetime] = None,
+        search: Optional[str] = None,
     ) -> tuple[int, list[InboundOrder]]:
-        total_result = await db.execute(select(func.count()).select_from(InboundOrder))
+        base = _base_query_with_relations().join(
+            Patient, InboundOrder.io_patient_id == Patient.pt_id, isouter=True
+        )
+
+        if enterprise_id is not None:
+            base = base.filter(InboundOrder.io_enterprise_id == enterprise_id)
+
+        if date_from is not None:
+            base = base.filter(InboundOrder.io_date_request >= date_from)
+
+        if date_to is not None:
+            base = base.filter(InboundOrder.io_date_request <= date_to)
+
+        if search:
+            pattern = f"%{search}%"
+            base = base.filter(
+                or_(
+                    Patient.pt_Number_document.ilike(pattern),
+                    InboundOrder.io_income.ilike(pattern),
+                )
+            )
+
+        if detail_states:
+            base = base.filter(
+                exists(
+                    select(InboundOrderDetail.iod_id).where(
+                        InboundOrderDetail.iod_inboundOrder_id == InboundOrder.io_id,
+                        InboundOrderDetail.iod_state.in_(detail_states),
+                    )
+                )
+            )
+
+        count_query = select(func.count()).select_from(base.subquery())
+        total_result = await db.execute(count_query)
         total = total_result.scalar_one()
 
         result = await db.execute(
-            select(InboundOrder)
-            .options(selectinload(InboundOrder.details))
-            .order_by(InboundOrder.io_id.desc())
-            .offset(skip)
-            .limit(limit)
+            base.order_by(InboundOrder.io_id.desc()).offset(skip).limit(limit)
         )
-        items = result.scalars().all()
+        items = result.scalars().unique().all()
         return total, list(items)
 
     @staticmethod
@@ -69,8 +141,7 @@ class InboundOrderRepository:
             setattr(order, key, value)
 
         await db.commit()
-        await db.refresh(order)
-        return order
+        return await InboundOrderRepository.get_by_id(db, io_id)
 
     @staticmethod
     async def delete(db: AsyncSession, io_id: int) -> bool:
@@ -87,7 +158,9 @@ class InboundOrderDetailRepository:
     @staticmethod
     async def get_by_id(db: AsyncSession, iod_id: int) -> Optional[InboundOrderDetail]:
         result = await db.execute(
-            select(InboundOrderDetail).filter(InboundOrderDetail.iod_id == iod_id)
+            select(InboundOrderDetail)
+            .filter(InboundOrderDetail.iod_id == iod_id)
+            .options(selectinload(InboundOrderDetail.study))
         )
         return result.scalars().first()
 
@@ -102,5 +175,4 @@ class InboundOrderDetailRepository:
             setattr(detail, key, value)
 
         await db.commit()
-        await db.refresh(detail)
-        return detail
+        return await InboundOrderDetailRepository.get_by_id(db, iod_id)

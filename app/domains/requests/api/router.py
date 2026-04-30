@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, status
+from typing import List, Optional
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -28,8 +31,30 @@ async def create(payload: InboundOrderCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/", response_model=InboundOrderPaginatedResponse)
-async def list_orders(page: int = 1, page_size: int = 20, db: AsyncSession = Depends(get_db)):
-    return await list_inbound_orders(db, page=page, page_size=page_size)
+async def list_orders(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    states: Optional[List[int]] = Query(
+        None,
+        description="Filtrar por estado(s) del detalle. Valores: 0=Pendiente, 1=Ejecutada, "
+                    "2=Con Resultados, 3=Enviada, 4=Recibida, 5=Con Error",
+    ),
+    enterprise_id: Optional[int] = Query(None, description="Filtrar por ID de empresa"),
+    date_from: Optional[datetime] = Query(None, description="Fecha/hora inicio (io_date_request)"),
+    date_to: Optional[datetime] = Query(None, description="Fecha/hora fin (io_date_request)"),
+    search: Optional[str] = Query(None, description="Buscar por documento de paciente o número de ingreso"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await list_inbound_orders(
+        db,
+        page=page,
+        page_size=page_size,
+        detail_states=states,
+        enterprise_id=enterprise_id,
+        date_from=date_from,
+        date_to=date_to,
+        search=search,
+    )
 
 
 @router.get("/{io_id}", response_model=InboundOrderResponse)

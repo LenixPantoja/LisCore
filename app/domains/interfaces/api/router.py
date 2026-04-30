@@ -34,6 +34,10 @@ async def create_interface(data: InterfacesRestCreate, db: AsyncSession = Depend
 async def list_interfaces(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = Query(
+        None,
+        description="Buscar por nombre de empresa o NIT",
+    ),
     state: Optional[bool] = None,
     enterprise_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db)
@@ -43,10 +47,11 @@ async def list_interfaces(
 
     - **skip**: Number of records to skip
     - **limit**: Maximum number of records (1-500)
+    - **search**: Filter by enterprise name or NIT
     - **state**: Filter by active status
     - **enterprise_id**: Filter by enterprise ID
     """
-    return await use_cases.list_paginated(db, skip, limit, state=state, enterprise_id=enterprise_id)
+    return await use_cases.list_paginated(db, skip, limit, search=search, state=state, enterprise_id=enterprise_id)
 
 @router.get("/interfaces-rest/{interface_id}", response_model=InterfacesRestResponse)
 async def get_interface(interface_id: int, db: AsyncSession = Depends(get_db)):

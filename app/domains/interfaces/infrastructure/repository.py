@@ -1,9 +1,10 @@
 from typing import Tuple, Sequence, Optional, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from datetime import datetime
 from app.domains.interfaces.domain.models import InterfacesRest, InterfacesRestDetail
+from app.domains.enterprises.domain.models import Enterprise
 
 
 class InterfacesRestRepository:
@@ -44,15 +45,27 @@ class InterfacesRestRepository:
         enterprise_id: Optional[int] = None
     ) -> Tuple[Sequence[InterfacesRest], int]:
         """Get interfaces REST with pagination"""
-        query = select(InterfacesRest).options(
-            selectinload(InterfacesRest.enterprise),
-            selectinload(InterfacesRest.tariff)
+        query = (
+            select(InterfacesRest)
+            .join(Enterprise, InterfacesRest.it_enterprise_id == Enterprise.en_id, isouter=True)
+            .options(
+                selectinload(InterfacesRest.enterprise),
+                selectinload(InterfacesRest.tariff),
+            )
         )
 
         if state is not None:
             query = query.filter(InterfacesRest.it_state == state)
         if enterprise_id is not None:
             query = query.filter(InterfacesRest.it_enterprise_id == enterprise_id)
+        if search:
+            pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    Enterprise.en_name.ilike(pattern),
+                    Enterprise.en_nit.ilike(pattern),
+                )
+            )
 
         count_stmt = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_stmt)).scalar() or 0
@@ -60,7 +73,7 @@ class InterfacesRestRepository:
         result = await db.execute(
             query.offset(skip).limit(limit).order_by(InterfacesRest.it_id.asc())
         )
-        return result.scalars().all(), total
+        return result.scalars().unique().all(), total
 
     @staticmethod
     async def get_by_id(db: AsyncSession, interface_id: int) -> Optional[InterfacesRest]:

@@ -21,6 +21,7 @@ class InterfacesRestUpdate(BaseModel):
 class EnterpriseSimpleInfo(BaseModel):
     en_id: int
     en_name: Optional[str] = None
+    en_nit: Optional[str] = None
 
     class Config:
         from_attributes = True
