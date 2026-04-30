@@ -42,7 +42,7 @@ async def list_orders(
         description="Filtrar por estado(s) del detalle. Valores: 0=Pendiente, 1=Ejecutada, "
                     "2=Con Resultados, 3=Enviada, 4=Recibida, 5=Con Error",
     ),
-    enterprise_id: Optional[int] = Query(None, description="Filtrar por ID de empresa"),
+    enterprise_id: int = Query(..., description="ID de empresa (requerido)"),
     date_from: Optional[datetime] = Query(None, description="Fecha/hora inicio (io_date_request)"),
     date_to: Optional[datetime] = Query(None, description="Fecha/hora fin (io_date_request)"),
     search: Optional[str] = Query(None, description="Buscar por documento de paciente o número de ingreso"),

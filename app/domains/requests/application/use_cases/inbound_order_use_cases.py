@@ -42,14 +42,11 @@ async def list_inbound_orders(
     page: int = 1,
     page_size: int = 20,
     detail_states: Optional[list[int]] = None,
-    enterprise_id: Optional[int] = None,
+    enterprise_id: int = 0,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
     search: Optional[str] = None,
 ):
-    if enterprise_id is None:
-        return {"total": 0, "page": page, "page_size": page_size, "items": []}
-
     skip = (page - 1) * page_size
     total, items = await InboundOrderRepository.get_paginated(
         db,
@@ -111,12 +108,15 @@ async def create_order_from_inbound(
             detail=f"InboundOrder con ID {payload.inbound_order_id} no encontrado.",
         )
 
-    # 2. Cargar los detalles seleccionados y extraer study_ids
+    # 2. Cargar los detalles seleccionados con su relación de estudio
+    from sqlalchemy.orm import selectinload as _selectinload
     result = await db.execute(
-        select(InboundOrderDetail).where(
+        select(InboundOrderDetail)
+        .where(
             InboundOrderDetail.iod_id.in_(payload.inbound_detail_ids),
             InboundOrderDetail.iod_inboundOrder_id == payload.inbound_order_id,
         )
+        .options(_selectinload(InboundOrderDetail.study))
     )
     selected_details = result.scalars().all()
 
@@ -124,6 +124,21 @@ async def create_order_from_inbound(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No se encontraron detalles válidos para el InboundOrder especificado.",
+        )
+
+    # Validar que ningún detalle esté ya en estado Ejecutada
+    already_executed = [
+        d for d in selected_details
+        if d.iod_state == INBOUND_ORDER_DETAIL_STATE_EJECUTADA
+    ]
+    if already_executed:
+        executed_info = [
+            f"{d.study.name} ({d.study.code})" if d.study else f"Detalle {d.iod_id}"
+            for d in already_executed
+        ]
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Los siguientes estudios ya fueron ejecutados y no pueden registrarse nuevamente: {'; '.join(executed_info)}",
         )
 
     study_ids = [d.iod_study_id for d in selected_details if d.iod_study_id]
@@ -135,9 +150,17 @@ async def create_order_from_inbound(
         )
 
     # 3. Construir los datos de la orden mapeando campos del InboundOrder
+    # El tariff_id del payload tiene prioridad; si no se envía, se usa el del InboundOrder
+    effective_tariff_id = payload.tariff_id or inbound.io_tariff_id
+    if not effective_tariff_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debe indicar una tarifa (tariff_id) o asegurarse de que el InboundOrder tenga una tarifa asignada.",
+        )
+
     order_data = {
         "o_his_id": inbound.io_patient_id,
-        "o_tariff_id": inbound.io_tariff_id,
+        "o_tariff_id": effective_tariff_id,
         "o_service_id": inbound.io_service_id,
         "o_diagnoses_id": inbound.io_diagnostic_id,
         "o_priority": inbound.io_priority or 0,

@@ -34,6 +34,26 @@ async def create_order(db: AsyncSession, data: dict):
         raise HTTPException(status_code=400, detail="Debe solicitar al menos un estudio.")
 
     try:
+        # 0. Validar que todos los estudios pertenezcan a la tarifa (si se indicó una)
+        tariff_id_check = data.get("o_tariff_id")
+        if tariff_id_check:
+            tariff_study_ids = await OrderRepository.get_study_ids_for_tariff(db, tariff_id_check)
+            studies_not_in_tariff = [sid for sid in studies_ids if sid not in tariff_study_ids]
+            if studies_not_in_tariff:
+                study_result = await db.execute(
+                    select(StudiesLab).where(StudiesLab.id.in_(studies_not_in_tariff))
+                )
+                missing_studies = study_result.scalars().all()
+                missing_info = [f"{s.name} ({s.code})" for s in missing_studies]
+                found_ids = {s.id for s in missing_studies}
+                for sid in studies_not_in_tariff:
+                    if sid not in found_ids:
+                        missing_info.append("Estudio desconocido")
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Los siguientes estudios no están en la tarifa seleccionada: {'; '.join(missing_info)}",
+                )
+
         # 1. Crear el encabezado de la Orden
         # La fecha se asigna automáticamente si no se envía
         if not data.get("o_date"):

@@ -239,6 +239,7 @@ class InboundOrderPaginatedResponse(BaseModel):
 class CreateOrderFromInboundRequest(BaseModel):
     inbound_order_id: int
     inbound_detail_ids: List[int]
+    tariff_id: Optional[int] = None
     o_headquarter_id: Optional[int] = None
     o_AppUser_id: Optional[int] = None
 
