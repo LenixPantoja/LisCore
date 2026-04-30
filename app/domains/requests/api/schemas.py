@@ -231,3 +231,23 @@ class InboundOrderPaginatedResponse(BaseModel):
     page_size: int
     items: List[InboundOrderResponse]
 
+
+# ─────────────────────────────────────────────
+# Create Order from InboundOrder schemas
+# ─────────────────────────────────────────────
+
+class CreateOrderFromInboundRequest(BaseModel):
+    inbound_order_id: int
+    inbound_detail_ids: List[int]
+    o_headquarter_id: Optional[int] = None
+    o_AppUser_id: Optional[int] = None
+
+
+class CreateOrderFromInboundResponse(BaseModel):
+    o_id: int
+    o_number: str
+    inbound_order_id: int
+    updated_detail_ids: List[int]
+
+    model_config = {"from_attributes": True}
+

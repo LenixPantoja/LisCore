@@ -1,5 +1,6 @@
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.future import select
 from typing import Optional
 from datetime import datetime
 
@@ -8,11 +9,15 @@ from app.domains.requests.api.schemas import (
     InboundOrderUpdate,
     InboundOrderDetailUpdate,
     InboundOrderResponse,
+    CreateOrderFromInboundRequest,
+    CreateOrderFromInboundResponse,
 )
 from app.domains.requests.infrastructure.repository import (
     InboundOrderRepository,
     InboundOrderDetailRepository,
 )
+from app.domains.requests.domain.models import InboundOrderDetail
+from app.domains.requests.domain.constants import INBOUND_ORDER_DETAIL_STATE_EJECUTADA
 
 
 async def create_inbound_order(db: AsyncSession, payload: InboundOrderCreate):
@@ -85,3 +90,81 @@ async def update_inbound_order_detail(db: AsyncSession, iod_id: int, payload: In
         )
     data = payload.model_dump(exclude_none=True)
     return await InboundOrderDetailRepository.update(db, iod_id, data)
+
+
+async def create_order_from_inbound(
+    db: AsyncSession,
+    payload: CreateOrderFromInboundRequest,
+) -> CreateOrderFromInboundResponse:
+    """
+    Crea una Order en el sistema a partir de un InboundOrder y los
+    InboundOrderDetail seleccionados. Después actualiza esos detalles
+    con estado Ejecutada y el id de la orden creada.
+    """
+    from app.domains.orders.application.use_cases.order_use_cases import create_order
+
+    # 1. Cargar el InboundOrder con sus relaciones básicas
+    inbound = await InboundOrderRepository.get_by_id(db, payload.inbound_order_id)
+    if not inbound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"InboundOrder con ID {payload.inbound_order_id} no encontrado.",
+        )
+
+    # 2. Cargar los detalles seleccionados y extraer study_ids
+    result = await db.execute(
+        select(InboundOrderDetail).where(
+            InboundOrderDetail.iod_id.in_(payload.inbound_detail_ids),
+            InboundOrderDetail.iod_inboundOrder_id == payload.inbound_order_id,
+        )
+    )
+    selected_details = result.scalars().all()
+
+    if not selected_details:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se encontraron detalles válidos para el InboundOrder especificado.",
+        )
+
+    study_ids = [d.iod_study_id for d in selected_details if d.iod_study_id]
+
+    if not study_ids:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Los detalles seleccionados no tienen estudios asociados.",
+        )
+
+    # 3. Construir los datos de la orden mapeando campos del InboundOrder
+    order_data = {
+        "o_his_id": inbound.io_patient_id,
+        "o_tariff_id": inbound.io_tariff_id,
+        "o_service_id": inbound.io_service_id,
+        "o_diagnoses_id": inbound.io_diagnostic_id,
+        "o_priority": inbound.io_priority or 0,
+        "o_enterprise_id": inbound.io_enterprise_id,
+        "o_scholarity": inbound.io_scholarity_id,
+        "o_headquarter_id": payload.o_headquarter_id or inbound.io_headquarter_id,
+        "o_AppUser_id": payload.o_AppUser_id,
+        "o_autorizacion": inbound.io_number_request,
+        "studies": study_ids,
+    }
+
+    # 4. Crear la orden (genera número, detalles, laboratorios, muestras, factura)
+    order = await create_order(db, order_data)
+
+    # 5. Actualizar los InboundOrderDetail: estado Ejecutada + guardar o_id
+    updated_ids: list[int] = []
+    for detail in selected_details:
+        detail.iod_state = INBOUND_ORDER_DETAIL_STATE_EJECUTADA
+        detail.iod_order_id = order.o_id
+        db.add(detail)
+        updated_ids.append(detail.iod_id)
+
+    await db.commit()
+
+    return CreateOrderFromInboundResponse(
+        o_id=order.o_id,
+        o_number=order.o_number,
+        inbound_order_id=payload.inbound_order_id,
+        updated_detail_ids=updated_ids,
+    )

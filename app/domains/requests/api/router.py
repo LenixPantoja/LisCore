@@ -12,6 +12,8 @@ from app.domains.requests.api.schemas import (
     InboundOrderPaginatedResponse,
     InboundOrderDetailUpdate,
     InboundOrderDetailResponse,
+    CreateOrderFromInboundRequest,
+    CreateOrderFromInboundResponse,
 )
 from app.domains.requests.application.use_cases.inbound_order_use_cases import (
     create_inbound_order,
@@ -20,6 +22,7 @@ from app.domains.requests.application.use_cases.inbound_order_use_cases import (
     update_inbound_order,
     delete_inbound_order,
     update_inbound_order_detail,
+    create_order_from_inbound,
 )
 
 router = APIRouter()
@@ -77,3 +80,21 @@ async def update_detail(
     iod_id: int, payload: InboundOrderDetailUpdate, db: AsyncSession = Depends(get_db)
 ):
     return await update_inbound_order_detail(db, iod_id, payload)
+
+
+@router.post(
+    "/create-order",
+    response_model=CreateOrderFromInboundResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Crear una Order desde un InboundOrder",
+    description=(
+        "Recibe el ID de un InboundOrder y una lista de IDs de InboundOrderDetail. "
+        "Crea una Order con los estudios de los detalles seleccionados, actualiza "
+        "dichos detalles a estado Ejecutada (1) y guarda el ID de la orden creada."
+    ),
+)
+async def create_order_from_inbound_endpoint(
+    payload: CreateOrderFromInboundRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await create_order_from_inbound(db, payload)
