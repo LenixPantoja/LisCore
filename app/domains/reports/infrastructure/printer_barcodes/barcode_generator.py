@@ -1,0 +1,166 @@
+"""
+PDF generator for barcode tube stickers.
+
+Reference layout (landscape 100 mm × 40 mm):
+
+  ┌──────────┬─────────────────────────────────────────────┬────────────┐
+  │          │  LENIX ALDAIR PANTOJA  VELASQUEZ (bold)     │            │
+  │  QUIMICA │  IDENTIFICACION: 1007736480                 │ 03030503   │
+  │ (vertical│  EMPRESA: CLINIZAD               EDAD:25 A  │ -22        │
+  │  bottom→ │  ████████████████████████████████████████   │ (vertical) │
+  │   top)   │  -COL-HDL-INDI-LDLD-TRI-VLDL  - SUERO     │            │
+  └──────────┴─────────────────────────────────────────────┴────────────┘
+  │ EMPRESA: CLINIZAD       EDAD: 25 A   │  ← inline
+  │ QUIMICA                              │  ← work group, bold
+  │ ████████████████████████████         │  ← Code128 barcode
+  │ -COL-HDL-INDI-LDLD-TRI-VLDL         │  ← tests abbreviations
+  │                         03030503-22  │  ← right-aligned order-suffix
+  └──────────────────────────────────────┘
+"""
+import base64
+import io
+from typing import List
+
+from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.graphics.barcode import code128
+from reportlab.lib.units import mm
+from reportlab.lib.colors import black
+
+# ── Sticker dimensions ─────────────────────────────────────────────────────
+STICKER_W   = 100 * mm
+STICKER_H   = 30  * mm
+
+LEFT_COL_W  = 8  * mm   # left strip  → work group (vertical)
+RIGHT_COL_W = 10 * mm   # right strip → order-suffix label (vertical)
+H_MARGIN    = 2  * mm   # inner horizontal margin inside content area
+
+CONTENT_X = LEFT_COL_W + H_MARGIN
+CONTENT_R = STICKER_W - RIGHT_COL_W - H_MARGIN
+CONTENT_W = CONTENT_R - CONTENT_X
+
+F_BOLD   = "Helvetica-Bold"
+F_NORMAL = "Helvetica"
+
+
+def _fit(c, text: str, font: str, size: float, max_w: float) -> str:
+    """Truncate text with '…' to fit within max_w points."""
+    if c.stringWidth(text, font, size) <= max_w:
+        return text
+    while text:
+        candidate = text[:-1] + "…"
+        if c.stringWidth(candidate, font, size) <= max_w:
+            return candidate
+        text = text[:-1]
+    return "…"
+
+
+def _vertical(c, x_center: float, y_center: float,
+              text: str, font: str, size: float, max_h: float) -> None:
+    """Draw text rotated 90° (reads bottom→top), centred at (x_center, y_center)."""
+    c.saveState()
+    c.translate(x_center, y_center)
+    c.rotate(90)
+    c.setFont(font, size)
+    fitted = _fit(c, text, font, size, max_h - 3 * mm)
+    c.drawCentredString(0, -size * 0.35, fitted)
+    c.restoreState()
+
+
+def _draw_sticker(c, sticker: dict) -> None:
+    W, H = STICKER_W, STICKER_H
+
+    # ── Vertical separator lines ─────────────────────────────────────────────
+    c.setStrokeColor(black)
+    c.setLineWidth(0.4)
+    c.line(LEFT_COL_W,      0, LEFT_COL_W,      H)
+    c.line(W - RIGHT_COL_W, 0, W - RIGHT_COL_W, H)
+
+    # ── Left strip: Work Group ───────────────────────────────────────────────
+    _vertical(c,
+              x_center=LEFT_COL_W / 2,
+              y_center=H / 2,
+              text=sticker["work_group_name"],
+              font=F_BOLD, size=7, max_h=H)
+
+    # ── Right strip: Label Number ────────────────────────────────────────────
+    _vertical(c,
+              x_center=W - RIGHT_COL_W / 2,
+              y_center=H / 2,
+              text=sticker["label_number"],
+              font=F_BOLD, size=6.5, max_h=H)
+
+    # ── Content area ─────────────────────────────────────────────────────────
+    c.setFillColor(black)
+
+    # Y positions computed from bottom up
+    V_BOT     = 1.5 * mm
+    y_tests   = V_BOT + 0.5 * mm         # tests line baseline
+    bc_h      = 11 * mm
+    y_bc_bot  = y_tests + 1.94 + 1.5 * mm
+    y_bc_top  = y_bc_bot + bc_h
+    y_empresa = y_bc_top + 1.2 * mm
+    y_ident   = y_empresa + 2.5 * mm
+    y_patient = y_ident   + 2.5 * mm
+
+    # Patient name
+    c.setFont(F_BOLD, 8)
+    name = _fit(c, sticker["patient_full_name"], F_BOLD, 8, CONTENT_W)
+    c.drawString(CONTENT_X, y_patient, name)
+
+    # Identification
+    c.setFont(F_NORMAL, 6)
+    c.drawString(CONTENT_X, y_ident,
+                 f"IDENTIFICACION: {sticker['identification']}")
+
+    # Empresa (left) + Edad (right-aligned) — misma línea
+    c.setFont(F_NORMAL, 6)
+    c.drawString(CONTENT_X, y_empresa,
+                 f"EMPRESA: {sticker['enterprise_name']}")
+    c.setFont(F_NORMAL, 6)
+    c.drawRightString(CONTENT_R, y_empresa, f"EDAD: {sticker['age_str']}")
+
+    # Barcode Code128
+    bv = sticker["barcode_value"]
+    try:
+        bc = code128.Code128(
+            bv,
+            barWidth=1.4,
+            barHeight=bc_h,
+            humanReadable=False,
+            quiet=False,
+        )
+        # Anclar desde CONTENT_X, escalar si excede el ancho disponible
+        if bc.width > CONTENT_W:
+            scale = CONTENT_W / bc.width
+            c.saveState()
+            c.translate(CONTENT_X, y_bc_bot)
+            c.scale(scale, 1)
+            bc.drawOn(c, 0, 0)
+            c.restoreState()
+        else:
+            bc_x = CONTENT_X + max(0.0, (CONTENT_W - bc.width) / 2)
+            bc.drawOn(c, bc_x, y_bc_bot)
+    except Exception:
+        c.setFont(F_NORMAL, 6)
+        c.drawCentredString(CONTENT_X + CONTENT_W / 2,
+                            y_bc_bot + bc_h / 2, f"[{bv}]")
+
+    # Tests line
+    c.setFont(F_BOLD, 5.5)
+    tl = _fit(c, sticker["tests_line"], F_BOLD, 5.5, CONTENT_W)
+    c.drawString(CONTENT_X, y_tests, tl)
+
+
+def build_stickers_pdf(stickers: List[dict]) -> bytes:
+    """One sticker per page (100 mm × 40 mm)."""
+    buf = io.BytesIO()
+    c = pdf_canvas.Canvas(buf, pagesize=(STICKER_W, STICKER_H))
+    for sticker in stickers:
+        _draw_sticker(c, sticker)
+        c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def pdf_to_base64(pdf_bytes: bytes) -> str:
+    return base64.b64encode(pdf_bytes).decode("utf-8")
