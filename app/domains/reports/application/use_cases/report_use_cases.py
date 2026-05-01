@@ -15,6 +15,7 @@ from app.domains.reports.infrastructure.pdf_generator import (
     pdf_to_base64,
     _full_name,
 )
+from app.shared.utils.range_evaluator import evaluate_reference_range
 
 
 async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
@@ -80,11 +81,40 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         for lab in study_labs
     ]
 
-    # 5. Generar PDF
+    # 5. Evaluar rangos de referencia y adjuntarlos a cada lab
+    patient_dob = getattr(patient, "pt_date_of_birth", None)
+    patient_sex = getattr(patient, "pt_sex_type", None)
+
+    for lab in validated_labs:
+        result_num = None
+        result_text = None
+        if lab.l_result_num is not None:
+            result_num = float(lab.l_result_num)
+        elif lab.l_result:
+            try:
+                result_num = float(str(lab.l_result).replace(",", "."))
+            except (ValueError, AttributeError):
+                result_text = lab.l_result
+
+        range_type, ref_min, ref_max = (None, None, None)
+        if lab.l_test_id and (result_num is not None or result_text):
+            range_type, ref_min, ref_max = await evaluate_reference_range(
+                db,
+                lab.l_test_id,
+                result_num,
+                patient_dob,
+                patient_sex,
+                result_text=result_text,
+            )
+        lab.__dict__["_ref_type"] = range_type
+        lab.__dict__["_ref_min"] = float(ref_min) if ref_min is not None else None
+        lab.__dict__["_ref_max"] = float(ref_max) if ref_max is not None else None
+
+    # 6. Generar PDF
     pdf_bytes = build_laboratory_pdf(order, patient, validated_labs)
     b64 = pdf_to_base64(pdf_bytes)
 
-    # 6. Nombre de archivo sugerido
+    # 7. Nombre de archivo sugerido
     patient_doc = patient.pt_Number_document if patient else "paciente"
     filename = f"resultado_{order.o_number}_{patient_doc}.pdf"
 

@@ -131,7 +131,7 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
     PAGE_W, PAGE_H = letter
     LEFT = RIGHT = 1.5 * cm
     TOP  = 6 * cm  # Aumentado para dejar espacio a la cabecera que dibujaremos manualmente
-    BOT  = 2.5 * cm
+    BOT  = 3.0 * cm
     COL_W = PAGE_W - LEFT - RIGHT
 
     # Guardamos los datos del paciente en variables globales para usarlos en el canvas
@@ -352,11 +352,11 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
         canvas.saveState()
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(C_GRAY)
-        canvas.drawString(LEFT, 0.6 * cm, f"Generado por: LisCore · Sistema LIS · {generation_date}")
-        canvas.drawRightString(PAGE_W - RIGHT, 0.6 * cm, f"Página {doc.page}")
+        canvas.drawString(LEFT, 0.8 * cm, f"Generado por: LisCore · Sistema LIS · {generation_date}")
+        canvas.drawRightString(PAGE_W - RIGHT, 0.8 * cm, f"Página {doc.page}")
         canvas.setStrokeColor(C_NAVY)
         canvas.setLineWidth(0.5)
-        canvas.line(LEFT, 0.75 * cm, PAGE_W - RIGHT, 0.75 * cm)
+        canvas.line(LEFT, 1.1 * cm, PAGE_W - RIGHT, 1.1 * cm)
         canvas.restoreState()
 
     def _draw_page(canvas, doc):
@@ -423,7 +423,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
     test_name = test.name if test else "—"
     units = test.units if test and test.units else "—"
     result = _format_result(lab)
-    reference = _format_reference(test, is_female) if test else "—"
+    reference = _format_reference(lab, test, is_female)
     state_label, state_class = LAB_STATE_LABELS.get(
         lab.l_state, (str(lab.l_state) if lab.l_state is not None else "—", "pendiente")
     )
@@ -468,10 +468,22 @@ def _format_result(lab: Any) -> str:
     return lab.l_result_comp or "—"
 
 
-def _format_reference(test: Any, is_female: bool) -> str:
+def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
+    # 1. Prioridad: rangos evaluados por el sistema de RangesReferences
+    ref_min = lab.__dict__.get("_ref_min")
+    ref_max = lab.__dict__.get("_ref_max")
+    if ref_min is not None or ref_max is not None:
+        if ref_min is not None and ref_max is not None:
+            return f"{ref_min} – {ref_max}"
+        if ref_min is not None:
+            return f">= {ref_min}"
+        return f"<= {ref_max}"
+
+    # 2. Fallback: campos legacy del TestsLab
+    if not test:
+        return "—"
     lo = test.female_value_min if is_female else test.male_value_min
     hi = test.female_value_max if is_female else test.male_value_max
-
     if lo is not None and hi is not None:
         return f"{lo} – {hi}"
     if lo is not None:
