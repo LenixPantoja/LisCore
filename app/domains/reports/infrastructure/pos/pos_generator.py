@@ -25,7 +25,7 @@ COMPANY_PHONE = "Tel: 3158357923 - 3184510394"
 COMPANY_EMAIL = "liscore@panthosoft.com"
 
 # ─── Layout ───────────────────────────────────────────────────────────────────
-TICKET_WIDTH = 80 * mm
+TICKET_WIDTH = 75 * mm
 TICKET_MARGIN = 3 * mm
 CONTENT_WIDTH = TICKET_WIDTH - 2 * TICKET_MARGIN
 
@@ -34,9 +34,9 @@ PRIORITY_LABELS = {0: "Normal", 1: "Urgente", 2: "Muy Urgente"}
 
 # ─── Colors ───────────────────────────────────────────────────────────────────
 C_BLACK = colors.black
-C_DARK = colors.HexColor("#1d293c")
-C_GRAY = colors.HexColor("#4a5568")
-C_LIGHT_GRAY = colors.HexColor("#f5f5f5")
+C_DARK = colors.black
+C_GRAY = colors.black
+C_LIGHT_GRAY = colors.white
 C_WHITE = colors.white
 
 
@@ -76,98 +76,98 @@ def _styles() -> dict:
         "company_name": ParagraphStyle(
             "company_name",
             fontName="Helvetica-Bold",
-            fontSize=12,
-            leading=14,
+            fontSize=14,
+            leading=16,
             alignment=TA_CENTER,
-            textColor=C_DARK,
+            textColor=C_BLACK,
         ),
         "company_sub": ParagraphStyle(
             "company_sub",
-            fontName="Helvetica",
-            fontSize=6.5,
-            leading=8,
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
             alignment=TA_CENTER,
-            textColor=C_GRAY,
+            textColor=C_BLACK,
         ),
         "section_header": ParagraphStyle(
             "section_header",
             fontName="Helvetica-Bold",
-            fontSize=7.5,
-            leading=9,
+            fontSize=9,
+            leading=11,
             alignment=TA_CENTER,
-            textColor=C_DARK,
+            textColor=C_BLACK,
         ),
         "data_label": ParagraphStyle(
             "data_label",
             fontName="Helvetica-Bold",
-            fontSize=6.5,
-            leading=8,
-            textColor=C_DARK,
+            fontSize=8,
+            leading=10,
+            textColor=C_BLACK,
         ),
         "data_value": ParagraphStyle(
             "data_value",
-            fontName="Helvetica",
-            fontSize=6.5,
-            leading=8,
-            textColor=C_GRAY,
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
+            textColor=C_BLACK,
         ),
         "table_header": ParagraphStyle(
             "table_header",
             fontName="Helvetica-Bold",
-            fontSize=6.5,
-            leading=8,
-            textColor=C_WHITE,
+            fontSize=8,
+            leading=10,
+            textColor=C_BLACK,
         ),
         "table_header_right": ParagraphStyle(
             "table_header_right",
             fontName="Helvetica-Bold",
-            fontSize=6.5,
-            leading=8,
-            textColor=C_WHITE,
+            fontSize=8,
+            leading=10,
+            textColor=C_BLACK,
             alignment=TA_RIGHT,
         ),
         "table_center": ParagraphStyle(
             "table_center",
-            fontName="Helvetica",
-            fontSize=6.5,
-            leading=8,
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
             alignment=TA_CENTER,
         ),
         "table_cell": ParagraphStyle(
             "table_cell",
-            fontName="Helvetica",
-            fontSize=6.5,
-            leading=8,
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
         ),
         "table_right": ParagraphStyle(
             "table_right",
-            fontName="Helvetica",
-            fontSize=6.5,
-            leading=8,
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=10,
             alignment=TA_RIGHT,
         ),
         "total_label": ParagraphStyle(
             "total_label",
             fontName="Helvetica-Bold",
-            fontSize=8,
-            leading=10,
-            textColor=C_DARK,
+            fontSize=10,
+            leading=12,
+            textColor=C_BLACK,
         ),
         "total_value": ParagraphStyle(
             "total_value",
             fontName="Helvetica-Bold",
-            fontSize=8,
-            leading=10,
-            textColor=C_DARK,
+            fontSize=10,
+            leading=12,
+            textColor=C_BLACK,
             alignment=TA_RIGHT,
         ),
         "footer": ParagraphStyle(
             "footer",
-            fontName="Helvetica-Oblique",
-            fontSize=6,
-            leading=7.5,
+            fontName="Helvetica-Bold",
+            fontSize=7,
+            leading=9,
             alignment=TA_CENTER,
-            textColor=C_GRAY,
+            textColor=C_BLACK,
         ),
     }
 
@@ -178,8 +178,8 @@ def _hr(dashed: bool = False) -> HRFlowable:
     dash = (2, 2) if dashed else None
     return HRFlowable(
         width="100%",
-        thickness=0.5,
-        color=C_GRAY,
+        thickness=1.0,
+        color=C_BLACK,
         spaceAfter=2,
         spaceBefore=2,
         dash=dash,
@@ -346,14 +346,14 @@ def build_pos_ticket(
     exam_table.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), C_DARK),
-                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_LIGHT_GRAY]),
+                ("BACKGROUND", (0, 0), (-1, 0), C_WHITE),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [C_WHITE, C_WHITE]),
                 ("TOPPADDING", (0, 0), (-1, -1), 2),
                 ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
                 ("LEFTPADDING", (0, 0), (-1, -1), 2),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 2),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LINEBELOW", (0, 0), (-1, 0), 0.5, C_DARK),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.5, C_BLACK),
             ]
         )
     )
