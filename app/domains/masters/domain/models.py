@@ -49,6 +49,7 @@ class DocumentType(Base):
     dt_id = Column(Integer, primary_key=True, index=True)
     dt_code = Column(String(255))
     dt_name = Column(String(255))
+    dt_id_dinamica = Column(Integer, nullable=True)
 
 class SexType(Base):
     __tablename__ = "Sex_Types"

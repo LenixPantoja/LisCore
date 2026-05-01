@@ -17,6 +17,7 @@ from app.domains.laboratories.api.router import router as laboratories_router
 from app.domains.reports.api.router import router as reports_router
 from app.domains.billing.api.router import router as billing_router
 from app.domains.requests.api.router import router as requests_router
+from app.integrations.InterfazDG.router import router as interfaz_dg_router
     
 api_router = APIRouter()
 
@@ -38,3 +39,4 @@ api_router.include_router(laboratories_router, prefix="/laboratories", tags=["La
 api_router.include_router(reports_router, prefix="/reports", tags=["Reports"])
 api_router.include_router(billing_router, prefix="/billing", tags=["Billing"])
 api_router.include_router(requests_router, prefix="/inbound-orders", tags=["Inbound Orders"])
+api_router.include_router(interfaz_dg_router, prefix="/Dinamica/Laboratorio", tags=["InterfazDG"])
