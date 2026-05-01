@@ -607,3 +607,97 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error al editar la orden: {str(e)}"
         )
+
+
+async def get_grafico_evolutivo(
+    db: AsyncSession,
+    patient_id: int,
+    test_id: int,
+):
+    """
+    Devuelve el histórico de resultados de un test para un paciente dado,
+    con evaluación de rango de referencia por cada resultado.
+    """
+    from app.domains.patients.domain.models import Patient
+
+    # 1. Obtener paciente
+    patient = await db.get(Patient, patient_id)
+    if not patient:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado.")
+
+    # 2. Obtener test
+    test = await db.get(TestsLab, test_id)
+    if not test:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prueba de laboratorio no encontrada.")
+
+    # 3. Consultar histórico: Orders → OrdersDetails → Laboratories para este paciente+test
+    stmt = (
+        select(Laboratory, Order)
+        .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+        .join(Order, OrdersDetail.od_order_id == Order.o_id)
+        .where(
+            Order.o_his_id == patient_id,
+            Laboratory.l_test_id == test_id,
+        )
+        .order_by(Order.o_date.asc(), Order.o_id.asc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    patient_dob = getattr(patient, "pt_date_of_birth", None)
+    patient_sex = getattr(patient, "pt_sex_type", None)
+
+    # Nombre del paciente
+    nombre_parts = [
+        getattr(patient, "pt_firts_name", "") or "",
+        getattr(patient, "pt_middle_name", "") or "",
+        getattr(patient, "pt_last_name", "") or "",
+        getattr(patient, "pt_second_last_name", "") or "",
+    ]
+    nombre_paciente = " ".join(p.strip() for p in nombre_parts if p.strip())
+
+    historico = []
+    for lab, order in rows:
+        # Obtener valor numérico o textual
+        result_num = None
+        result_text = None
+        if lab.l_result_num is not None:
+            result_num = float(lab.l_result_num)
+        elif lab.l_result:
+            try:
+                result_num = float(str(lab.l_result).replace(",", "."))
+            except (ValueError, AttributeError):
+                result_text = lab.l_result
+
+        # Evaluar rango de referencia
+        range_type, ref_min, ref_max = await evaluate_reference_range(
+            db,
+            test_id,
+            result_num,
+            patient_dob,
+            patient_sex,
+            result_text=result_text,
+        )
+
+        # Fecha del resultado: preferir l_date_transmited, luego l_created_at
+        from datetime import datetime as dt
+        fecha = lab.l_date_transmited or lab.l_created_at
+        if fecha is None and order.o_date:
+            fecha = dt.combine(order.o_date, dt.min.time())
+
+        historico.append({
+            "fecha": fecha,
+            "valor": result_num if result_num is not None else result_text,
+            "referencia_min": float(ref_min) if ref_min is not None else None,
+            "referencia_max": float(ref_max) if ref_max is not None else None,
+            "estado": range_type,
+            "orden_numero": order.o_number,
+        })
+
+    return {
+        "prueba": test.name,
+        "codigo": test.code,
+        "unidad": test.units,
+        "paciente": nombre_paciente,
+        "historico": historico,
+    }

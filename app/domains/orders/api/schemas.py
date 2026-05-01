@@ -358,6 +358,25 @@ class OrderFullDetailsResponse(BaseModel):
     invoice: Optional[InvoiceSummaryResponse] = None
 
 
+# ── Gráfico evolutivo de resultados ──────────────────────────────────────────
+
+class HistoricoResultadoItem(BaseModel):
+    fecha: Optional[datetime] = None
+    valor: Optional[float] = None
+    referencia_min: Optional[float] = None
+    referencia_max: Optional[float] = None
+    estado: Optional[str] = None
+    orden_numero: Optional[str] = None
+
+
+class GraficoEvolutivoResponse(BaseModel):
+    prueba: Optional[str] = None
+    codigo: Optional[str] = None
+    unidad: Optional[str] = None
+    paciente: Optional[str] = None
+    historico: List[HistoricoResultadoItem] = []
+
+
 class OrderEditRequest(BaseModel):
     """Esquema para editar campos de una orden y/o agregar estudios."""
     o_enterprise_id: Optional[int] = None

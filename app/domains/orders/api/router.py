@@ -6,7 +6,8 @@ from app.core.database import get_db
 from app.domains.orders.api.schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse, 
     NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
-    OrderCreatedResponse, OrderEditRequest, OrderEditResponse
+    OrderCreatedResponse, OrderEditRequest, OrderEditResponse,
+    GraficoEvolutivoResponse,
 )
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
@@ -33,6 +34,19 @@ async def get_next_order_number(db: AsyncSession = Depends(get_db)):
     Informative endpoint only - does not create an order.
     """
     return await use_cases.get_next_order_number(db)
+
+@router.get("/grafico-evolutivo/patient/{patient_id}/test/{test_id}", response_model=GraficoEvolutivoResponse)
+async def get_grafico_evolutivo(
+    patient_id: int,
+    test_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Histórico evolutivo de resultados de un examen para un paciente.
+    Incluye valor, rango de referencia (mín/máx) y estado (NORMAL/ACEPTABLE/CRITICO) por cada resultado.
+    """
+    return await use_cases.get_grafico_evolutivo(db, patient_id, test_id)
+
 
 @router.get("/{id}", response_model=OrderResponse)
 async def get_one(id: int, db: AsyncSession = Depends(get_db)):
