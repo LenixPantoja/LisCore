@@ -32,6 +32,7 @@ class TestsLab(Base):
 
     active = Column(Boolean, default=True)
     test_type = Column(String(255), nullable=True)
+    num_decimal_result = Column(Integer, nullable=True)
     is_confidential = Column(Boolean, default=False)
     created_at = Column(DateTime, default=get_bogota_now)
     updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)

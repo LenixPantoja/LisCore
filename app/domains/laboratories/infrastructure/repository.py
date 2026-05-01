@@ -60,13 +60,18 @@ class LaboratoryRepository:
 
             # Si viene l_result y el test es de tipo Numérico (N), poblar también l_result_num
             if "l_result" in item and item["l_result"] is not None and lab.l_test_id:
-                # Obtener test_type del TestsLab asociado
-                test_stmt = select(TestsLab.test_type).where(TestsLab.id == lab.l_test_id)
+                # Obtener test_type y num_decimal_result del TestsLab asociado
+                test_stmt = select(TestsLab.test_type, TestsLab.num_decimal_result).where(TestsLab.id == lab.l_test_id)
                 test_result = await db.execute(test_stmt)
-                test_type = test_result.scalar_one_or_none()
-                if test_type == "N":
+                test_row = test_result.one_or_none()
+                if test_row and test_row.test_type == "N":
                     try:
-                        item["l_result_num"] = float(str(item["l_result"]).replace(",", "."))
+                        raw_value = float(str(item["l_result"]).replace(",", "."))
+                        decimals = test_row.num_decimal_result
+                        if decimals is not None:
+                            raw_value = round(raw_value, decimals)
+                            item["l_result"] = f"{raw_value:.{decimals}f}"
+                        item["l_result_num"] = raw_value
                     except (ValueError, TypeError):
                         item["l_result_num"] = None
                 

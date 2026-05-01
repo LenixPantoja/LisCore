@@ -26,6 +26,7 @@ class TestsLabBase(BaseModel):
     alternative_range_value: Optional[str] = None
     active: Optional[bool] = True
     test_type: Optional[str] = None
+    num_decimal_result: Optional[int] = None
     is_confidential: Optional[bool] = False
 
 
@@ -53,6 +54,7 @@ class TestsLabUpdate(BaseModel):
     alternative_range_value: Optional[str] = None
     active: Optional[bool] = None
     test_type: Optional[str] = None
+    num_decimal_result: Optional[int] = None
     is_confidential: Optional[bool] = None
 
 

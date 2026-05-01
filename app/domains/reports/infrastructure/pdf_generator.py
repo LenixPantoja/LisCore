@@ -457,7 +457,11 @@ def _full_name(patient: Any) -> str:
 
 
 def _format_result(lab: Any) -> str:
+    test = lab.test
     if lab.l_result_num is not None:
+        decimals = getattr(test, "num_decimal_result", None) if test and getattr(test, "test_type", None) == "N" else None
+        if decimals is not None:
+            return f"{float(lab.l_result_num):.{decimals}f}"
         return str(lab.l_result_num)
     if lab.l_result:
         return lab.l_result

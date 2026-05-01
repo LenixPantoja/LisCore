@@ -657,15 +657,20 @@ async def get_grafico_evolutivo(
     nombre_paciente = " ".join(p.strip() for p in nombre_parts if p.strip())
 
     historico = []
+    decimals = test.num_decimal_result
     for lab, order in rows:
         # Obtener valor numérico o textual
         result_num = None
         result_text = None
         if lab.l_result_num is not None:
             result_num = float(lab.l_result_num)
+            if decimals is not None:
+                result_num = round(result_num, decimals)
         elif lab.l_result:
             try:
                 result_num = float(str(lab.l_result).replace(",", "."))
+                if decimals is not None:
+                    result_num = round(result_num, decimals)
             except (ValueError, AttributeError):
                 result_text = lab.l_result
 
