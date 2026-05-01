@@ -5,6 +5,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
+from app.shared.utils.range_evaluator import evaluate_reference_range
+
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_DETAIL_STATE_INGRESADO
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS
@@ -300,15 +302,51 @@ async def get_order_details_paginated_by_number(
     
     # 3. Consultar pruebas (TestsLab) paginadas
     tests, total_tests = await OrderRepository.get_tests_paginated(db, order.o_id, skip_tests, limit_tests)
-    
+
+    # 4. Enriquecer laboratorios con rangos de referencia
+    patient = order.patient
+    patient_dob = getattr(patient, "pt_date_of_birth", None) if patient else None
+    patient_sex = getattr(patient, "pt_sex_type", None) if patient else None
+
+    enriched_labs = []
+    for lab in labs:
+        range_type, ref_min, ref_max = (None, None, None)
+        # Obtener valor numérico y textual para evaluación
+        result_num = None
+        result_text = None
+        if lab.l_result_num is not None:
+            result_num = float(lab.l_result_num)
+        elif lab.l_result:
+            # Intentar parsear como número (fallback por si l_result_num no está poblado)
+            try:
+                result_num = float(str(lab.l_result).replace(",", "."))
+            except (ValueError, AttributeError):
+                # Es texto puro
+                result_text = lab.l_result
+
+        if lab.l_test_id and (result_num is not None or result_text):
+            range_type, ref_min, ref_max = await evaluate_reference_range(
+                db,
+                lab.l_test_id,
+                result_num,
+                patient_dob,
+                patient_sex,
+                result_text=result_text,
+            )
+        # Attach campos extra como atributos transitorios para que Pydantic los serialice
+        lab.__dict__["range_type"] = range_type
+        lab.__dict__["value_range_reference_min"] = float(ref_min) if ref_min is not None else None
+        lab.__dict__["value_range_reference_max"] = float(ref_max) if ref_max is not None else None
+        enriched_labs.append(lab)
+
     return {
         "order": order,
-        "patient": order.patient,
+        "patient": patient,
         "laboratories": {
             "total": total_labs,
             "skip": skip_labs,
             "limit": limit_labs,
-            "items": labs
+            "items": enriched_labs
         },
         "tests": {
             "total": total_tests,

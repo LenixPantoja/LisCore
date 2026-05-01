@@ -181,7 +181,12 @@ class LaboratoryResponse(BaseModel):
     a_analyzer_result_id: Optional[int] = None
     l_created_at: datetime
     l_updated_at: datetime
-    
+
+    # Campos de rango de referencia (calculados al consultar, no almacenados en BD)
+    range_type: Optional[str] = None
+    value_range_reference_min: Optional[float] = None
+    value_range_reference_max: Optional[float] = None
+
     order_detail: Optional[BasicOrdersDetailResponse] = None
     test: Optional[TestsLabResponse] = None
     user_validation: Optional[UserValidationResponse] = None
@@ -285,6 +290,12 @@ class SlimLaboratoryResponse(BaseModel):
     a_analyzer_result_id: Optional[int] = None
     l_created_at: datetime
     l_updated_at: datetime
+
+    # Campos de rango de referencia (calculados al consultar, no almacenados en BD)
+    range_type: Optional[str] = None
+    value_range_reference_min: Optional[float] = None
+    value_range_reference_max: Optional[float] = None
+
     test: Optional[TestsLabResponse] = None
     user_validation: Optional[UserValidationResponse] = None
 

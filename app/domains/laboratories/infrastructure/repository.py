@@ -1,6 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, select
 from app.domains.laboratories.domain.models import Laboratory
+from app.domains.testslabs.domain.models import TestsLab
 from app.domains.laboratories.domain.constants import (
     LABORATORY_STATE_SIN_RESULTADOS,
     LABORATORY_STATE_PENDIENTE,
@@ -56,6 +57,18 @@ class LaboratoryRepository:
             # Si hay resultado a registrar, establecer estado a 2 (Con Resultados)
             if any(key in item for key in ["l_result", "l_result_comp", "l_result_num"]):
                 item["l_state"] = LABORATORY_STATE_CON_RESULTADOS
+
+            # Si viene l_result y el test es de tipo Numérico (N), poblar también l_result_num
+            if "l_result" in item and item["l_result"] is not None and lab.l_test_id:
+                # Obtener test_type del TestsLab asociado
+                test_stmt = select(TestsLab.test_type).where(TestsLab.id == lab.l_test_id)
+                test_result = await db.execute(test_stmt)
+                test_type = test_result.scalar_one_or_none()
+                if test_type == "N":
+                    try:
+                        item["l_result_num"] = float(str(item["l_result"]).replace(",", "."))
+                    except (ValueError, TypeError):
+                        item["l_result_num"] = None
                 
             stmt = (
                 update(Laboratory)
