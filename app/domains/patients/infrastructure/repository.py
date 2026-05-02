@@ -57,7 +57,7 @@ class PatientRepository:
         total = total_result.scalar()
         
         # Aplicar paginación
-        query = query.offset(skip).limit(limit)
+        query = query.order_by(Patient.pt_created_at.desc()).offset(skip).limit(limit)
         result = await db.execute(query)
         items = result.scalars().all()
         

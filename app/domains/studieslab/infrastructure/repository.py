@@ -100,3 +100,23 @@ class StudiesLabRepository:
             )
         )
         return result.scalars().first()
+
+    @staticmethod
+    async def get_studies_without_tests(db: AsyncSession, study_ids: List[int]) -> List[int]:
+        """Returns the study IDs from the given list that have no tests configured."""
+        from sqlalchemy import not_, exists
+        stmt = (
+            select(StudiesLab.id)
+            .where(
+                StudiesLab.id.in_(study_ids),
+                not_(
+                    exists(
+                        select(StudiesTestDetail.id).where(
+                            StudiesTestDetail.studies_id == StudiesLab.id
+                        )
+                    )
+                ),
+            )
+        )
+        result = await db.execute(stmt)
+        return list(result.scalars().all())

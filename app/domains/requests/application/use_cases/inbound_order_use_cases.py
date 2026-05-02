@@ -149,6 +149,20 @@ async def create_order_from_inbound(
             detail="Los detalles seleccionados no tienen estudios asociados.",
         )
 
+    # Validar que todos los estudios tengan pruebas configuradas
+    from app.domains.studieslab.infrastructure.repository import StudiesLabRepository
+    studies_without_tests = await StudiesLabRepository.get_studies_without_tests(db, study_ids)
+    if studies_without_tests:
+        study_name_map = {
+            d.iod_study_id: (d.study.name if d.study else f"ID {d.iod_study_id}")
+            for d in selected_details
+        }
+        names = [study_name_map.get(sid, f"ID {sid}") for sid in studies_without_tests]
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Los siguientes estudios no tienen pruebas configuradas: {', '.join(names)}",
+        )
+
     # 3. Construir los datos de la orden mapeando campos del InboundOrder
     # El tariff_id del payload tiene prioridad; si no se envía, se usa el del InboundOrder
     effective_tariff_id = payload.tariff_id or inbound.io_tariff_id

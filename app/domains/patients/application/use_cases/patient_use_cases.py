@@ -1,9 +1,8 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.patients.infrastructure.repository import PatientRepository
+from app.domains.patients.domain.rules import calculate_age
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
-import calendar
-from datetime import date
 
 async def create_patient(db: AsyncSession, data: dict):
     try:
@@ -31,6 +30,8 @@ async def create_patient(db: AsyncSession, data: dict):
 async def list_patients(db: AsyncSession, skip: int = 0, limit: int = 100, search: str = None):
     """Listar pacientes con paginación y búsqueda."""
     items, total = await PatientRepository.get_paginated(db, skip, limit, search)
+    for patient in items:
+        patient.pt_age = calculate_age(patient.pt_date_of_birth) if patient.pt_date_of_birth else {"years": 0, "months": 0, "days": 0}
     return {
         "total": total,
         "skip": skip,
@@ -60,30 +61,7 @@ async def get_patient_by_document(db: AsyncSession, doc_number: str):
     if not patient:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado")
 
-    # Calculate age (years, months, days)
-    age_info = {"years": 0, "months": 0, "days": 0}
-    if patient.pt_date_of_birth:
-        today = date.today()
-        birth = patient.pt_date_of_birth
-
-        years = today.year - birth.year
-        months = today.month - birth.month
-        days = today.day - birth.day
-
-        if days < 0:
-            months -= 1
-            # Get days in previous month
-            prev_month = today.month - 1 if today.month > 1 else 12
-            prev_year = today.year if today.month > 1 else today.year - 1
-            days_in_prev_month = calendar.monthrange(prev_year, prev_month)[1]
-            days += days_in_prev_month
-
-        if months < 0:
-            years -= 1
-            months += 12
-
-        patient.pt_age = {"years": years, "months": months, "days": days}
-
+    patient.pt_age = calculate_age(patient.pt_date_of_birth) if patient.pt_date_of_birth else {"years": 0, "months": 0, "days": 0}
     return patient
 
 async def get_patient_orders_with_details(db: AsyncSession, search_query: str, skip: int = 0, limit: int = 100):

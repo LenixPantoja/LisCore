@@ -61,4 +61,4 @@ class PatientPaginatedResponse(BaseModel):
     total: int
     skip: int
     limit: int
-    items: List[PatientResponse]
+    items: List[PatientWithAgeResponse]
