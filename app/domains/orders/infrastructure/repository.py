@@ -14,12 +14,21 @@ class OrderRepository:
 
     @staticmethod
     async def get_paginated(
-        db: AsyncSession, 
-        skip: int = 0, 
-        limit: int = 100, 
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        order_number: Optional[str] = None,
+        patient_document: Optional[str] = None,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        order_state: Optional[int] = None,
         search: Optional[str] = None
     ) -> Tuple[Sequence[Order], int]:
+        from sqlalchemy import or_
+        from app.domains.patients.domain.models import Patient
+
         # 1. Base query con relaciones
+        needs_patient_join = bool(patient_document or search)
         query = select(Order).options(
             selectinload(Order.patient),
             selectinload(Order.service),
@@ -29,15 +38,40 @@ class OrderRepository:
             selectinload(Order.tariff)
         )
 
-        # 2. Filtro de búsqueda por número de orden
-        if search:
-            query = query.filter(Order.o_number.ilike(f"%{search}%"))
+        if needs_patient_join:
+            query = query.join(Patient, Order.o_his_id == Patient.pt_id)
 
-        # 3. Conteo total
+        # 2. search global: número de orden o documento del paciente
+        if search:
+            query = query.filter(
+                or_(
+                    Order.o_number.ilike(f"%{search}%"),
+                    Patient.pt_Number_document.ilike(f"%{search}%")
+                )
+            )
+
+        # 3. Filtros específicos por campo
+        if order_number:
+            query = query.filter(Order.o_number.ilike(f"%{order_number}%"))
+
+        if patient_document:
+            query = query.filter(Patient.pt_Number_document.ilike(f"%{patient_document}%"))
+
+        # 4. Filtros de rango
+        if start_date:
+            query = query.filter(Order.o_date >= start_date)
+
+        if end_date:
+            query = query.filter(Order.o_date <= end_date)
+
+        if order_state is not None:
+            query = query.filter(Order.o_order_state == order_state)
+
+        # 5. Conteo total
         count_stmt = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_stmt)).scalar() or 0
 
-        # 4. Resultados paginados
+        # 6. Resultados paginados
         result = await db.execute(query.offset(skip).limit(limit).order_by(Order.o_id.desc()))
         return result.scalars().all(), total
 

@@ -1,3 +1,4 @@
+from datetime import date
 from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
@@ -21,10 +22,25 @@ async def create(data: OrderCreate, db: AsyncSession = Depends(get_db)):
 async def list_all(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    order_number: Optional[str] = None,
+    patient_document: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    order_state: Optional[int] = None,
     search: Optional[str] = None,
     db: AsyncSession = Depends(get_db)
 ):
-    return await use_cases.list_orders(db, skip, limit, search)
+    return await use_cases.list_orders(
+        db,
+        skip,
+        limit,
+        order_number=order_number,
+        patient_document=patient_document,
+        start_date=start_date,
+        end_date=end_date,
+        order_state=order_state,
+        search=search
+    )
 
 @router.get("/next-number", response_model=NextOrderNumberResponse)
 async def get_next_order_number(db: AsyncSession = Depends(get_db)):

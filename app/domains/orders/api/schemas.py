@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator, Field
+from pydantic import BaseModel, EmailStr, field_validator, Field, computed_field
 from typing import Optional, List, Any
 from datetime import date, datetime
 from app.domains.patients.api.schemas import PatientResponse
@@ -57,6 +57,7 @@ class OrderResponse(OrderBase):
     o_created_at: datetime
     o_updated_at: datetime
     o_order_state: Optional[str] = None  # Override: se serializa como nombre del estado
+    patient: Optional[PatientResponse] = None
 
     @field_validator('o_order_state', mode='before')
     @classmethod
@@ -66,6 +67,26 @@ class OrderResponse(OrderBase):
         if isinstance(v, int):
             return ORDER_STATES.get(v, str(v))
         return v
+
+    @computed_field
+    @property
+    def patient_document(self) -> Optional[str]:
+        if not self.patient:
+            return None
+        return self.patient.pt_Number_document
+
+    @computed_field
+    @property
+    def patient_full_name(self) -> Optional[str]:
+        if not self.patient:
+            return None
+        parts = [
+            self.patient.pt_firts_name,
+            self.patient.pt_middle_name,
+            self.patient.pt_last_name,
+            self.patient.pt_second_last_name,
+        ]
+        return " ".join(part for part in parts if part)
 
     class Config:
         from_attributes = True

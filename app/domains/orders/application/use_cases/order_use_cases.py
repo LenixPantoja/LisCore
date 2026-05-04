@@ -1,3 +1,5 @@
+from datetime import date
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.orders.infrastructure.repository import OrderRepository
 from fastapi import HTTPException, status
@@ -254,8 +256,28 @@ async def create_order(db: AsyncSession, data: dict):
         
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error de integridad al crear la orden.")
 
-async def list_orders(db: AsyncSession, skip: int = 0, limit: int = 100, search: str = None):
-    items, total = await OrderRepository.get_paginated(db, skip, limit, search)
+async def list_orders(
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 100,
+    order_number: Optional[str] = None,
+    patient_document: Optional[str] = None,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    order_state: Optional[int] = None,
+    search: Optional[str] = None
+):
+    items, total = await OrderRepository.get_paginated(
+        db,
+        skip,
+        limit,
+        order_number=order_number,
+        patient_document=patient_document,
+        start_date=start_date,
+        end_date=end_date,
+        order_state=order_state,
+        search=search
+    )
     return {
         "total": total,
         "skip": skip,
