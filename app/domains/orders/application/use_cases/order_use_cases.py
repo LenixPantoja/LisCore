@@ -31,6 +31,8 @@ from app.domains.contractstariffs.domain.models import TariffDetail, ContractTar
 from utils.Consecutives.consecutive_orders import generate_order_number
 from utils.Consecutives.consecutive_invoices import generate_invoice_number
 from utils.timezone import get_bogota_now
+from utils.trace import register_trace
+from app.domains.traces.constants import OPERATION_CREATE_ORDER
 
 async def create_order(db: AsyncSession, data: dict):
     studies_ids = data.pop("studies", [])
@@ -222,6 +224,34 @@ async def create_order(db: AsyncSession, data: dict):
                 invd_created_by=data.get("o_AppUser_id"),
             )
             db.add(inv_detail)
+
+        # 8. Registrar trazas: un registro general + uno por cada estudio
+        usr_id = data.get("o_AppUser_id")
+
+        # Registro general de la orden
+        await register_trace(
+            db=db,
+            operation_type=OPERATION_CREATE_ORDER,
+            operation_description="Nueva orden",
+            usr_id=usr_id,
+            order_id=order.o_id,
+        )
+
+        # Cargar códigos de los estudios para la descripción
+        studies_result = await db.execute(
+            select(StudiesLab.id, StudiesLab.code).where(StudiesLab.id.in_(unique_study_ids))
+        )
+        study_code_map = {row.id: row.code for row in studies_result.all()}
+
+        for study_id in unique_study_ids:
+            study_code = study_code_map.get(study_id, str(study_id))
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_CREATE_ORDER,
+                operation_description=f"Adición estudio {study_id} - {study_code}",
+                usr_id=usr_id,
+                order_id=order.o_id
+            )
 
         await db.commit()
         await db.refresh(order)
