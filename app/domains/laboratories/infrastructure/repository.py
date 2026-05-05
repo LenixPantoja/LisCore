@@ -53,7 +53,10 @@ class LaboratoryRepository:
             if lab.l_state >= LABORATORY_STATE_VALIDADA:
                 invalid_state_ids.append(l_id)
                 continue
-            
+
+            # El campo l_user_validation_id es exclusivo del endpoint /validate, nunca debe tocarse aquí
+            item.pop("l_user_validation_id", None)
+
             # Si hay resultado a registrar, establecer estado a 2 (Con Resultados)
             if any(key in item for key in ["l_result", "l_result_comp", "l_result_num"]):
                 item["l_state"] = LABORATORY_STATE_CON_RESULTADOS
