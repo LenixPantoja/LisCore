@@ -28,6 +28,7 @@ class TestsLabBase(BaseModel):
     test_type: Optional[str] = None
     num_decimal_result: Optional[int] = None
     is_confidential: Optional[bool] = False
+    print_barcode: Optional[bool] = True
 
 
 class TestsLabCreate(TestsLabBase):
@@ -56,6 +57,7 @@ class TestsLabUpdate(BaseModel):
     test_type: Optional[str] = None
     num_decimal_result: Optional[int] = None
     is_confidential: Optional[bool] = None
+    print_barcode: Optional[bool] = None
 
 
 class TestsLabResponse(TestsLabBase):

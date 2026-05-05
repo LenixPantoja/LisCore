@@ -114,13 +114,17 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
         if not code:
             continue
 
-        # Determine which sample types this study covers
+        # Determine which sample types this study covers (only from tests with print_barcode enabled)
         covered_st_ids: set[int] = set()
         for std in study.test_details:
-            if std.test and std.test.samples_type_id is not None:
+            if std.test and std.test.print_barcode and std.test.samples_type_id is not None:
                 covered_st_ids.add(std.test.samples_type_id)
 
-        target_st_ids = covered_st_ids if covered_st_ids else tube_sample_type_ids
+        # If no test has print_barcode enabled, skip this study entirely
+        if not covered_st_ids:
+            continue
+
+        target_st_ids = covered_st_ids
 
         for st_id in target_st_ids:
             if code not in sample_wg_studies[st_id][wg_id]:
@@ -171,17 +175,7 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
         wg_studies_for_tube: dict[int, list[str]] = sample_wg_studies.get(st_id, {})
 
         if not wg_studies_for_tube:
-            # No studies configured for this tube → generic sticker
-            stickers.append({
-                "patient_full_name": patient_full_name,
-                "identification": identification,
-                "enterprise_name": enterprise_name,
-                "age_str": age_str,
-                "work_group_name": sample_type_name,
-                "barcode_value": barcode_value,
-                "label_number": label_number,
-                "tests_line": f"- {sample_type_name}",
-            })
+            # No studies with print_barcode enabled for this tube → skip sticker
             continue
 
         # Sort work groups by wg_order_of_print

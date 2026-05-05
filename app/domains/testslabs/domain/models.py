@@ -34,6 +34,7 @@ class TestsLab(Base):
     test_type = Column(String(255), nullable=True)
     num_decimal_result = Column(Integer, nullable=True)
     is_confidential = Column(Boolean, default=False)
+    print_barcode = Column(Boolean, default=True)
     created_at = Column(DateTime, default=get_bogota_now)
     updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
