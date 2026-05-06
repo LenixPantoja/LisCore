@@ -19,10 +19,12 @@ async def get_traces_by_order(
     return await use_cases.get_traces_by_order(db, order_id, skip, limit)
 
 
-@router.get("/order/{order_id}/test/{test_id}", response_model=List[TraceResponse])
+@router.get("/order/{order_id}/test/{test_id}", response_model=TracePaginatedResponse)
 async def get_traces_by_order_and_test(
     order_id: int,
     test_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
 ):
-    return await use_cases.get_traces_by_order_and_test(db, order_id, test_id)
+    return await use_cases.get_traces_by_order_and_test(db, order_id, test_id, skip, limit)

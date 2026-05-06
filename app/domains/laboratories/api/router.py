@@ -47,7 +47,7 @@ async def invalidate_laboratories(
     Returns:
         InvalidateLaboratoriesResponse con detalles de la operación
     """
-    return await use_cases.invalidate_laboratories(db, request.laboratory_ids)
+    return await use_cases.invalidate_laboratories(db, request.laboratory_ids, request.usr_id, request.note)
 
 @router.post("/validate", response_model=ValidateLaboratoriesResponse, status_code=status.HTTP_200_OK)
 async def validate_laboratories(

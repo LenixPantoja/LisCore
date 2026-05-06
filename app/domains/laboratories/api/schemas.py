@@ -18,6 +18,8 @@ class LaboratoryBulkUpdateResponse(BaseModel):
 class InvalidateLaboratoriesRequest(BaseModel):
     """Schema para desvalidar laboratorios"""
     laboratory_ids: List[int]
+    usr_id: int
+    note: Optional[str] = None
 
 class InvalidateLaboratoriesResponse(BaseModel):
     """Respuesta de desvalidación de laboratorios"""

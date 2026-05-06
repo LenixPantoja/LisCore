@@ -49,11 +49,22 @@ class TraceRepository:
         db: AsyncSession,
         order_id: int,
         test_id: int,
-    ) -> List[Tuple[AppTrace, str]]:
-        stmt = (
+        skip: int = 0,
+        limit: int = 100,
+    ) -> Tuple[List[Tuple[AppTrace, str]], int]:
+        base_query = (
             _base_select()
             .where(AppTrace.order_id == order_id, AppTrace.test_id == test_id)
-            .order_by(AppTrace.created_at.desc())
         )
-        result = await db.execute(stmt)
-        return result.all()
+
+        count_stmt = (
+            select(func.count())
+            .where(AppTrace.order_id == order_id, AppTrace.test_id == test_id)
+            .select_from(AppTrace)
+        )
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(
+            base_query.order_by(AppTrace.created_at.desc()).offset(skip).limit(limit)
+        )
+        return result.all(), total

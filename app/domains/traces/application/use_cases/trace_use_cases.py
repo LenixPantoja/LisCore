@@ -1,4 +1,4 @@
-from typing import List
+from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.traces.infrastructure.repository import TraceRepository
@@ -40,6 +40,13 @@ async def get_traces_by_order_and_test(
     db: AsyncSession,
     order_id: int,
     test_id: int,
-) -> List[TraceResponse]:
-    rows = await TraceRepository.get_by_order_and_test(db, order_id, test_id)
-    return [_map_to_response(trace, user_full_name) for trace, user_full_name in rows]
+    skip: int,
+    limit: int,
+) -> TracePaginatedResponse:
+    rows, total = await TraceRepository.get_by_order_and_test(db, order_id, test_id, skip, limit)
+    return TracePaginatedResponse(
+        items=[_map_to_response(trace, user_full_name) for trace, user_full_name in rows],
+        total=total,
+        skip=skip,
+        limit=limit,
+    )

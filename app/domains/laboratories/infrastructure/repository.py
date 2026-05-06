@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, select
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.testslabs.domain.models import TestsLab
+from app.domains.orders.domain.models import OrdersDetail
 from app.domains.laboratories.domain.constants import (
     LABORATORY_STATE_SIN_RESULTADOS,
     LABORATORY_STATE_PENDIENTE,
@@ -18,7 +19,7 @@ from typing import List, Dict, Any, Tuple
 
 class LaboratoryRepository:
     @staticmethod
-    async def bulk_update(db: AsyncSession, updates: List[Dict[str, Any]]) -> Tuple[int, Dict[str, List[int]]]:
+    async def bulk_update(db: AsyncSession, updates: List[Dict[str, Any]]) -> Tuple[int, Dict[str, List[int]], List[Dict[str, Any]]]:
         """
         Actualiza múltiples laboratorios solo si su estado es < 3 (no validado).
         Cuando se actualiza el resultado, automáticamente establece l_state a 2 (Con Resultados).
@@ -26,36 +27,46 @@ class LaboratoryRepository:
         Retorna:
             - Cantidad de laboratorios actualizados exitosamente
             - Diccionario con detalles de laboratorios que no se pudieron actualizar
+            - Lista de datos de traza por cada laboratorio con resultado actualizado
         """
         if not updates:
-            return 0, {"not_found": [], "invalid_state": []}
+            return 0, {"not_found": [], "invalid_state": []}, []
             
         updated_count = 0
         invalid_state_ids = []
         not_found_ids = []
+        trace_data_list: List[Dict[str, Any]] = []
         
         for item in updates:
             l_id = item.pop("l_id")
+            usr_id = item.pop("l_user_validation_id", None)
             # If no items to update besides l_id, skip
             if not item:
                 continue
             
-            # Obtener el laboratorio
-            stmt = select(Laboratory).where(Laboratory.l_id == l_id)
+            # Obtener el laboratorio junto con el order_id desde OrdersDetail
+            stmt = (
+                select(Laboratory, OrdersDetail.od_order_id)
+                .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+                .where(Laboratory.l_id == l_id)
+            )
             result = await db.execute(stmt)
-            lab = result.scalar_one_or_none()
-            
-            if lab is None:
+            row = result.one_or_none()
+
+            if row is None:
                 not_found_ids.append(l_id)
                 continue
+
+            lab, order_id = row
             
             # Validar que el estado sea < 3 (no validado ni impreso)
             if lab.l_state >= LABORATORY_STATE_VALIDADA:
                 invalid_state_ids.append(l_id)
                 continue
 
-            # El campo l_user_validation_id es exclusivo del endpoint /validate, nunca debe tocarse aquí
-            item.pop("l_user_validation_id", None)
+            # Capturar resultado anterior antes de aplicar cambios
+            old_result = lab.l_result
+            old_result_comp = lab.l_result_comp
 
             # Si hay resultado a registrar, establecer estado a 2 (Con Resultados)
             if any(key in item for key in ["l_result", "l_result_comp", "l_result_num"]):
@@ -85,6 +96,20 @@ class LaboratoryRepository:
             )
             await db.execute(stmt)
             updated_count += 1
+
+            # Registrar datos para la traza si se actualizó algún resultado
+            new_result = item.get("l_result")
+            new_result_comp = item.get("l_result_comp")
+            if new_result is not None or new_result_comp is not None:
+                trace_data_list.append({
+                    "usr_id": usr_id,
+                    "order_id": order_id,
+                    "test_id": lab.l_test_id,
+                    "old_result": old_result,
+                    "old_result_comp": old_result_comp,
+                    "new_result": new_result,
+                    "new_result_comp": new_result_comp,
+                })
             
         await db.commit()
         
@@ -94,46 +119,62 @@ class LaboratoryRepository:
         if not_found_ids:
             details["not_found"] = not_found_ids
         
-        return updated_count, details
+        return updated_count, details, trace_data_list
 
     @staticmethod
-    async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int]) -> Tuple[int, Dict[str, List[int]]]:
+    async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int]) -> Tuple[int, Dict[str, List[int]], List[Dict[str, Any]]]:
         """
         Desvalida laboratorios (cambia estado a 2/Con Resultados) solo si su estado actual es >= 3 (Validada).
         
         Retorna:
             - Cantidad de laboratorios desvalidados exitosamente
             - Diccionario con detalles de laboratorios que no se pudieron desvalidar
+            - Lista de datos de traza por cada laboratorio desvalidado exitosamente
         """
         if not laboratory_ids:
-            return 0, {"not_found": [], "invalid_state": []}
+            return 0, {"not_found": [], "invalid_state": []}, []
         
         invalidated_count = 0
         invalid_state_ids = []
         not_found_ids = []
+        trace_data_list: List[Dict[str, Any]] = []
         
         for l_id in laboratory_ids:
-            # Obtener el laboratorio
-            stmt = select(Laboratory).where(Laboratory.l_id == l_id)
+            # Obtener el laboratorio junto con el order_id desde OrdersDetail
+            stmt = (
+                select(Laboratory, OrdersDetail.od_order_id)
+                .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+                .where(Laboratory.l_id == l_id)
+            )
             result = await db.execute(stmt)
-            lab = result.scalar_one_or_none()
-            
-            if lab is None:
+            row = result.one_or_none()
+
+            if row is None:
                 not_found_ids.append(l_id)
                 continue
+
+            lab, order_id = row
             
             # Validar que el estado sea >= 3 (Validada o Impreso)
             if lab.l_state < LABORATORY_STATE_VALIDADA:
                 invalid_state_ids.append(l_id)
                 continue
+
+            # Capturar resultado actual (que se va a desvalidar)
+            trace_data_list.append({
+                "order_id": order_id,
+                "test_id": lab.l_test_id,
+                "current_result": lab.l_result,
+                "current_result_comp": lab.l_result_comp,
+            })
             
             # Actualizar el estado a 2 (Con Resultados — desvalidado)
-            stmt = (
+            update_stmt = (
                 update(Laboratory)
                 .where(Laboratory.l_id == l_id)
                 .values(l_state=LABORATORY_STATE_CON_RESULTADOS)
             )
-            await db.execute(stmt)
+            await db.execute(update_stmt)
             invalidated_count += 1
         
         await db.commit()
@@ -144,10 +185,10 @@ class LaboratoryRepository:
         if not_found_ids:
             details["not_found"] = not_found_ids
         
-        return invalidated_count, details
+        return invalidated_count, details, trace_data_list
 
     @staticmethod
-    async def validate_laboratories(db: AsyncSession, items: List[Dict[str, Any]]) -> Tuple[int, Dict[str, List[int]]]:
+    async def validate_laboratories(db: AsyncSession, items: List[Dict[str, Any]]) -> Tuple[int, Dict[str, List[int]], List[Dict[str, Any]]]:
         """
         Valida laboratorios por ítem.
         Solo valida si el l_state actual es 2 (Con Resultados).
@@ -158,14 +199,16 @@ class LaboratoryRepository:
         Retorna:
             - Cantidad de laboratorios validados exitosamente
             - Diccionario con detalles de laboratorios que no se pudieron procesar
+            - Lista de datos de traza por cada laboratorio validado exitosamente
         """
         if not items:
-            return 0, {"not_found": [], "skipped": []}
+            return 0, {"not_found": [], "skipped": []}, []
 
         validated_count = 0
         not_found_ids = []
         skipped_ids = []
         invalid_state_ids = []
+        trace_data_list: List[Dict[str, Any]] = []
 
         for item in items:
             l_id = item.get("l_id")
@@ -179,14 +222,20 @@ class LaboratoryRepository:
                 skipped_ids.append(l_id)
                 continue
 
-            # Obtener el laboratorio
-            stmt = select(Laboratory).where(Laboratory.l_id == l_id)
+            # Obtener el laboratorio junto con el order_id desde OrdersDetail
+            stmt = (
+                select(Laboratory, OrdersDetail.od_order_id)
+                .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+                .where(Laboratory.l_id == l_id)
+            )
             result = await db.execute(stmt)
-            lab = result.scalar_one_or_none()
+            row = result.one_or_none()
 
-            if lab is None:
+            if row is None:
                 not_found_ids.append(l_id)
                 continue
+
+            lab, order_id = row
 
             if force_validate or has_result:
                 # Solo se puede validar si el estado actual es 2 (Con Resultados)
@@ -194,20 +243,35 @@ class LaboratoryRepository:
                     invalid_state_ids.append(l_id)
                     continue
 
+                # Capturar resultado anterior antes de actualizar
+                old_result = lab.l_result
+                old_result_comp = lab.l_result_comp
+
                 # Registrar campos provistos y validar (l_state = 3 Validada)
                 fields: Dict[str, Any] = {"l_state": LABORATORY_STATE_VALIDADA}
                 for key in ("l_result", "l_result_comp", "l_nota_validation", "l_user_validation_id"):
                     if key in item and item[key] is not None:
                         fields[key] = item[key]
-                stmt = update(Laboratory).where(Laboratory.l_id == l_id).values(**fields)
-                await db.execute(stmt)
+                update_stmt = update(Laboratory).where(Laboratory.l_id == l_id).values(**fields)
+                await db.execute(update_stmt)
                 validated_count += 1
+
+                # Datos de traza para este laboratorio
+                trace_data_list.append({
+                    "usr_id": item.get("l_user_validation_id"),
+                    "order_id": order_id,
+                    "test_id": lab.l_test_id,
+                    "old_result": old_result,
+                    "old_result_comp": old_result_comp,
+                    "new_result": item.get("l_result"),
+                    "new_result_comp": item.get("l_result_comp"),
+                })
             else:
                 # Solo nota: guardar únicamente la nota sin modificar el estado
-                stmt = update(Laboratory).where(Laboratory.l_id == l_id).values(
+                update_stmt = update(Laboratory).where(Laboratory.l_id == l_id).values(
                     l_nota_validation=item["l_nota_validation"]
                 )
-                await db.execute(stmt)
+                await db.execute(update_stmt)
 
         await db.commit()
 
@@ -219,7 +283,7 @@ class LaboratoryRepository:
         if invalid_state_ids:
             details["invalid_state"] = invalid_state_ids
 
-        return validated_count, details
+        return validated_count, details, trace_data_list
 
     @staticmethod
     async def clear_laboratory_results(db: AsyncSession, laboratory_ids: List[int]) -> Tuple[int, Dict[str, List[int]]]:

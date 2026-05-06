@@ -7,6 +7,8 @@ from app.domains.orders.domain.constants import (
     ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS,
 )
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA
+from app.domains.traces.constants import OPERATION_EDIT_RESULT, OPERATION_VALIDATE_RESULT, OPERATION_INVALIDATE_RESULT
+from utils.trace import register_trace
 from typing import List
 
 async def bulk_update_laboratories(db: AsyncSession, data_list: List[dict]):
@@ -22,7 +24,33 @@ async def bulk_update_laboratories(db: AsyncSession, data_list: List[dict]):
                 detail="La lista de laboratorios no puede estar vacía."
             )
         
-        updated_count, details = await LaboratoryRepository.bulk_update(db, data_list)
+        updated_count, details, trace_data_list = await LaboratoryRepository.bulk_update(db, data_list)
+
+        # Registrar trazas para cada resultado editado
+        for trace in trace_data_list:
+            notes_parts = []
+            if trace["old_result"] is not None:
+                notes_parts.append(f"res anterior: {trace['old_result']}")
+            if trace["old_result_comp"] is not None:
+                notes_parts.append(f"res_comp anterior: {trace['old_result_comp']}")
+
+            desc_parts = []
+            if trace["new_result"] is not None:
+                desc_parts.append(f"res: {trace['new_result']}")
+            if trace["new_result_comp"] is not None:
+                desc_parts.append(f"res_comp: {trace['new_result_comp']}")
+
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_EDIT_RESULT,
+                operation_description="Edición de Resultado - " + ", ".join(desc_parts) if desc_parts else "Edición de Resultado",
+                usr_id=trace["usr_id"],
+                order_id=trace["order_id"],
+                test_id=trace["test_id"],
+                notes="; ".join(notes_parts) if notes_parts else None,
+            )
+
+        await db.commit()
         
         # Construir mensaje según resultados
         message_parts = [f"Se actualizaron {updated_count} registros de laboratorio exitosamente. Los laboratorios con resultados registrados ahora tienen estado = 1."]
@@ -49,7 +77,7 @@ async def bulk_update_laboratories(db: AsyncSession, data_list: List[dict]):
             detail=f"Error al actualizar los laboratorios: {str(e)}"
         )
 
-async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int]):
+async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int], usr_id: int, note: str = None):
     """
     Desvalida laboratorios (cambia estado a 2/Con Resultados) solo si su estado es >= 3.
     Si al menos un laboratorio es desvalidado, actualiza el estado de la orden a 2 (Pendiente).
@@ -61,7 +89,29 @@ async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int]):
                 detail="La lista de IDs de laboratorios no puede estar vacía."
             )
         
-        invalidated_count, details = await LaboratoryRepository.invalidate_laboratories(db, laboratory_ids)
+        invalidated_count, details, trace_data_list = await LaboratoryRepository.invalidate_laboratories(db, laboratory_ids)
+
+        # Registrar trazas para cada laboratorio desvalidado
+        for trace in trace_data_list:
+            notes_parts = []
+            if trace["current_result"] is not None:
+                notes_parts.append(f"l_result: {trace['current_result']}")
+            if trace["current_result_comp"] is not None:
+                notes_parts.append(f"l_result_comp: {trace['current_result_comp']}")
+            if note:
+                notes_parts.append(f"Nota: {note}")
+
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_INVALIDATE_RESULT,
+                operation_description="Invalidación de Resultado",
+                usr_id=usr_id,
+                order_id=trace["order_id"],
+                test_id=trace["test_id"],
+                notes="; ".join(notes_parts) if notes_parts else None,
+            )
+
+        await db.commit()
 
         # Si al menos uno fue desvalidado, actualizar la(s) orden(es) a Pendiente
         if invalidated_count > 0:
@@ -112,7 +162,33 @@ async def validate_laboratories(db: AsyncSession, items: list):
         # Guardar l_ids antes de que el repositorio los procese
         l_ids = [item["l_id"] for item in items]
 
-        validated_count, details = await LaboratoryRepository.validate_laboratories(db, items)
+        validated_count, details, trace_data_list = await LaboratoryRepository.validate_laboratories(db, items)
+
+        # Registrar trazas para cada laboratorio validado
+        for trace in trace_data_list:
+            notes_parts = []
+            if trace["old_result"] is not None:
+                notes_parts.append(f"res anterior: {trace['old_result']}")
+            if trace["old_result_comp"] is not None:
+                notes_parts.append(f"res_comp anterior: {trace['old_result_comp']}")
+
+            desc_parts = []
+            if trace["new_result"] is not None:
+                desc_parts.append(f"res: {trace['new_result']}")
+            if trace["new_result_comp"] is not None:
+                desc_parts.append(f"res_comp: {trace['new_result_comp']}")
+
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_VALIDATE_RESULT,
+                operation_description="Validación de Resultado - " + ", ".join(desc_parts) if desc_parts else "Validación de Resultado",
+                usr_id=trace["usr_id"],
+                order_id=trace["order_id"],
+                test_id=trace["test_id"],
+                
+            )
+
+        await db.commit()
 
         # Actualizar estado de la(s) orden(es) afectada(s)
         if validated_count > 0:
