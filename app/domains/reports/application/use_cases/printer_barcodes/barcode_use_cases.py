@@ -191,7 +191,7 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
             wg: WorkGroup | None = wg_map.get(wg_id)
             wg_name = (wg.wg_name or "").upper() if wg else f"GRUPO {wg_id}"
             codes = wg_studies_for_tube[wg_id]
-            tests_line = f"-{'-'.join(codes)} - {sample_type_name}"
+            tests_line = "-" + "-".join(codes)
 
             stickers.append({
                 "patient_full_name": patient_full_name,
@@ -202,6 +202,7 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
                 "barcode_value": barcode_value,
                 "label_number": label_number,
                 "tests_line": tests_line,
+                "sample_type_name": sample_type_name,
             })
 
     if not stickers:

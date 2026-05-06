@@ -27,12 +27,12 @@ from reportlab.lib.units import mm
 from reportlab.lib.colors import black
 
 # ── Sticker dimensions ─────────────────────────────────────────────────────
-STICKER_W   = 100 * mm
-STICKER_H   = 30  * mm
+STICKER_W   = 50 * mm
+STICKER_H   = 25 * mm
 
-LEFT_COL_W  = 8  * mm   # left strip  → work group (vertical)
-RIGHT_COL_W = 10 * mm   # right strip → order-suffix label (vertical)
-H_MARGIN    = 2  * mm   # inner horizontal margin inside content area
+LEFT_COL_W  = 6  * mm   # left strip  → work group (vertical)
+RIGHT_COL_W = 7  * mm   # right strip → order-suffix label (vertical)
+H_MARGIN    = 1.5 * mm  # inner horizontal margin inside content area
 
 CONTENT_X = LEFT_COL_W + H_MARGIN
 CONTENT_R = STICKER_W - RIGHT_COL_W - H_MARGIN
@@ -80,43 +80,44 @@ def _draw_sticker(c, sticker: dict) -> None:
               x_center=LEFT_COL_W / 2,
               y_center=H / 2,
               text=sticker["work_group_name"],
-              font=F_BOLD, size=7, max_h=H)
+              font=F_BOLD, size=6, max_h=H)
 
     # ── Right strip: Label Number ────────────────────────────────────────────
     _vertical(c,
               x_center=W - RIGHT_COL_W / 2,
               y_center=H / 2,
               text=sticker["label_number"],
-              font=F_BOLD, size=6.5, max_h=H)
+              font=F_BOLD, size=5.5, max_h=H)
 
     # ── Content area ─────────────────────────────────────────────────────────
     c.setFillColor(black)
 
-    # Y positions computed from bottom up
-    V_BOT     = 1.5 * mm
-    y_tests   = V_BOT + 0.5 * mm         # tests line baseline
-    bc_h      = 11 * mm
-    y_bc_bot  = y_tests + 1.94 + 1.5 * mm
-    y_bc_top  = y_bc_bot + bc_h
-    y_empresa = y_bc_top + 1.2 * mm
-    y_ident   = y_empresa + 2.5 * mm
-    y_patient = y_ident   + 2.5 * mm
+    # Y positions: información del paciente + código de barras en la parte
+    # superior; línea de estudios centrada en el espacio inferior.
+    y_patient  = H - 3.5 * mm            # nombre paciente (baseline)
+    y_ident    = y_patient - 2.2 * mm    # identificación
+    y_empresa  = y_ident   - 2.0 * mm    # empresa / edad
+    bc_h       = 8 * mm
+    y_bc_top   = y_empresa - 1.2 * mm
+    y_bc_bot   = y_bc_top  - bc_h
+    y_sample    = 1.0 * mm               # tipo de muestra (línea inferior)
+    y_tests    = y_sample + 2.0 * mm      # códigos de estudios (sobre el tipo de muestra)
 
     # Patient name
-    c.setFont(F_BOLD, 8)
-    name = _fit(c, sticker["patient_full_name"], F_BOLD, 8, CONTENT_W)
+    c.setFont(F_BOLD, 7)
+    name = _fit(c, sticker["patient_full_name"], F_BOLD, 7, CONTENT_W)
     c.drawString(CONTENT_X, y_patient, name)
 
     # Identification
-    c.setFont(F_NORMAL, 6)
+    c.setFont(F_NORMAL, 5)
     c.drawString(CONTENT_X, y_ident,
                  f"IDENTIFICACION: {sticker['identification']}")
 
     # Empresa (left) + Edad (right-aligned) — misma línea
-    c.setFont(F_NORMAL, 6)
+    c.setFont(F_NORMAL, 5)
     c.drawString(CONTENT_X, y_empresa,
                  f"EMPRESA: {sticker['enterprise_name']}")
-    c.setFont(F_NORMAL, 6)
+    c.setFont(F_NORMAL, 5)
     c.drawRightString(CONTENT_R, y_empresa, f"EDAD: {sticker['age_str']}")
 
     # Barcode Code128
@@ -124,7 +125,7 @@ def _draw_sticker(c, sticker: dict) -> None:
     try:
         bc = code128.Code128(
             bv,
-            barWidth=1.4,
+            barWidth=1.2,
             barHeight=bc_h,
             humanReadable=False,
             quiet=False,
@@ -141,14 +142,19 @@ def _draw_sticker(c, sticker: dict) -> None:
             bc_x = CONTENT_X + max(0.0, (CONTENT_W - bc.width) / 2)
             bc.drawOn(c, bc_x, y_bc_bot)
     except Exception:
-        c.setFont(F_NORMAL, 6)
+        c.setFont(F_NORMAL, 5)
         c.drawCentredString(CONTENT_X + CONTENT_W / 2,
                             y_bc_bot + bc_h / 2, f"[{bv}]")
 
-    # Tests line
-    c.setFont(F_BOLD, 5.5)
-    tl = _fit(c, sticker["tests_line"], F_BOLD, 5.5, CONTENT_W)
+    # Tests line (study codes)
+    c.setFont(F_BOLD, 5)
+    tl = _fit(c, sticker["tests_line"], F_BOLD, 5, CONTENT_W)
     c.drawString(CONTENT_X, y_tests, tl)
+
+    # Sample type (below tests line)
+    c.setFont(F_NORMAL, 5)
+    st_name = _fit(c, sticker.get("sample_type_name", ""), F_NORMAL, 5, CONTENT_W)
+    c.drawString(CONTENT_X, y_sample, st_name)
 
 
 def build_stickers_pdf(stickers: List[dict]) -> bytes:
