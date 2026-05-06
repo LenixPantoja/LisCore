@@ -10,6 +10,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
+    Image as RLImage,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -53,6 +54,27 @@ def _get_watermark() -> io.BytesIO:
 def _get_logo() -> ImageReader:
     """Carga el logo para la cabecera."""
     return ImageReader(LOGO_PNG)
+
+
+def _fetch_graphic_image(object_name: str | None) -> io.BytesIO | None:
+    """Descarga una imagen del bucket 'graphics' de MinIO y la retorna como BytesIO.
+
+    Retorna None si object_name está vacío o si ocurre cualquier error.
+    """
+    if not object_name:
+        return None
+    try:
+        from utils.minio_client import get_minio_client
+        from app.core.config import settings as _settings
+        client = get_minio_client()
+        response = client.get_object(_settings.MINIO_GRAPHICS_BUCKET, object_name)
+        buf = io.BytesIO(response.read())
+        response.close()
+        response.release_conn()
+        buf.seek(0)
+        return buf
+    except Exception:
+        return None
 
 
 # Colores corporativos
@@ -227,6 +249,28 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
                 res_tbl.setStyle(TableStyle(tbl_style))
                 story.append(res_tbl)
                 story.append(Spacer(1, 8))
+
+                # ── Gráficas de resultado ──────────────────────────
+                for row in study["rows"]:
+                    obj_name = row.get("graphic_object_name")
+                    if not obj_name:
+                        continue
+                    img_buf = _fetch_graphic_image(obj_name)
+                    if img_buf is None:
+                        continue
+                    story.append(
+                        Paragraph(
+                            f"<b>Gráfica – {row['test_name']}</b>",
+                            ParagraphStyle("g_lbl", fontName="Helvetica-Bold",
+                                           fontSize=8, textColor=C_NAVY),
+                        )
+                    )
+                    story.append(Spacer(1, 4))
+                    story.append(
+                        RLImage(img_buf, width=COL_W * 0.75, height=5 * cm,
+                                kind="proportional")
+                    )
+                    story.append(Spacer(1, 8))
     else:
         story.append(Paragraph("No hay resultados registrados para esta orden.", s_empty))
 
@@ -438,6 +482,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
         "state_class": state_class,
         "is_abnormal": is_abnormal,
         "note": lab.l_nota_validation or "",
+        "graphic_object_name": lab.l_result_graphic or None,
     }
 
 

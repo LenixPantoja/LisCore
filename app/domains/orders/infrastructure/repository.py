@@ -203,7 +203,7 @@ class OrderRepository:
             selectinload(Laboratory.test),
             selectinload(Laboratory.user_validation),
             selectinload(Laboratory.order_detail).selectinload(OrdersDetail.study)
-        )
+        ).order_by(Laboratory.l_id)
         
         count_stmt = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_stmt)).scalar() or 0
