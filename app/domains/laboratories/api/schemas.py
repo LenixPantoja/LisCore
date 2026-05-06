@@ -94,3 +94,17 @@ class UpdateOrderDetailStateResponse(BaseModel):
     od_state: int
     state_name: str
     message: str
+
+
+class GraphicLinkRequest(BaseModel):
+    """Vincula un object_name ya existente en MinIO al l_result_graphic del laboratorio."""
+    object_name: str
+
+
+class GraphicUploadResponse(BaseModel):
+    """Respuesta tras subir o vincular una imagen gráfica."""
+    success: bool
+    l_id: int
+    object_name: str
+    url: Optional[str] = None
+    message: str

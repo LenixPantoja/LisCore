@@ -8,6 +8,7 @@ from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
 from app.shared.utils.range_evaluator import evaluate_reference_range
+from utils.minio_client import get_graphic_url
 
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_DETAIL_STATE_INGRESADO
@@ -389,6 +390,11 @@ async def get_order_details_paginated_by_number(
         lab.__dict__["range_type"] = range_type
         lab.__dict__["value_range_reference_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["value_range_reference_max"] = float(ref_max) if ref_max is not None else None
+
+        # Resolver imagen gráfica desde MinIO
+        if lab.l_result_graphic:
+            lab.l_result_graphic = get_graphic_url(lab.l_result_graphic)
+
         enriched_labs.append(lab)
 
     return {

@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
+    # MinIO
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_SECURE: bool = False
+    MINIO_GRAPHICS_BUCKET: str = "graphics"
+    MINIO_PRESIGNED_EXPIRES_HOURS: int = 24
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"

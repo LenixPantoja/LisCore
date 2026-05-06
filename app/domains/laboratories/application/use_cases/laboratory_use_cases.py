@@ -349,3 +349,86 @@ async def update_order_detail_state(db: AsyncSession, order_id: int, study_id: i
         "state_name": _ORDER_DETAIL_STATE_NAMES[detail.od_state],
         "message": f"Estado del estudio actualizado a '{_ORDER_DETAIL_STATE_NAMES[new_state]}'."
     }
+
+
+async def upload_laboratory_graphic(
+    db: AsyncSession,
+    l_id: int,
+    file_data: bytes,
+    filename: str,
+    content_type: str,
+) -> dict:
+    """
+    Sube una imagen a MinIO y guarda el object_name en l_result_graphic del laboratorio.
+    """
+    from utils.minio_client import upload_graphic, build_graphic_object_name, get_graphic_url
+
+    lab = await LaboratoryRepository.get_by_id(db, l_id)
+    if lab is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Laboratorio con l_id={l_id} no encontrado."
+        )
+
+    # Determinar la extensión desde el nombre del archivo
+    ext = filename.rsplit(".", 1)[-1] if "." in filename else "jpg"
+
+    # Obtener order_number y test_code desde las relaciones del lab
+    order_number = "NOORDER"
+    test_code = "NOTEST"
+    if lab.order_detail and getattr(lab.order_detail, "od_order_id", None):
+        from app.domains.orders.domain.models import Order
+        order = await db.get(Order, lab.order_detail.od_order_id)
+        if order and order.o_number:
+            order_number = order.o_number
+    if lab.test and getattr(lab.test, "code", None):
+        test_code = lab.test.code or "NOTEST"
+
+    object_name = build_graphic_object_name(order_number, test_code, l_id, ext)
+
+    try:
+        upload_graphic(file_data, object_name, content_type)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Error al subir la imagen a MinIO: {exc}"
+        )
+
+    await LaboratoryRepository.update_graphic(db, l_id, object_name)
+
+    return {
+        "success": True,
+        "l_id": l_id,
+        "object_name": object_name,
+        "url": get_graphic_url(object_name),
+        "message": "Imagen subida y vinculada correctamente.",
+    }
+
+
+async def link_laboratory_graphic(
+    db: AsyncSession,
+    l_id: int,
+    object_name: str,
+) -> dict:
+    """
+    Vincula un object_name ya existente en MinIO al l_result_graphic del laboratorio.
+    Usado por analizadores u otros sistemas que suben imágenes directamente a MinIO.
+    """
+    from utils.minio_client import get_graphic_url
+
+    lab = await LaboratoryRepository.get_by_id(db, l_id)
+    if lab is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Laboratorio con l_id={l_id} no encontrado."
+        )
+
+    await LaboratoryRepository.update_graphic(db, l_id, object_name)
+
+    return {
+        "success": True,
+        "l_id": l_id,
+        "object_name": object_name,
+        "url": get_graphic_url(object_name),
+        "message": "Object name vinculado correctamente al laboratorio.",
+    }

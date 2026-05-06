@@ -395,3 +395,20 @@ class LaboratoryRepository:
         await db.commit()
         await db.refresh(detail)
         return detail
+
+    @staticmethod
+    async def get_by_id(db: AsyncSession, l_id: int):
+        """Retorna un Laboratory por su l_id, o None si no existe."""
+        result = await db.execute(select(Laboratory).where(Laboratory.l_id == l_id))
+        return result.scalar_one_or_none()
+
+    @staticmethod
+    async def update_graphic(db: AsyncSession, l_id: int, object_name: str):
+        """Actualiza l_result_graphic de un laboratorio con el object_name de MinIO."""
+        stmt = (
+            update(Laboratory)
+            .where(Laboratory.l_id == l_id)
+            .values(l_result_graphic=object_name)
+        )
+        await db.execute(stmt)
+        await db.commit()
