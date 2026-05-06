@@ -18,7 +18,8 @@ from app.domains.reports.api.router import router as reports_router
 from app.domains.billing.api.router import router as billing_router
 from app.domains.requests.api.router import router as requests_router
 from app.integrations.InterfazDG.router import router as interfaz_dg_router
-    
+from app.domains.traces.api.router import router as traces_router
+
 api_router = APIRouter()
 
 api_router.include_router(patients_router, prefix="/patients", tags=["Patients"])
@@ -40,3 +41,4 @@ api_router.include_router(reports_router, prefix="/reports", tags=["Reports"])
 api_router.include_router(billing_router, prefix="/billing", tags=["Billing"])
 api_router.include_router(requests_router, prefix="/inbound-orders", tags=["Inbound Orders"])
 api_router.include_router(interfaz_dg_router, prefix="/Dinamica/Laboratorio", tags=["InterfazDG"])
+api_router.include_router(traces_router, prefix="/traces", tags=["Traces"])
