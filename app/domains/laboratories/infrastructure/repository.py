@@ -111,6 +111,13 @@ class LaboratoryRepository:
                     "new_result_comp": new_result_comp,
                 })
             
+        # Recalculate formula-based labs for all orders that had results updated
+        affected_order_ids = list({t["order_id"] for t in trace_data_list if t.get("order_id")})
+        if affected_order_ids:
+            await db.flush()
+            formula_updated = await LaboratoryRepository._recalculate_formula_labs(db, affected_order_ids)
+            updated_count += formula_updated
+
         await db.commit()
         
         details = {}
@@ -120,6 +127,90 @@ class LaboratoryRepository:
             details["not_found"] = not_found_ids
         
         return updated_count, details, trace_data_list
+
+    @staticmethod
+    async def _recalculate_formula_labs(db: AsyncSession, order_ids: List[int]) -> int:
+        """
+        Recomputes result for every formula-based lab in the given orders.
+
+        For each order, fetches all labs together with their test info,
+        builds the variable mapping from non-formula results, and evaluates
+        each formula. Skips validated/printed labs and labs whose variables
+        are not yet available (e.g., a dependency is still pending).
+
+        Returns:
+            Number of formula labs updated.
+        """
+        from utils.formula_processor import process_formula_for_test, FormulaMissingVariableError
+        from utils.formula_engine import FormulaError
+
+        updated = 0
+
+        for order_id in order_ids:
+            # Fetch all labs in the order with their test metadata
+            stmt = (
+                select(
+                    Laboratory.l_id,
+                    Laboratory.l_result_num,
+                    Laboratory.l_result,
+                    Laboratory.l_state,
+                    TestsLab.name_abbreviation,
+                    TestsLab.is_formula,
+                    TestsLab.formula,
+                    TestsLab.num_decimal_result,
+                    TestsLab.test_type,
+                )
+                .join(TestsLab, Laboratory.l_test_id == TestsLab.id)
+                .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+                .where(OrdersDetail.od_order_id == order_id)
+            )
+            rows = (await db.execute(stmt)).all()
+
+            # Build variables from non-formula labs that have a numeric result
+            available_results = [
+                {
+                    "name_abbreviation": row.name_abbreviation,
+                    "result_value": row.l_result_num if row.l_result_num is not None else row.l_result,
+                }
+                for row in rows
+                if not row.is_formula and row.name_abbreviation
+            ]
+
+            # Evaluate and persist each formula lab
+            for row in rows:
+                if not row.is_formula or not row.formula:
+                    continue
+                # Do not overwrite already validated/printed results
+                if row.l_state >= LABORATORY_STATE_VALIDADA:
+                    continue
+
+                try:
+                    computed = process_formula_for_test(
+                        row.formula,
+                        available_results,
+                        num_decimal_result=row.num_decimal_result,
+                    )
+                except (FormulaMissingVariableError, FormulaError):
+                    # Variables not yet available — leave this lab unchanged
+                    continue
+
+                if row.num_decimal_result is not None:
+                    result_str = f"{computed:.{row.num_decimal_result}f}"
+                else:
+                    result_str = str(computed)
+
+                await db.execute(
+                    update(Laboratory)
+                    .where(Laboratory.l_id == row.l_id)
+                    .values(
+                        l_result=result_str,
+                        l_result_num=computed,
+                        l_state=LABORATORY_STATE_CON_RESULTADOS,
+                    )
+                )
+                updated += 1
+
+        return updated
 
     @staticmethod
     async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int]) -> Tuple[int, Dict[str, List[int]], List[Dict[str, Any]]]:

@@ -17,6 +17,7 @@ from simpleeval import SimpleEval, EvalWithCompoundTypes, NameNotDefined, Invali
 _ALLOWED_FUNCTIONS = {
     "abs": abs,
     "round": round,
+    "ROUNDTO": round,       # alias: ROUNDTO(value, decimals) — supports negative decimals
     "min": min,
     "max": max,
     "sqrt": math.sqrt,
