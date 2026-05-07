@@ -33,6 +33,8 @@ class TestsLab(Base):
     active = Column(Boolean, default=True)
     test_type = Column(String(255), nullable=True)
     num_decimal_result = Column(Integer, nullable=True)
+    is_formula = Column(Boolean, default=False)
+    formula = Column(String(500), nullable=True)
     is_confidential = Column(Boolean, default=False)
     print_barcode = Column(Boolean, default=True)
     created_at = Column(DateTime, default=get_bogota_now)

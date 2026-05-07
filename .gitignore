@@ -1,5 +1,2 @@
-/s3/data/*
-./s3/data/
 s3/data/
-
-.\s3\data\
+.env
