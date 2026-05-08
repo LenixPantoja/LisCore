@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-16"?>
+<MensajeResultado xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Exito>false</Exito>
+  <Mensaje>Se ha producido un error en el proceso.</Mensaje>
+  <MensajeInterno>Object reference not set to an instance of an object.</MensajeInterno>
+</MensajeResultado>

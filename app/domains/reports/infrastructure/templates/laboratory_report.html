@@ -1,0 +1,190 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Resultado de Laboratorio - {{ order.o_number }}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: Helvetica, Arial, sans-serif;
+      font-size: 9pt;
+      color: #1e293b;
+      background: none;
+    }
+
+    /* ── Página con marcos xhtml2pdf ─────────────────────── */
+    @page {
+      size: letter;
+      margin: 1.8cm 1.5cm 2.5cm 1.5cm;
+
+      @frame footer_frame {
+        -pdf-frame-content: page_footer;
+        left: 1.5cm; right: 1.5cm;
+        bottom: 0.5cm; height: 0.8cm;
+      }
+    }
+
+    /* ── Pie de página ───────────────────────────────────── */
+    #page_footer {
+      border-top: 0.5px solid #233248;
+      padding-top: 3px;
+    }
+    #page_footer table { width: 100%; }
+    #page_footer td { font-size: 7pt; color: #233248; vertical-align: middle; }
+
+    /* ── Cabecera ────────────────────────────────────────── */
+    .brand     { font-size: 20pt; font-weight: bold; color: #233248; }
+    .brand-sub { font-size: 7pt; color: #4a5568; margin-top: 2px; }
+    .ent-name  { font-size: 10pt; font-weight: bold; color: #233248; }
+    .ent-sub   { font-size: 7pt; color: #4a5568; margin-top: 2px; }
+
+    /* ── Badges estado lab ───────────────────────────────── */
+    .badge            { display: inline; padding: 1px 6px; font-size: 7pt; font-weight: bold; }
+    .badge-pendiente  { background: #faeeda; color: #633806; }
+    .badge-registrado { background: #dbeafe; color: #1e40af; }
+    .badge-validado   { background: #d1fae5; color: #065f46; }
+
+    /* ── Etiquetas de sección ───────────────────────────── */
+    .section-label {
+      font-size: 7pt; font-weight: bold; color: #233248;
+      text-transform: uppercase; letter-spacing: 0.5pt;
+    }
+
+    /* ── Título de estudio ───────────────────────────────── */
+    .study-title {
+      font-size: 8pt; font-weight: bold; color: #ffffff;
+      background: #233248; padding: 5px 8px;
+      margin-top: 10px; text-transform: uppercase;
+    }
+
+    /* ── Tabla de resultados ─────────────────────────────── */
+    .results-table { width: 100%; border-collapse: collapse; font-size: 8pt; margin-bottom: 4px; }
+    .results-table thead tr  { background: #233248; }
+    .results-table thead th  { padding: 5px 8px; text-align: left; font-size: 7pt; font-weight: bold; color: #ffffff; text-transform: uppercase; border-bottom: 0.5px solid #233248; }
+    .results-table tbody tr.odd  { background: #ffffff; }
+    .results-table tbody tr.even { background: #f0f6ff; }
+    .results-table tbody td  { padding: 5px 8px; border-bottom: 0.5px solid #dbeafe; vertical-align: top; }
+    .test-name  { font-weight: bold; color: #1e293b; }
+    .result-ok  { color: #0f6e56; font-weight: bold; }
+    .result-bad { color: #993c1d; font-weight: bold; }
+    .unit       { color: #233248; }
+    .ref        { color: #475569; }
+    .note-row td { font-size: 7pt; color: #233248; font-style: italic; background: #eff6ff; padding: 2px 8px 4px 20px; }
+  </style>
+</head>
+<body>
+
+  <!-- ── Pie de página (marco xhtml2pdf) ── -->
+  <div id="page_footer">
+    <table cellspacing="0" cellpadding="0">
+      <tr>
+        <td>Generado por: LisCore &nbsp;·&nbsp; Sistema LIS &nbsp;·&nbsp; {{ generation_date }}</td>
+        <td style="text-align:right;">Página <pdf:pagenumber /> de <pdf:pagecount /></td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ──────── CABECERA ──────── -->
+  <table style="width:100%; border-collapse:collapse; background-color:transparent; margin-bottom:0;" cellspacing="0" cellpadding="8">
+    <tr style="background-color:transparent;">
+      <td style="width:50%; vertical-align:middle; background-color:transparent;">
+        <div class="brand">LisCore</div>
+        <div class="brand-sub">Sistema de Información de Laboratorio Clínico</div>
+      </td>
+      <td style="vertical-align:middle; text-align:right; background-color:transparent;">
+        <div class="ent-name">PANTHOSOFT LAB</div>
+        <div class="ent-sub">Resultados de Laboratorio</div>
+      </td>
+    </tr>
+  </table>
+  <!-- Franja decorativa bajo cabecera -->
+  <table style="width:100%; border-collapse:collapse; background:#233248; margin-bottom:12px;" cellspacing="0" cellpadding="0">
+    <tr><td style="height:4px;"></td></tr>
+  </table>
+
+  <!-- ──────── DATOS DEMOGRÁFICOS ──────── -->
+  <table style="width:100%; border-collapse:collapse; border:0.5px solid #bfdbfe; margin-bottom:12px; font-size:8pt;" cellspacing="0">
+    <!-- Encabezado de secciones -->
+    <tr style="background:#233248;">
+      <th colspan="4" style="font-size:7pt; font-weight:bold; color:#ffffff; text-transform:uppercase; padding:5px 8px; text-align:left;">Información del Examen</th>
+    </tr>
+    <!-- Fila 1 -->
+    <tr style="background:transparent;">
+      <td style="color:#233248; padding:4px 8px; width:110px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">PACIENTE</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold; border-right:0.5px solid #bfdbfe00;" colspan="3">{{ patient_name }}</td>
+    </tr>
+    <!-- Fila 2 -->
+    <tr style="background:transparent;">
+      <td style="color:#233248; padding:4px 8px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">DOCUMENTO</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold; border-right:0.5px solid #bfdbfe00; width:35%;">{{ patient_doc }}</td>
+      <td style="color:#233248; padding:4px 8px; width:110px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">N° ORDEN</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold;">{{ order.o_number }}</td>
+    </tr>
+    <!-- Fila 3 -->
+    <tr style="background:transparent;">
+      <td style="color:#233248; padding:4px 8px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">EMPRESA</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold; border-right:0.5px solid #bfdbfe00;">{{ enterprise_name }}</td>
+      <td style="color:#233248; padding:4px 8px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">EDAD</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold;">{{ age }}</td>
+    </tr>
+    <!-- Fila 4 -->
+    <tr style="background:transparent;">
+      <td style="color:#233248; padding:4px 8px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">MUNICIPIO</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold; border-right:0.5px solid #bfdbfe00;">{{ city_name }}</td>
+      <td style="color:#233248; padding:4px 8px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">GÉNERO</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold;">{{ sex }}</td>
+    </tr>
+    <!-- Fila 5 -->
+    <tr style="background:transparent;">
+      <td style="color:#233248; padding:4px 8px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">SERVICIO</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold; border-right:0.5px solid #bfdbfe00;">{{ service_name }}</td>
+      <td style="color:#233248; padding:4px 8px; font-size:7.5pt; border-right:0.5px solid #dbeafe00;">FECHA INGRESO</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold;">{{ order_date }}</td>
+    </tr>
+    <!-- Fila 6 -->
+    <tr style="background:transparent;">
+      <td colspan="2"></td>
+      <td style="color:#233248; padding:4px 8px; font-size:7.5pt; border-right:0.5px solid #dbeafe;">FECHA IMPRESIÓN</td>
+      <td style="color:#1d293c; padding:4px 8px; font-weight:bold;">{{ print_date }}</td>
+    </tr>
+  </table>
+
+  <!-- ──────── RESULTADOS ──────── -->
+  {% if studies %}
+    {% for study in studies %}
+    <div class="study-title">{{ study.name }}</div>
+    <table class="results-table" cellspacing="0">
+      <thead>
+        <tr>
+          <th style="width:35%">Examen</th>
+          <th style="width:18%">Resultado</th>
+          <th style="width:14%">Unidades</th>
+          <th style="width:33%">Valor de Referencia</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in study.rows %}
+        <tr class="{{ 'odd' if loop.index is odd else 'even' }}">
+          <td class="test-name">{{ row.test_name }}</td>
+          <td class="{{ 'result-bad' if row.is_abnormal else 'result-ok' }}">{{ row.result }}</td>
+          <td class="unit">{{ row.units }}</td>
+          <td class="ref">{{ row.reference }}</td>
+        </tr>
+        {% if row.note %}
+        <tr class="note-row">
+          <td colspan="4">Nota: {{ row.note }}</td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+  {% else %}
+    <p style="color:#233248; font-style:italic; margin-top:12px; font-size:8pt;">
+      No hay resultados registrados para esta orden.
+    </p>
+  {% endif %}
+
+</body>
+</html>
+

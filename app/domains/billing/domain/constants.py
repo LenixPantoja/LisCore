@@ -1,0 +1,42 @@
+# ── Invoice States ────────────────────────────────────────────────────────────
+INVOICE_STATE_CREADA = 0
+INVOICE_STATE_PENDIENTE_PAGO = 1
+INVOICE_STATE_PENDIENTE_ENVIO_DIAN = 2
+INVOICE_STATE_EMITIDA_DIAN = 3
+INVOICE_STATE_RECHAZADA_DIAN = 4
+
+INVOICE_STATES: dict[int, str] = {
+    INVOICE_STATE_CREADA: "Creada",
+    INVOICE_STATE_PENDIENTE_PAGO: "Pendiente Pago",
+    INVOICE_STATE_PENDIENTE_ENVIO_DIAN: "Pendiente Envío DIAN",
+    INVOICE_STATE_EMITIDA_DIAN: "Emitida DIAN",
+    INVOICE_STATE_RECHAZADA_DIAN: "Rechazada DIAN",
+}
+
+# ── Invoice Types ─────────────────────────────────────────────────────────────
+INVOICE_TYPE_FACTURA_VENTA = 1
+INVOICE_TYPE_NOTA_CREDITO = 2
+INVOICE_TYPE_NOTA_DEBITO = 3
+
+INVOICE_TYPES: dict[int, str] = {
+    INVOICE_TYPE_FACTURA_VENTA: "Factura de Venta",
+    INVOICE_TYPE_NOTA_CREDITO: "Nota Crédito",
+    INVOICE_TYPE_NOTA_DEBITO: "Nota Débito",
+}
+
+# ── Invoice Sub-Types ─────────────────────────────────────────────────────────
+INVOICE_SUB_TYPE_FACTURA_CONTADO = 1
+INVOICE_SUB_TYPE_FACTURA_CREDITO = 2
+INVOICE_SUB_TYPE_NOTA_CREDITO_TOTAL = 3
+INVOICE_SUB_TYPE_NOTA_CREDITO_PARCIAL = 4
+INVOICE_SUB_TYPE_NOTA_DEBITO_TOTAL = 6
+INVOICE_SUB_TYPE_NOTA_DEBITO_PARCIAL = 7
+
+INVOICE_SUB_TYPES: dict[int, str] = {
+    INVOICE_SUB_TYPE_FACTURA_CONTADO: "Factura de Venta - Contado",
+    INVOICE_SUB_TYPE_FACTURA_CREDITO: "Factura de Venta - Crédito",
+    INVOICE_SUB_TYPE_NOTA_CREDITO_TOTAL: "Nota Crédito Total",
+    INVOICE_SUB_TYPE_NOTA_CREDITO_PARCIAL: "Nota Crédito Parcial",
+    INVOICE_SUB_TYPE_NOTA_DEBITO_TOTAL: "Nota Débito Total",
+    INVOICE_SUB_TYPE_NOTA_DEBITO_PARCIAL: "Nota Débito Parcial",
+}
