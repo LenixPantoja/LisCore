@@ -8,6 +8,9 @@ from app.domains.reports.api.schemas import (
     LaboratoryReportRequest, LaboratoryReportResponse,
     DashboardStatsResponse,
     KpisResponse,
+    KpiOrdersByWorkGroupResponse,
+    KpiOrdersBySedeResponse,
+    KpiOrdersByPeriodResponse,
 )
 from app.domains.reports.application.use_cases import report_use_cases as use_cases
 from app.domains.reports.application.use_cases import stats_use_cases
@@ -63,3 +66,46 @@ async def get_kpis(
     db: AsyncSession = Depends(get_db),
 ):
     return await kpis_use_cases.get_kpis(db)
+
+
+@router.get(
+    "/kpis/orders-by-work-group",
+    response_model=KpiOrdersByWorkGroupResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Órdenes por grupo de trabajo en una fecha",
+    description="Dado una fecha (YYYY-MM-DD), retorna la cantidad de órdenes agrupadas por grupo de trabajo.",
+)
+async def get_kpi_orders_by_work_group(
+    date: date = Query(..., description="Fecha de consulta (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await kpis_use_cases.get_orders_by_work_group_by_date(db, date)
+
+
+@router.get(
+    "/kpis/orders-by-sede",
+    response_model=KpiOrdersBySedeResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Órdenes por sede en una fecha",
+    description="Dado una fecha (YYYY-MM-DD), retorna la cantidad de órdenes por sede y el total general.",
+)
+async def get_kpi_orders_by_sede(
+    date: date = Query(..., description="Fecha de consulta (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await kpis_use_cases.get_orders_by_sede_by_date(db, date)
+
+
+@router.get(
+    "/kpis/orders-by-period",
+    response_model=KpiOrdersByPeriodResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Órdenes por mes/año con estados",
+    description="Retorna la cantidad de órdenes agrupadas por mes y año, con el desglose por estado de la orden. Acepta filtros opcionales de rango de fechas.",
+)
+async def get_kpi_orders_by_period(
+    date_from: Optional[date] = Query(None, description="Fecha inicio (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Fecha fin (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await kpis_use_cases.get_orders_by_period(db, date_from, date_to)

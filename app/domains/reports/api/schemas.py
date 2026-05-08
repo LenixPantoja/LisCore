@@ -63,3 +63,42 @@ class KpisResponse(BaseModel):
     total_orders: str
     total_pending_orders: str
     total_urgency_orders: str
+
+
+class KpiWorkGroupItem(BaseModel):
+    work_group: Optional[str] = None
+    total_orders: int
+
+
+class KpiOrdersByWorkGroupResponse(BaseModel):
+    date: date
+    orders_by_work_group: List[KpiWorkGroupItem]
+
+
+class KpiSedeItem(BaseModel):
+    hq_id: int
+    sede: Optional[str] = None
+    total_orders: int
+
+
+class KpiOrdersBySedeResponse(BaseModel):
+    date: date
+    total_orders: int
+    orders_by_sede: List[KpiSedeItem]
+
+
+class KpiStateCount(BaseModel):
+    state_id: int
+    state_name: str
+    total: int
+
+
+class KpiPeriodItem(BaseModel):
+    year: int
+    month: int
+    total_orders: int
+    states: List[KpiStateCount]
+
+
+class KpiOrdersByPeriodResponse(BaseModel):
+    data: List[KpiPeriodItem]
