@@ -14,6 +14,7 @@ from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_DETAIL_STATE_INGRESADO
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS
 from app.domains.samples.domain.models import SamplesOrder
+from app.domains.samples.domain.constants import SAMPLE_ORDER_STATE_NO_INGRESADA
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.testslabs.domain.models import TestsLab
@@ -123,9 +124,9 @@ async def create_order(db: AsyncSession, data: dict):
             sample_order = SamplesOrder(
                 so_order_id=order.o_id,
                 so_sample_type_id=st_id,
-                so_barcode=f"{order.o_number}-{st_id}", # Generación simple de código de barras
-                so_state=1, # Estado: Generado
-                so_number_studies=len(studies_ids) # Opcional: conteo de estudios vinculados
+                so_barcode=f"{order.o_number}-{st_id}",
+                so_state=SAMPLE_ORDER_STATE_NO_INGRESADA,
+                so_number_studies=len(studies_ids)
             )
             db.add(sample_order)
 
@@ -411,7 +412,8 @@ async def get_order_details_paginated_by_number(
             "skip": skip_tests,
             "limit": limit_tests,
             "items": tests
-        }
+        },
+        "samples": await OrderRepository.get_samples_by_order_id(db, order.o_id),
     }
 
 async def get_full_order_details_by_id(db: AsyncSession, o_id: int):

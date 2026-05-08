@@ -241,6 +241,7 @@ class OrderDetailsPaginatedResponse(BaseModel):
     patient: PatientResponse
     laboratories: OrderDetailsLabsPaginated
     tests: OrderDetailsTestsPaginated
+    samples: List["SamplesOrderResponse"] = []
 
 class TariffBasicResponse(BaseModel):
     t_id: int
