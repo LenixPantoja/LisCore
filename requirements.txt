@@ -3,6 +3,8 @@ annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
 arabic-reshaper==3.0.0
+argon2-cffi==25.1.0
+argon2-cffi-bindings==25.1.0
 asn1crypto==1.5.1
 asyncpg==0.31.0
 bcrypt==5.0.0
@@ -35,6 +37,7 @@ pillow==12.2.0
 pyasn1==0.6.3
 pycairo==1.29.0
 pycparser==3.0
+pycryptodome==3.23.0
 pydantic==2.12.5
 pydantic-settings==2.13.1
 pydantic_core==2.41.5
@@ -42,16 +45,19 @@ pydyf==0.12.1
 pyHanko==0.34.1
 pyhanko-certvalidator==0.30.2
 pypdf==6.10.2
+PyPDF2==3.0.1
 pyphen==0.17.2
 python-bidi==0.6.7
 python-dotenv==1.2.2
 python-jose==3.5.0
+python-multipart==0.0.27
 pytz==2026.1.post1
 PyYAML==6.0.3
 reportlab==4.4.10
 requests==2.33.1
 rlPyCairo==0.4.0
 rsa==4.9.1
+simpleeval==1.0.7
 six==1.17.0
 SQLAlchemy==2.0.48
 starlette==1.0.0
