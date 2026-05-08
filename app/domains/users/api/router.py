@@ -1,31 +1,59 @@
-from fastapi import APIRouter, Depends
+from typing import Optional
+from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Dict, Any
 
 from app.core.database import get_db
-from app.domains.users.api.schemas import UserCreate, UserUpdate, UserResponse, UserLogin
-from app.domains.users.application.use_cases import create_user, update_user, login_user
+from app.domains.users.api.schemas import UserResponse, UserPaginatedResponse, UserUpdate, UserLogin, LoginResponse
+from app.domains.users.application.use_cases import list_users, get_user, update_user, login_user
+from app.domains.users.infrastructure.repository import UserRepository
 
 router = APIRouter()
 
-@router.post("/login")
-async def login(data: UserLogin, db: AsyncSession = Depends(get_db)):
+@router.get("/", response_model=UserPaginatedResponse)
+async def list_existing_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = None,
+    db: AsyncSession = Depends(get_db)
+):
     """
-    Login endpoint. Note: Since the schema lacks a password field, this is simulating 
-    login strictly with the username (or expecting an external auth flow).
+    Endpoint para listar usuarios con paginación y búsqueda opcional por nombre, apellido o login.
     """
-    return await login_user.execute(db, data.model_dump())
+    return await list_users.execute(db, skip, limit, search)
 
-@router.post("/", response_model=UserResponse)
-async def create_new_user(data: UserCreate, db: AsyncSession = Depends(get_db)):
+@router.get("/{usr_id}", response_model=UserResponse)
+async def get_user_details(usr_id: int, db: AsyncSession = Depends(get_db)):
     """
-    Create a new user endpoint.
+    Endpoint para obtener el detalle de un usuario específico por su ID.
     """
-    return await create_user.execute(db, data.model_dump())
+    return await get_user.execute(db, usr_id)
 
-@router.patch("/{user_id}", response_model=UserResponse)
-async def update_existing_user(user_id: int, data: UserUpdate, db: AsyncSession = Depends(get_db)):
+@router.patch("/{usr_id}", response_model=UserResponse)
+async def update_existing_user(usr_id: int, data: UserUpdate, db: AsyncSession = Depends(get_db)):
     """
-    Update an existing user endpoint.
+    Endpoint para actualizar los datos de un usuario existente.
     """
-    return await update_user.execute(db, user_id, data.model_dump(exclude_unset=True))
+    return await update_user.execute(
+        UserRepository, 
+        db, 
+        usr_id, 
+        data.model_dump(exclude_unset=True)
+    )
+
+@router.post("/login", response_model=LoginResponse)
+async def login_for_access_token(
+    form_data: UserLogin,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Endpoint para autenticar un usuario y obtener un token de acceso.
+
+    Returns:
+    - **access_token**: JWT token for API access
+    - **token_type**: Token type (bearer)
+    - **usr_id**: User ID
+    - **usr_login**: User login
+    - **usr_full_name**: Full name (first + middle + last + second last)
+    - **usr_rol_name**: Role name
+    """
+    return await login_user.execute(UserRepository, db, form_data.model_dump())

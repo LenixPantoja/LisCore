@@ -1,0 +1,19 @@
+"""
+Tipos de operación para trazabilidad de la aplicación (AppTrace).
+"""
+
+OPERATION_LOGIN = 1
+OPERATION_CREATE_ORDER = 2
+OPERATION_EDIT_RESULT = 3
+OPERATION_VALIDATE_RESULT = 4
+OPERATION_INVALIDATE_RESULT = 5
+OPERATION_CHANGE_STUDY_STATE = 6
+
+OPERATION_TYPES = {
+    OPERATION_LOGIN: "Inicio de sesión",
+    OPERATION_CREATE_ORDER: "Creación de Orden",
+    OPERATION_EDIT_RESULT: "Edición de Resultado",
+    OPERATION_VALIDATE_RESULT: "Validación de Resultado",
+    OPERATION_INVALIDATE_RESULT: "Invalidación de Resultado",
+    OPERATION_CHANGE_STUDY_STATE: "Cambio Estado de Estudio",
+}

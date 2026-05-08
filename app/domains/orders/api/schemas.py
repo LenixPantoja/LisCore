@@ -1,0 +1,424 @@
+from pydantic import BaseModel, EmailStr, field_validator, Field, computed_field
+from typing import Optional, List, Any
+from datetime import date, datetime
+from app.domains.patients.api.schemas import PatientResponse
+from app.domains.testslabs.api.schemas import TestsLabResponse
+from app.domains.studieslab.api.schemas import StudiesLabResponse
+from app.domains.enterprises.api.schemas import EnterpriseResponse
+from app.domains.masters.api.schemas import ServiceResponse, DiagnosisResponse, SchoolingResponse
+from app.domains.samples.api.schemas import SampleTypeResponse
+from app.domains.orders.domain.constants import ORDER_STATES, ORDER_DETAIL_STATES
+from app.domains.samples.domain.constants import SAMPLE_ORDER_STATES
+from app.domains.laboratories.domain.constants import LABORATORY_STATES
+class OrderBase(BaseModel):
+    o_number: str
+    o_date: date
+    o_his_id: int
+    o_age: Optional[str] = None
+    o_pregnated: Optional[bool] = False
+    o_week_pregnated: Optional[str] = None
+    o_priority: Optional[int] = 0
+    o_autorizacion: Optional[str] = None
+    o_service_id: Optional[int] = None
+    o_diagnoses_id: Optional[int] = None
+    o_headquarter_id: Optional[int] = None
+    o_AppUser_id: Optional[int] = None
+    o_enterprise_id: Optional[int] = None
+    o_scholarity: Optional[int] = None
+    o_order_state: Optional[int] = 1
+    o_pat_num_whatsapp: Optional[str] = None
+    o_pat_mail: Optional[EmailStr] = None
+    o_note: Optional[str] = None
+    o_tariff_id: Optional[int] = None
+
+class OrderCreate(OrderBase):
+    """Esquema para crear una orden con sus estudios solicitados."""
+    o_date: Optional[date] = None  # Se asigna automáticamente si no se envía
+    studies: List[int]
+
+class OrderUpdate(BaseModel):
+    o_print_date: Optional[datetime] = None
+    o_pregnated: Optional[bool] = None
+    o_week_pregnated: Optional[str] = None
+    o_priority: Optional[int] = None
+    o_mail_sent: Optional[int] = None
+    o_whatsapp_sent: Optional[int] = None
+    o_autorizacion: Optional[str] = None
+    o_order_state: Optional[int] = None
+    o_pat_num_whatsapp: Optional[str] = None
+    o_pat_mail: Optional[EmailStr] = None
+    o_note: Optional[str] = None
+
+class OrderResponse(OrderBase):
+    o_id: int
+    o_print_date: Optional[datetime] = None
+    o_mail_sent: int
+    o_whatsapp_sent: int
+    o_created_at: datetime
+    o_updated_at: datetime
+    o_order_state: Optional[str] = None  # Override: se serializa como nombre del estado
+    patient: Optional[PatientResponse] = None
+
+    @field_validator('o_order_state', mode='before')
+    @classmethod
+    def convert_o_order_state(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return ORDER_STATES.get(v, str(v))
+        return v
+
+    @computed_field
+    @property
+    def patient_document(self) -> Optional[str]:
+        if not self.patient:
+            return None
+        return self.patient.pt_Number_document
+
+    @computed_field
+    @property
+    def patient_full_name(self) -> Optional[str]:
+        if not self.patient:
+            return None
+        parts = [
+            self.patient.pt_firts_name,
+            self.patient.pt_middle_name,
+            self.patient.pt_last_name,
+            self.patient.pt_second_last_name,
+        ]
+        return " ".join(part for part in parts if part)
+
+    class Config:
+        from_attributes = True
+
+class OrderPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[OrderResponse]
+
+class NextOrderNumberResponse(BaseModel):
+    next_order_number: str
+
+class OrderCreatedResponse(BaseModel):
+    """Response returned immediately after a successful order creation."""
+    o_id: int
+    o_number: str
+    o_date: Optional[date] = None
+    o_his_id: int
+    o_enterprise_id: Optional[int] = None
+    o_tariff_id: Optional[int] = None
+    o_order_state: Optional[str] = None
+    o_created_at: Optional[datetime] = None
+
+    @field_validator('o_order_state', mode='before')
+    @classmethod
+    def convert_o_order_state(cls, v):
+        if isinstance(v, int):
+            return ORDER_STATES.get(v, str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
+# Nuevos esquemas añadidos para los casos de uso solicitados
+
+class PatientOrderListItem(BaseModel):
+    o_id: int
+    pt_Number_document: str
+    pt_Document_Type_id: Optional[int] = None
+    o_number: str
+    o_date: date
+    patient_full_name: str
+    o_order_state: int
+    order_state_name: str
+
+    class Config:
+        from_attributes = True
+
+class PatientOrdersPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[PatientOrderListItem]
+
+class BasicStudiesLabResponse(BaseModel):
+    id: int
+    code: str
+    name: str
+
+    class Config:
+        from_attributes = True
+
+class BasicUserResponse(BaseModel):
+    usr_id: int
+    usr_first_name: str
+    usr_last_name: str
+    usr_middle_name: Optional[str] = None
+    usr_second_last_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class UserValidationResponse(BaseModel):
+    username: Optional[str] = Field(None, alias="usr_login")
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+
+class BasicOrdersDetailResponse(BaseModel):
+    od_id: int
+    od_order_id: int
+    od_study_id: int
+    od_state: Optional[str] = None  # Serializado como nombre del estado
+    study: Optional[BasicStudiesLabResponse] = None
+
+    @field_validator('od_state', mode='before')
+    @classmethod
+    def convert_od_state(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return ORDER_DETAIL_STATES.get(v, str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
+class LaboratoryResponse(BaseModel):
+    l_id: int
+    l_order_detail_id: Optional[int] = None
+    l_test_id: Optional[int] = None
+    l_result: Optional[str] = None
+    l_result_num: Optional[float] = None
+    l_result_comp: Optional[str] = None
+    l_result_graphic: Optional[str] = None
+    l_nota_validation: Optional[str] = None
+    l_state: Optional[str] = None  # Serializado como nombre del estado
+    l_date_transmited: Optional[datetime] = None
+    l_date_validatie: Optional[datetime] = None
+    l_user_validation_id: Optional[int] = None
+    a_analyzer_result_id: Optional[int] = None
+    l_created_at: datetime
+    l_updated_at: datetime
+
+    # Campos de rango de referencia (calculados al consultar, no almacenados en BD)
+    range_type: Optional[str] = None
+    value_range_reference_min: Optional[float] = None
+    value_range_reference_max: Optional[float] = None
+
+    order_detail: Optional[BasicOrdersDetailResponse] = None
+    test: Optional[TestsLabResponse] = None
+    user_validation: Optional[UserValidationResponse] = None
+
+    @field_validator('l_state', mode='before')
+    @classmethod
+    def convert_l_state(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return LABORATORY_STATES.get(v, str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
+class OrderDetailsLabsPaginated(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[LaboratoryResponse]
+
+class OrderDetailsTestsPaginated(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[TestsLabResponse]
+
+class OrderDetailsPaginatedResponse(BaseModel):
+    order: OrderResponse
+    patient: PatientResponse
+    laboratories: OrderDetailsLabsPaginated
+    tests: OrderDetailsTestsPaginated
+    samples: List["SamplesOrderResponse"] = []
+
+class TariffBasicResponse(BaseModel):
+    t_id: int
+    t_name: Optional[str] = None
+    t_description: Optional[str] = None
+    t_activo: Optional[bool] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SamplesOrderResponse(BaseModel):
+    so_id: int
+    so_order_id: Optional[int] = None
+    so_sample_type_id: Optional[int] = None
+    so_barcode: Optional[str] = None
+    so_state: Optional[str] = None  # Serializado como nombre del estado
+    so_number_studies: Optional[int] = None
+    so_current_location_id: Optional[int] = None
+    so_created_at: datetime
+    so_updated_at: datetime
+    sample_type: Optional[SampleTypeResponse] = None
+
+    @field_validator('so_state', mode='before')
+    @classmethod
+    def convert_so_state(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return SAMPLE_ORDER_STATES.get(v, str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
+
+class OrderWithRelationsResponse(OrderResponse):
+    service: Optional[ServiceResponse] = None
+    diagnosis: Optional[DiagnosisResponse] = None
+    enterprise: Optional[EnterpriseResponse] = None
+    schooling: Optional[SchoolingResponse] = None
+    tariff: Optional[TariffBasicResponse] = None
+    details: Optional[List[BasicOrdersDetailResponse]] = None
+
+
+class StudyWithLabsResponse(BaseModel):
+    study_id: int
+    study_name: Optional[str] = None
+    study_code: Optional[str] = None
+    study_value: Optional[Any] = None
+    laboratories: List["SlimLaboratoryResponse"] = []
+
+
+class SlimLaboratoryResponse(BaseModel):
+    """Lab sin order_detail (el estudio es el padre en laboratories_by_study)."""
+    l_id: int
+    l_order_detail_id: Optional[int] = None
+    l_test_id: Optional[int] = None
+    l_result: Optional[str] = None
+    l_result_num: Optional[float] = None
+    l_result_comp: Optional[str] = None
+    l_result_graphic: Optional[str] = None
+    l_nota_validation: Optional[str] = None
+    l_state: Optional[str] = None
+    l_date_transmited: Optional[datetime] = None
+    l_date_validatie: Optional[datetime] = None
+    l_user_validation_id: Optional[int] = None
+    a_analyzer_result_id: Optional[int] = None
+    l_created_at: datetime
+    l_updated_at: datetime
+
+    # Campos de rango de referencia (calculados al consultar, no almacenados en BD)
+    range_type: Optional[str] = None
+    value_range_reference_min: Optional[float] = None
+    value_range_reference_max: Optional[float] = None
+
+    test: Optional[TestsLabResponse] = None
+    user_validation: Optional[UserValidationResponse] = None
+
+    @field_validator('l_state', mode='before')
+    @classmethod
+    def convert_l_state(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return LABORATORY_STATES.get(v, str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
+
+StudyWithLabsResponse.model_rebuild()
+
+
+class OrderSummaryForFullResponse(OrderResponse):
+    """OrderWithRelations sin 'details' para evitar duplicados en /full."""
+    service: Optional[ServiceResponse] = None
+    diagnosis: Optional[DiagnosisResponse] = None
+    enterprise: Optional[EnterpriseResponse] = None
+    schooling: Optional[SchoolingResponse] = None
+    tariff: Optional[TariffBasicResponse] = None
+
+
+class InvoiceSummaryResponse(BaseModel):
+    inv_id: int
+    inv_number: Optional[str] = None
+    inv_subtotal: Optional[Any] = None
+    inv_tax: Optional[Any] = None
+    inv_total: Optional[Any] = None
+    inv_state: Optional[int] = None
+    inv_state_name: Optional[str] = None
+    inv_type: Optional[int] = None
+    inv_type_name: Optional[str] = None
+    inv_sub_type_invoice: Optional[int] = None
+    inv_sub_type_name: Optional[str] = None
+
+
+class HeadquarterBasicResponse(BaseModel):
+    id: int
+    name: Optional[str] = None
+    address: Optional[str] = None
+    prefix: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class OrderFullDetailsResponse(BaseModel):
+    order: OrderSummaryForFullResponse
+    patient: PatientResponse
+    headquarter: Optional[HeadquarterBasicResponse] = None
+    laboratories_by_study: List[StudyWithLabsResponse] = []
+    tests: List[TestsLabResponse]
+    samples: List[SamplesOrderResponse]
+    invoice: Optional[InvoiceSummaryResponse] = None
+
+
+# ── Gráfico evolutivo de resultados ──────────────────────────────────────────
+
+class HistoricoResultadoItem(BaseModel):
+    fecha: Optional[datetime] = None
+    valor: Optional[float] = None
+    referencia_min: Optional[float] = None
+    referencia_max: Optional[float] = None
+    estado: Optional[str] = None
+    orden_numero: Optional[str] = None
+
+
+class GraficoEvolutivoResponse(BaseModel):
+    prueba: Optional[str] = None
+    codigo: Optional[str] = None
+    unidad: Optional[str] = None
+    paciente: Optional[str] = None
+    historico: List[HistoricoResultadoItem] = []
+
+
+class OrderEditRequest(BaseModel):
+    """Esquema para editar campos de una orden y/o agregar estudios."""
+    o_enterprise_id: Optional[int] = None
+    o_diagnoses_id: Optional[int] = None
+    o_service_id: Optional[int] = None
+    o_autorizacion: Optional[str] = None
+    o_pregnated: Optional[bool] = None
+    o_week_pregnated: Optional[str] = None
+    o_priority: Optional[int] = None
+    o_scholarity: Optional[int] = None
+    o_note: Optional[str] = None
+    o_tariff_id: Optional[int] = None
+    studies: Optional[List[int]] = None  # IDs de estudios a agregar
+
+
+class OrderEditResponse(BaseModel):
+    success: bool
+    o_id: int
+    updated_fields: List[str]
+    added_studies: List[int]
+    skipped_studies: List[int]
+    invalid_studies: List[int]
+    message: str

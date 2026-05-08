@@ -11,10 +11,21 @@ class Settings(BaseSettings):
     DB_PASSWORD: str
     DB_NAME: str
 
+    # Timezone
+    TIME_ZONE: str = "America/Bogota"
+
     # JWT Settings
     SECRET_KEY: str = ">8)d0gDf\$GD9`}ym9%qrU6=p{C=4CPo>t1w5V<P=uoe&YegJ"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+
+    # MinIO
+    MINIO_ENDPOINT: str = "localhost:9000"
+    MINIO_ACCESS_KEY: str = ""
+    MINIO_SECRET_KEY: str = ""
+    MINIO_SECURE: bool = False
+    MINIO_GRAPHICS_BUCKET: str = "graphics"
+    MINIO_PRESIGNED_EXPIRES_HOURS: int = 24
 
     @property
     def DATABASE_URL(self) -> str:

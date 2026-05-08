@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 
 class UserBase(BaseModel):
@@ -18,6 +18,7 @@ class UserCreate(UserBase):
     usr_password: str
 
 class UserUpdate(BaseModel):
+    usr_login: Optional[str] = None
     usr_first_name: Optional[str] = None
     usr_middle_name: Optional[str] = None
     usr_last_name: Optional[str] = None
@@ -32,6 +33,10 @@ class UserUpdate(BaseModel):
 
 class UserResponse(UserBase):
     usr_id: int
+    usr_first_name: Optional[str] = None
+    usr_last_name: Optional[str] = None
+    usr_document_number: Optional[str] = None
+    usr_mail: Optional[str] = None
     usr_is_Locked: bool
     usr_created_at: datetime
     usr_updated_at: datetime
@@ -41,6 +46,18 @@ class UserResponse(UserBase):
 
 class UserLogin(BaseModel):
     usr_login: str
-    # Assuming standard login with password, even if not in schema.
-    # We will simulate login logic for now since the schema lacks password
-    usr_password: str 
+    usr_password: str
+
+class LoginResponse(BaseModel):
+    access_token: str
+    token_type: str
+    usr_id: int
+    usr_login: str
+    usr_full_name: str
+    usr_rol_name: Optional[str] = None
+
+class UserPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[UserResponse]
