@@ -106,6 +106,95 @@ class OrderRepository:
         return order
 
     @staticmethod
+    async def cancel_studies(
+        db: AsyncSession,
+        o_id: int,
+        study_ids: list[int],
+    ) -> dict:
+        """
+        Cancels one or more studies from an order.
+
+        For each cancelled study:
+        - Sets od_cancelled = 1 on matching OrdersDetails rows via explicit UPDATE.
+        - Deletes Laboratory records linked to those OrdersDetails.
+        - Sets invd_value = 0 and invd_total = 0 on matching InvoicesDetail rows.
+
+        If ALL studies of the order end up cancelled, sets Order.o_cancelled = 1.
+
+        Returns a dict with cancelled_detail_ids and order_cancelled flag.
+        """
+        from sqlalchemy import update as sa_update, delete
+        from app.domains.laboratories.domain.models import Laboratory
+        from app.domains.billing.domain.models import InvoiceDetail
+
+        order = await db.get(Order, o_id)
+        if not order:
+            return {"cancelled_detail_ids": [], "order_cancelled": False, "not_found": True}
+
+        # Fetch IDs of the details to cancel (only non-cancelled ones)
+        to_cancel_result = await db.execute(
+            select(OrdersDetail.od_id).where(
+                OrdersDetail.od_order_id == o_id,
+                OrdersDetail.od_study_id.in_(study_ids),
+                OrdersDetail.od_cancelled == 0,
+            )
+        )
+        cancelled_detail_ids: list[int] = list(to_cancel_result.scalars().all())
+
+        if cancelled_detail_ids:
+            # Mark as cancelled via explicit UPDATE
+            await db.execute(
+                sa_update(OrdersDetail)
+                .where(OrdersDetail.od_id.in_(cancelled_detail_ids))
+                .values(od_cancelled=1)
+                .execution_options(synchronize_session="fetch")
+            )
+
+            # Delete Laboratory records linked to cancelled OrdersDetails
+            await db.execute(
+                delete(Laboratory).where(
+                    Laboratory.l_order_detail_id.in_(cancelled_detail_ids)
+                )
+            )
+
+            # Zero-out InvoiceDetail values for cancelled studies
+            await db.execute(
+                sa_update(InvoiceDetail)
+                .where(InvoiceDetail.invd_order_detail_id.in_(cancelled_detail_ids))
+                .values(invd_value=0, invd_total=0)
+                .execution_options(synchronize_session="fetch")
+            )
+
+        # Check if ALL details of the order are now cancelled
+        remaining_result = await db.execute(
+            select(func.count()).select_from(
+                select(OrdersDetail.od_id)
+                .where(
+                    OrdersDetail.od_order_id == o_id,
+                    OrdersDetail.od_cancelled == 0,
+                )
+                .subquery()
+            )
+        )
+        remaining_active = remaining_result.scalar() or 0
+        all_cancelled = remaining_active == 0
+
+        await db.execute(
+            sa_update(Order)
+            .where(Order.o_id == o_id)
+            .values(o_cancelled=1 if all_cancelled else 0)
+            .execution_options(synchronize_session="fetch")
+        )
+
+        await db.commit()
+
+        return {
+            "cancelled_detail_ids": cancelled_detail_ids,
+            "order_cancelled": all_cancelled,
+            "not_found": False,
+        }
+
+    @staticmethod
     async def get_next_order_number(db: AsyncSession) -> str:
         """
         Generate next order number based on format MMDDCCCCYY.

@@ -70,6 +70,7 @@ async def create_order(db: AsyncSession, data: dict):
         data["o_number"] = await generate_order_number(db, data.get("o_date"))
         # Estado inicial de la orden: Ingresada
         data["o_order_state"] = ORDER_STATE_INGRESADA
+        data["o_cancelled"] = 0
 
         order = await OrderRepository.create(db, data)
         await db.flush() # Obtenemos o_id sin confirmar la transacción todavía        
@@ -101,7 +102,8 @@ async def create_order(db: AsyncSession, data: dict):
                 order_detail = OrdersDetail(
                     od_order_id=order.o_id,
                     od_study_id=study_id,
-                    od_state=ORDER_DETAIL_STATE_INGRESADO
+                    od_state=ORDER_DETAIL_STATE_INGRESADO,
+                    od_cancelled=0
                 )
                 db.add(order_detail)
                 await db.flush()  # Para obtener od_id
@@ -293,6 +295,15 @@ async def create_order(db: AsyncSession, data: dict):
         
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error de integridad al crear la orden.")
 
+
+async def cancel_order_studies(db: AsyncSession, o_id: int, study_ids: list[int]) -> dict:
+    """Cancels specific studies from an order and cleans up related records."""
+    result = await OrderRepository.cancel_studies(db, o_id, study_ids)
+    if result["not_found"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada.")
+    return result
+
+
 async def list_orders(
     db: AsyncSession,
     skip: int = 0,
@@ -482,11 +493,13 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
         study = lab.order_detail.study if lab.order_detail else None
         study_id = study.id if study else 0
         if study_id not in study_map:
+            od_cancelled = lab.order_detail.od_cancelled if lab.order_detail else 0
             study_map[study_id] = {
                 "study_id": study_id,
                 "study_name": study.name if study else None,
                 "study_code": study.code if study else None,
                 "study_value": study_invoice_value.get(study_id),
+                "od_cancelled": od_cancelled if od_cancelled is not None else 0,
                 "laboratories": [],
             }
             study_order.append(study_id)

@@ -292,6 +292,7 @@ class StudyWithLabsResponse(BaseModel):
     study_name: Optional[str] = None
     study_code: Optional[str] = None
     study_value: Optional[Any] = None
+    od_cancelled: int = 0
     laboratories: List["SlimLaboratoryResponse"] = []
 
 
@@ -421,4 +422,16 @@ class OrderEditResponse(BaseModel):
     added_studies: List[int]
     skipped_studies: List[int]
     invalid_studies: List[int]
+    message: str
+
+
+class CancelStudiesRequest(BaseModel):
+    study_ids: List[int] = Field(..., min_length=1, description="IDs de los estudios a anular.")
+
+
+class CancelStudiesResponse(BaseModel):
+    success: bool
+    o_id: int
+    cancelled_detail_ids: List[int]
+    order_cancelled: bool
     message: str

@@ -8,7 +8,7 @@ from app.domains.orders.api.schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse, 
     NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
     OrderCreatedResponse, OrderEditRequest, OrderEditResponse,
-    GraficoEvolutivoResponse,
+    GraficoEvolutivoResponse, CancelStudiesRequest, CancelStudiesResponse,
 )
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
@@ -84,6 +84,30 @@ async def edit(id: int, data: OrderEditRequest, db: AsyncSession = Depends(get_d
       exista en la tarifa asignada a la orden. Los estudios duplicados se omiten.
     """
     return await use_cases.edit_order(db, id, data.model_dump(exclude_unset=True))
+
+
+@router.post("/{id}/cancel-studies", response_model=CancelStudiesResponse, status_code=status.HTTP_200_OK)
+async def cancel_studies(id: int, data: CancelStudiesRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Anula uno o varios estudios de una orden.
+
+    - Marca los OrdersDetails correspondientes como od_cancelled = 1.
+    - Elimina los registros de Laboratorio vinculados a esos estudios.
+    - Pone invd_value = 0 e invd_total = 0 en InvoicesDetail para esos estudios.
+    - Si todos los estudios de la orden quedan anulados, marca la orden como o_cancelled = 1.
+    """
+    result = await use_cases.cancel_order_studies(db, id, data.study_ids)
+    return CancelStudiesResponse(
+        success=True,
+        o_id=id,
+        cancelled_detail_ids=result["cancelled_detail_ids"],
+        order_cancelled=result["order_cancelled"],
+        message=(
+            "Todos los estudios anulados. Orden cancelada."
+            if result["order_cancelled"]
+            else f"{len(result['cancelled_detail_ids'])} estudio(s) anulado(s)."
+        ),
+    )
 
 @router.get("/by-number/{o_number}/details", response_model=OrderDetailsPaginatedResponse)
 async def get_order_details_paginated(
