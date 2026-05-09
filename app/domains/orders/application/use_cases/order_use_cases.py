@@ -77,6 +77,8 @@ async def create_order(db: AsyncSession, data: dict):
         unique_sample_types = set()
         # Mapa study_id → primer od_id creado (para InvoiceDetail)
         study_od_map: dict[int, int] = {}
+        # Pruebas ya registradas en la orden (evita duplicados entre estudios)
+        seen_test_ids: set[int] = set()
 
         for study_id in studies_ids:
             # 2. Consultar StudiesTestDetail para obtener las pruebas y tipos de muestra
@@ -94,7 +96,7 @@ async def create_order(db: AsyncSession, data: dict):
                     detail=f"El estudio con ID {study_id} no tiene exámenes configurados en StudiesTestDetail."
                 )
 
-            # 3. Crear un OrdersDetail y un Laboratory por cada prueba del estudio
+            # 3. Crear un OrdersDetail por estudio y un Laboratory por prueba única
             for link in test_links:
                 order_detail = OrdersDetail(
                     od_order_id=order.o_id,
@@ -108,12 +110,15 @@ async def create_order(db: AsyncSession, data: dict):
                 if study_id not in study_od_map:
                     study_od_map[study_id] = order_detail.od_id
 
-                blank_result = Laboratory(
-                    l_order_detail_id=order_detail.od_id,
-                    l_test_id=link.tests_id,
-                    l_state=LABORATORY_STATE_SIN_RESULTADOS
-                )
-                db.add(blank_result)
+                # Crear el registro de laboratorio solo si la prueba no existe ya en esta orden
+                if link.tests_id not in seen_test_ids:
+                    blank_result = Laboratory(
+                        l_order_detail_id=order_detail.od_id,
+                        l_test_id=link.tests_id,
+                        l_state=LABORATORY_STATE_SIN_RESULTADOS
+                    )
+                    db.add(blank_result)
+                    seen_test_ids.add(link.tests_id)
 
                 # 4. Recolectar tipos de muestra para SamplesOrder
                 if link.test and link.test.samples_type_id:
