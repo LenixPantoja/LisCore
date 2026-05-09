@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "CorelisDB"
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:4200", "http://localhost:3000", "http://localhost:8080"]
+    CORS_ORIGINS: List[str] = ["http://localhost:4200", "http://localhost:3000", "http://localhost:8080","*"]
 
     # Database connection from .env
     DB_HOST: str
