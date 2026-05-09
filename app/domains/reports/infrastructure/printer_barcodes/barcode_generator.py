@@ -24,18 +24,22 @@ from typing import List
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.graphics.barcode import code128
 from reportlab.lib.units import mm
-from reportlab.lib.colors import black
+from reportlab.lib.colors import black, Color
+
+# Negro puro CMYK (K=100%) → máximo contraste en impresoras térmicas
+PURE_BLACK = Color(0, 0, 0, 1)
 
 # ── Sticker dimensions ─────────────────────────────────────────────────────
 STICKER_W   = 50 * mm
 STICKER_H   = 25 * mm
 
-LEFT_COL_W  = 6  * mm   # left strip  → work group (vertical)
-RIGHT_COL_W = 7  * mm   # right strip → order-suffix label (vertical)
-H_MARGIN    = 1.5 * mm  # inner horizontal margin inside content area
+LEFT_COL_W  = 6   * mm   # left strip  → work group (vertical)
+RIGHT_COL_W = 7   * mm   # right strip → order-suffix label (vertical)
+H_MARGIN_L  = 4.5 * mm   # inner left margin  (increased to avoid printer clipping)
+H_MARGIN_R  = 1.5 * mm   # inner right margin
 
-CONTENT_X = LEFT_COL_W + H_MARGIN
-CONTENT_R = STICKER_W - RIGHT_COL_W - H_MARGIN
+CONTENT_X = LEFT_COL_W + H_MARGIN_L
+CONTENT_R = STICKER_W - RIGHT_COL_W - H_MARGIN_R
 CONTENT_W = CONTENT_R - CONTENT_X
 
 F_BOLD   = "Helvetica-Bold"
@@ -70,7 +74,7 @@ def _draw_sticker(c, sticker: dict) -> None:
     W, H = STICKER_W, STICKER_H
 
     # ── Vertical separator lines ─────────────────────────────────────────────
-    c.setStrokeColor(black)
+    c.setStrokeColor(PURE_BLACK)
     c.setLineWidth(0.4)
     c.line(LEFT_COL_W,      0, LEFT_COL_W,      H)
     c.line(W - RIGHT_COL_W, 0, W - RIGHT_COL_W, H)
@@ -90,7 +94,7 @@ def _draw_sticker(c, sticker: dict) -> None:
               font=F_BOLD, size=5.5, max_h=H)
 
     # ── Content area ─────────────────────────────────────────────────────────
-    c.setFillColor(black)
+    c.setFillColor(PURE_BLACK)
 
     # Y positions: información del paciente + código de barras en la parte
     # superior; línea de estudios centrada en el espacio inferior.
@@ -104,8 +108,8 @@ def _draw_sticker(c, sticker: dict) -> None:
     y_tests    = y_sample + 2.0 * mm      # códigos de estudios (sobre el tipo de muestra)
 
     # Patient name
-    c.setFont(F_BOLD, 7)
-    name = _fit(c, sticker["patient_full_name"], F_BOLD, 7, CONTENT_W)
+    c.setFont(F_BOLD, 5.5)
+    name = _fit(c, sticker["patient_full_name"], F_BOLD, 5.5, CONTENT_W)
     c.drawString(CONTENT_X, y_patient, name)
 
     # Identification

@@ -52,5 +52,5 @@ async def get_one(id: int, db: AsyncSession = Depends(get_db)):
     return await use_cases.get_patient_by_id(db, id)
 
 @router.patch("/{id}", response_model=PatientResponse)
-async def update(id: int, data: PatientUpdate, db: AsyncSession = Depends(get_db)):
-    return await use_cases.update_patient(db, id, data.model_dump(exclude_unset=True))
+async def update(id: int, data: PatientUpdate, usr_id: Optional[int] = Query(None), db: AsyncSession = Depends(get_db)):
+    return await use_cases.update_patient(db, id, data.model_dump(exclude_unset=True), usr_id=usr_id)
