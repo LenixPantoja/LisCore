@@ -1,3 +1,4 @@
+from decimal import Decimal, InvalidOperation
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, select
 from app.domains.laboratories.domain.models import Laboratory
@@ -80,13 +81,13 @@ class LaboratoryRepository:
                 test_row = test_result.one_or_none()
                 if test_row and test_row.test_type == "N":
                     try:
-                        raw_value = float(str(item["l_result"]).replace(",", "."))
+                        raw_value = Decimal(str(item["l_result"]).replace(",", "."))
                         decimals = test_row.num_decimal_result
                         if decimals is not None:
                             raw_value = round(raw_value, decimals)
                             item["l_result"] = f"{raw_value:.{decimals}f}"
                         item["l_result_num"] = raw_value
-                    except (ValueError, TypeError):
+                    except (ValueError, TypeError, InvalidOperation):
                         item["l_result_num"] = None
                 
             stmt = (
