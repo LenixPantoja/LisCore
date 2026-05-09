@@ -489,23 +489,83 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     study_map = {}
     study_order = []
     unique_study_ids_in_order: list[int] = []
-    for lab in labs:
-        study = lab.order_detail.study if lab.order_detail else None
+
+    # Pre-populate study_map from all OrdersDetails (includes cancelled ones with empty labs)
+    seen_od_study_ids: set[int] = set()
+    for detail in order.details:
+        study = detail.study
         study_id = study.id if study else 0
-        if study_id not in study_map:
-            od_cancelled = lab.order_detail.od_cancelled if lab.order_detail else 0
+        if study_id not in seen_od_study_ids:
+            seen_od_study_ids.add(study_id)
+            od_cancelled = detail.od_cancelled if detail.od_cancelled is not None else 0
             study_map[study_id] = {
                 "study_id": study_id,
                 "study_name": study.name if study else None,
                 "study_code": study.code if study else None,
                 "study_value": study_invoice_value.get(study_id),
-                "od_cancelled": od_cancelled if od_cancelled is not None else 0,
+                "od_cancelled": od_cancelled,
                 "laboratories": [],
             }
             study_order.append(study_id)
             if study_id and study_invoice_value.get(study_id) is None:
                 unique_study_ids_in_order.append(study_id)
-        study_map[study_id]["laboratories"].append(lab)
+
+    # Attach laboratories to their study
+    for lab in labs:
+        study = lab.order_detail.study if lab.order_detail else None
+        study_id = study.id if study else 0
+        if study_id in study_map:
+            study_map[study_id]["laboratories"].append(lab)
+
+    # Load required test config per study to compute study state
+    all_study_ids = [sid for sid in study_order if sid]
+    required_tests_by_study: dict[int, set[int]] = {}
+    if all_study_ids:
+        std_result = await db.execute(
+            select(StudiesTestDetail).where(
+                StudiesTestDetail.studies_id.in_(all_study_ids),
+                StudiesTestDetail.is_required == True,
+            )
+        )
+        for std in std_result.scalars().all():
+            required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
+
+    # Compute state per study based on labs with required tests
+    STUDY_STATE_PENDIENTE = "Pendiente"
+    STUDY_STATE_CON_RESULTADOS = "Con Resultados"
+    STUDY_STATE_SIN_RESULTADOS = "Sin Resultados"
+    STATES_WITH_RESULTS = {2, 3, 4}  # Con Resultados, Validada, Impreso
+
+    for study_id, entry in study_map.items():
+        required_test_ids = required_tests_by_study.get(study_id, set())
+        study_labs = entry["laboratories"]
+        labs_by_test: dict[int, int] = {
+            lab.l_test_id: lab.l_state for lab in study_labs if lab.l_test_id is not None
+        }
+
+        if not required_test_ids:
+            # No required tests defined: use lab states as-is
+            if not study_labs:
+                entry["study_state"] = STUDY_STATE_SIN_RESULTADOS
+            elif all(labs_by_test.get(tid, 0) in STATES_WITH_RESULTS for tid in labs_by_test):
+                entry["study_state"] = STUDY_STATE_CON_RESULTADOS
+            else:
+                entry["study_state"] = STUDY_STATE_PENDIENTE
+        else:
+            # Only required tests determine the state
+            required_with_results = all(
+                labs_by_test.get(tid, 0) in STATES_WITH_RESULTS
+                for tid in required_test_ids
+            )
+            if required_with_results:
+                entry["study_state"] = STUDY_STATE_CON_RESULTADOS
+            elif any(
+                labs_by_test.get(tid, 0) not in STATES_WITH_RESULTS
+                for tid in required_test_ids
+            ):
+                entry["study_state"] = STUDY_STATE_PENDIENTE
+            else:
+                entry["study_state"] = STUDY_STATE_SIN_RESULTADOS
 
     # Fallback: si algún estudio no tiene valor desde InvoicesDetail, buscarlo en TariffsDetail
     tariff_id = order.o_tariff_id if hasattr(order, "o_tariff_id") else None
@@ -524,8 +584,7 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
         "order": order,
         "patient": order.patient,
         "headquarter": headquarter,
-        "laboratories_by_study": [study_map[sid] for sid in study_order],
-        "tests": tests,
+        "studies": [study_map[sid] for sid in study_order],
         "samples": samples,
         "invoice": invoice_summary if invoice_summary else None,
     }

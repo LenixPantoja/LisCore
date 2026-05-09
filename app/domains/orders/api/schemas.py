@@ -293,6 +293,7 @@ class StudyWithLabsResponse(BaseModel):
     study_code: Optional[str] = None
     study_value: Optional[Any] = None
     od_cancelled: int = 0
+    study_state: Optional[str] = None
     laboratories: List["SlimLaboratoryResponse"] = []
 
 
@@ -375,8 +376,7 @@ class OrderFullDetailsResponse(BaseModel):
     order: OrderSummaryForFullResponse
     patient: PatientResponse
     headquarter: Optional[HeadquarterBasicResponse] = None
-    laboratories_by_study: List[StudyWithLabsResponse] = []
-    tests: List[TestsLabResponse]
+    studies: List[StudyWithLabsResponse] = []
     samples: List[SamplesOrderResponse]
     invoice: Optional[InvoiceSummaryResponse] = None
 
