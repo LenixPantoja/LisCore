@@ -15,6 +15,7 @@ Logic:
 from collections import defaultdict
 from datetime import date
 from typing import List
+import asyncio
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -26,7 +27,7 @@ from app.domains.samples.domain.models import SamplesOrder, SampleType
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.masters.domain.models import WorkGroup
 from app.domains.reports.infrastructure.printer_barcodes.barcode_generator import (
-    build_stickers_pdf,
+    build_stickers_result,
     pdf_to_base64,
 )
 
@@ -212,8 +213,8 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
                    "tengan pruebas y tipos de muestra configurados.",
         )
 
-    # 9. Build PDF and return
-    pdf_bytes = build_stickers_pdf(stickers)
+    # 9. Build PDF via Labelary and return
+    pdf_bytes, zpl_list = await asyncio.to_thread(build_stickers_result, stickers)
     b64 = pdf_to_base64(pdf_bytes)
 
     filename = f"stickers_{order.o_number}_{identification.replace(' ', '_')}.pdf"
@@ -224,4 +225,5 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
         "order_number": order.o_number,
         "order_id": order_id,
         "total_stickers": len(stickers),
+        "zpl_codes": zpl_list,
     }
