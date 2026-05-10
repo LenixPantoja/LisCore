@@ -24,12 +24,13 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
 
     # MinIO
-    MINIO_ENDPOINT: str = "localhost:9000"
-    MINIO_ACCESS_KEY: str = ""
-    MINIO_SECRET_KEY: str = ""
-    MINIO_SECURE: bool = False
-    MINIO_GRAPHICS_BUCKET: str = "graphics"
-    MINIO_PRESIGNED_EXPIRES_HOURS: int = 24
+    MINIO_ENDPOINT: str
+    MINIO_ACCESS_KEY: str
+    MINIO_SECRET_KEY: str
+    MINIO_SECURE: bool
+    MINIO_GRAPHICS_BUCKET: str
+    MINIO_SIGNATURES_BUCKET: str
+    MINIO_PRESIGNED_EXPIRES_HOURS: int
 
     @property
     def DATABASE_URL(self) -> str:

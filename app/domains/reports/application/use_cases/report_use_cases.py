@@ -49,6 +49,7 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         .filter(OrdersDetail.od_order_id == order_id)
         .options(
             selectinload(Laboratory.test),
+            selectinload(Laboratory.user_validation),
             selectinload(Laboratory.order_detail)
             .selectinload(OrdersDetail.study)
             .selectinload(StudiesLab.work_group),
@@ -110,8 +111,38 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         lab.__dict__["_ref_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["_ref_max"] = float(ref_max) if ref_max is not None else None
 
-    # 6. Generar PDF
-    pdf_bytes = build_laboratory_pdf(order, patient, validated_labs)
+    # 6. Construir mapa de firmas: {(wg_name, study_name): [{user_name, usr_Signature}]}
+    signatures_map: dict[tuple[str, str], list[dict]] = {}
+    _seen_sig: set[tuple[str, str, int]] = set()
+    for lab in validated_labs:
+        if not lab.l_user_validation_id or not lab.user_validation:
+            continue
+        user = lab.user_validation
+        _study_name = "Sin estudio asignado"
+        _wg_name = "Sin grupo"
+        if lab.order_detail and lab.order_detail.study:
+            _study = lab.order_detail.study
+            _study_name = _study.name
+            if _study.work_group:
+                _wg_name = _study.work_group.wg_name
+        _key = (_wg_name, _study_name)
+        _user_key = (_wg_name, _study_name, user.usr_id)
+        if _user_key not in _seen_sig:
+            _seen_sig.add(_user_key)
+            _user_name = " ".join(filter(None, [
+                user.usr_first_name,
+                user.usr_middle_name or None,
+                user.usr_last_name,
+                user.usr_second_last_name or None,
+            ])).upper()
+            signatures_map.setdefault(_key, []).append({
+                "user_name": _user_name,
+                "usr_Signature": user.usr_Signature,
+                "usr_document_number": user.usr_document_number or "",
+            })
+
+    # 7. Generar PDF
+    pdf_bytes = build_laboratory_pdf(order, patient, validated_labs, signatures_map)
     b64 = pdf_to_base64(pdf_bytes)
 
     # 7. Nombre de archivo sugerido

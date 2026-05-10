@@ -56,6 +56,24 @@ def _get_logo() -> ImageReader:
     return ImageReader(LOGO_PNG)
 
 
+def _fetch_signature_image(object_name: str | None) -> io.BytesIO | None:
+    """Descarga la firma desde el bucket 'signatures' de MinIO y la retorna como BytesIO."""
+    if not object_name:
+        return None
+    try:
+        from utils.minio_client import get_minio_client
+        from app.core.config import settings as _settings
+        client = get_minio_client()
+        response = client.get_object(_settings.MINIO_SIGNATURES_BUCKET, object_name)
+        buf = io.BytesIO(response.read())
+        response.close()
+        response.release_conn()
+        buf.seek(0)
+        return buf
+    except Exception:
+        return None
+
+
 def _fetch_graphic_image(object_name: str | None) -> io.BytesIO | None:
     """Descarga una imagen del bucket 'graphics' de MinIO y la retorna como BytesIO.
 
@@ -104,7 +122,12 @@ SEX_LABELS = {
 # ─────────────────────────────────────────────
 # Función pública principal
 # ─────────────────────────────────────────────
-def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
+def build_laboratory_pdf(
+    order: Any,
+    patient: Any,
+    laboratories: list,
+    signatures_map: dict | None = None,
+) -> bytes:
     """
     Genera el PDF del reporte de laboratorio usando reportlab.
     La cabecera (logo + datos del paciente) se repite en todas las páginas.
@@ -271,6 +294,63 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
                                 kind="proportional")
                     )
                     story.append(Spacer(1, 8))
+
+                # ── Firma(s) del validador ────────────────────────────────────────
+                if signatures_map:
+                    study_sigs = signatures_map.get((wg_group["wg_name"], study["name"]), [])
+                    if study_sigs:
+                        sig_col_w = COL_W / max(len(study_sigs), 1)
+                        sig_row = []
+                        for sig_info in study_sigs:
+                            sig_buf = _fetch_signature_image(sig_info["usr_Signature"])
+                            cell = []
+                            if sig_buf:
+                                cell.append(
+                                    RLImage(
+                                        sig_buf,
+                                        width=min(sig_col_w * 0.5, 3 * cm),
+                                        height=1.5 * cm,
+                                        kind="proportional",
+                                    )
+                                )
+                            cell.append(
+                                Paragraph(
+                                    sig_info["user_name"],
+                                    ParagraphStyle(
+                                        "sig_name",
+                                        fontName="Helvetica-Bold",
+                                        fontSize=7,
+                                        textColor=C_NAVY,
+                                        alignment=TA_RIGHT,
+                                    ),
+                                )
+                            )
+                            if sig_info.get("usr_document_number"):
+                                cell.append(
+                                    Paragraph(
+                                        sig_info["usr_document_number"],
+                                        ParagraphStyle(
+                                            "sig_doc",
+                                            fontName="Helvetica",
+                                            fontSize=7,
+                                            textColor=C_GRAY,
+                                            alignment=TA_RIGHT,
+                                        ),
+                                    )
+                                )
+                            sig_row.append(cell)
+                        sig_tbl = Table(
+                            [sig_row], colWidths=[sig_col_w] * len(study_sigs)
+                        )
+                        sig_tbl.setStyle(TableStyle([
+                            ("ALIGN",         (0, 0), (-1, -1), "RIGHT"),
+                            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                            ("LINEABOVE",     (0, 0), (-1, 0),  0.5, C_NAVY),
+                        ]))
+                        story.append(sig_tbl)
+                        story.append(Spacer(1, 6))
     else:
         story.append(Paragraph("No hay resultados registrados para esta orden.", s_empty))
 
