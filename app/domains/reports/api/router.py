@@ -18,12 +18,14 @@ from app.domains.reports.application.use_cases import stats_use_cases
 from app.domains.reports.application.use_cases import kpis_use_cases
 from app.domains.reports.api.pos.router import router as pos_router
 from app.domains.reports.api.printer_barcodes.router import router as barcodes_router
+from app.domains.reports.api.dynamic.router import router as dynamic_reports_router
 
 router = APIRouter()
 
 # Include sub-routers
 router.include_router(pos_router)
 router.include_router(barcodes_router)
+router.include_router(dynamic_reports_router)
 
 
 @router.post(

@@ -138,9 +138,17 @@ _PERMISSIONS = [
     {"p_name": "Contracts:UnlinkTariff","p_description": "Desvincular tarifa de contrato", "p_module": "Contracts"},
 
     # ── Reports ───────────────────────────────────────────────────────────
-    {"p_name": "Reports:GenerateReport","p_description": "Generar reportes PDF de resultados", "p_module": "Reports"},
-    {"p_name": "Reports:Dashboard",     "p_description": "Ver estadísticas del dashboard", "p_module": "Reports"},
-    {"p_name": "Reports:Kpis",          "p_description": "Ver KPIs del sistema", "p_module": "Reports"},
+    {"p_name": "Reports:GenerateReport",    "p_description": "Generar reportes PDF de resultados",                     "p_module": "Reports"},
+    {"p_name": "Reports:Dashboard",         "p_description": "Ver estadísticas del dashboard",                         "p_module": "Reports"},
+    {"p_name": "Reports:Kpis",              "p_description": "Ver KPIs del sistema",                                   "p_module": "Reports"},
+    # ── Dynamic Reports ───────────────────────────────────────────────────
+    {"p_name": "Reports:DynamicList",       "p_description": "Listar reportes dinámicos activos",                      "p_module": "Reports"},
+    {"p_name": "Reports:DynamicRead",       "p_description": "Ver detalle y parámetros de un reporte dinámico",        "p_module": "Reports"},
+    {"p_name": "Reports:DynamicCreate",     "p_description": "Crear nuevos reportes dinámicos",                        "p_module": "Reports"},
+    {"p_name": "Reports:DynamicUpdate",     "p_description": "Editar reportes dinámicos existentes",                   "p_module": "Reports"},
+    {"p_name": "Reports:DynamicDelete",     "p_description": "Desactivar (baja lógica) reportes dinámicos",            "p_module": "Reports"},
+    {"p_name": "Reports:DynamicRun",        "p_description": "Ejecutar un reporte dinámico con filtros",               "p_module": "Reports"},
+    {"p_name": "Reports:DynamicExportPdf",  "p_description": "Exportar un reporte dinámico a PDF",                     "p_module": "Reports"},
 
     # ── Samples ───────────────────────────────────────────────────────────
     {"p_name": "Samples:Create", "p_description": "Crear tipos de muestra", "p_module": "Samples"},
