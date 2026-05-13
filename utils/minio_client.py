@@ -85,3 +85,55 @@ def build_graphic_object_name(
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     ext = extension.lstrip(".").upper()
     return f"IMG_{order_number}_{test_code}_{l_id}_{ts}.{ext}"
+
+
+def upload_signature(
+    file_data: bytes,
+    object_name: str,
+    content_type: str = "image/png",
+) -> str:
+    """
+    Sube un archivo al bucket de firmas de MinIO y retorna el object_name.
+    Lanza una excepción si la subida falla.
+    """
+    client = get_minio_client()
+    buf = io.BytesIO(file_data)
+    client.put_object(
+        settings.MINIO_SIGNATURES_BUCKET,
+        object_name,
+        buf,
+        length=len(file_data),
+        content_type=content_type,
+    )
+    return object_name
+
+
+def get_signature_url(object_name: str | None) -> Optional[str]:
+    """
+    Dado el nombre de objeto, genera una URL presignada GET desde el bucket de firmas.
+    Retorna None si object_name está vacío o si ocurre un error.
+    """
+    if not object_name:
+        return None
+    try:
+        client = get_minio_client()
+        url = client.presigned_get_object(
+            settings.MINIO_SIGNATURES_BUCKET,
+            object_name,
+            expires=timedelta(hours=settings.MINIO_PRESIGNED_EXPIRES_HOURS),
+        )
+        return url
+    except S3Error:
+        return None
+    except Exception:
+        return None
+
+
+def build_signature_object_name(usr_id: int, extension: str = "png") -> str:
+    """
+    Genera un nombre de objeto estándar para la firma de un usuario.
+    Formato: SIGN_{usr_id}_{timestamp}.{ext}
+    """
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    ext = extension.lstrip(".").lower()
+    return f"SIGN_{usr_id}_{ts}.{ext}"

@@ -96,6 +96,7 @@ class UserUpdate(BaseModel):
     usr_is_Locked: Optional[bool] = None
     usr_Signature: Optional[str] = None
     usr_rol_id: Optional[int] = None
+    permission_ids: Optional[List[int]] = None
 
 class UserResponse(UserBase):
     usr_id: int
@@ -114,6 +115,14 @@ class UserResponse(UserBase):
 class UserCreateResponse(UserResponse):
     role: Optional[RolResponse] = None
     permissions: List[PermissionResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class UserDetailResponse(UserCreateResponse):
+    usr_Signature: Optional[str] = None
+    signature_url: Optional[str] = None
 
     class Config:
         from_attributes = True

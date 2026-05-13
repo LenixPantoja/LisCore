@@ -1,12 +1,13 @@
+import os
 from typing import Optional, List
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, Form, File, UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.domains.users.api.schemas import (
     UserResponse, UserPaginatedResponse, UserUpdate, UserLogin, LoginResponse,
     PermissionCreate, PermissionUpdate, PermissionResponse, PermissionModuleTreeResponse, RolePermissionAssign,
-    RolCreate, RolUpdate, RolResponse, RolWithPermissionsResponse, UserCreate, UserCreateResponse,
+    RolCreate, RolUpdate, RolResponse, RolWithPermissionsResponse, UserCreate, UserCreateResponse, UserDetailResponse,
 )
 from app.domains.users.application.use_cases import (
     list_users, get_user, update_user, login_user,
@@ -19,11 +20,55 @@ router = APIRouter()
 
 # ── Users ────────────────────────────────────────────────────────────────────
 
+ALLOWED_SIGNATURE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
+
+
 @router.post("/", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
-async def create_new_user(data: UserCreate, db: AsyncSession = Depends(get_db)):
-    permission_ids = data.permission_ids
-    user_dict = data.model_dump(exclude={"permission_ids"})
-    new_user = await create_user.execute(UserRepository, db, user_dict, permission_ids)
+async def create_new_user(
+    usr_login: str = Form(...),
+    usr_first_name: str = Form(...),
+    usr_middle_name: Optional[str] = Form(None),
+    usr_last_name: str = Form(...),
+    usr_second_last_name: Optional[str] = Form(None),
+    usr_document_number: str = Form(...),
+    usr_phone_number: Optional[str] = Form(None),
+    usr_is_active: bool = Form(True),
+    usr_mail: str = Form(...),
+    usr_rol_id: int = Form(...),
+    usr_password: str = Form(...),
+    permission_ids: Optional[List[int]] = Form(None),
+    signature: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(get_db),
+):
+    if signature is not None and signature.content_type not in ALLOWED_SIGNATURE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Tipo de archivo no permitido. Se aceptan: {', '.join(ALLOWED_SIGNATURE_TYPES)}",
+        )
+
+    signature_bytes: Optional[bytes] = None
+    signature_extension: str = "png"
+    if signature is not None:
+        signature_bytes = await signature.read()
+        signature_extension = os.path.splitext(signature.filename or "sign.png")[1].lstrip(".") or "png"
+
+    user_dict = {
+        "usr_login": usr_login,
+        "usr_first_name": usr_first_name,
+        "usr_middle_name": usr_middle_name,
+        "usr_last_name": usr_last_name,
+        "usr_second_last_name": usr_second_last_name,
+        "usr_document_number": usr_document_number,
+        "usr_phone_number": usr_phone_number,
+        "usr_is_active": usr_is_active,
+        "usr_mail": usr_mail,
+        "usr_rol_id": usr_rol_id,
+        "usr_password": usr_password,
+    }
+
+    new_user = await create_user.execute(
+        UserRepository, db, user_dict, permission_ids, signature_bytes, signature_extension
+    )
     role_perms = await PermissionRepository.get_permissions_by_role(db, new_user.usr_rol_id)
     return {
         **{c.name: getattr(new_user, c.name) for c in new_user.__table__.columns},
@@ -40,13 +85,66 @@ async def list_existing_users(
 ):
     return await list_users.execute(db, skip, limit, search)
 
-@router.get("/{usr_id}", response_model=UserResponse)
+@router.get("/{usr_id}", response_model=UserDetailResponse)
 async def get_user_details(usr_id: int, db: AsyncSession = Depends(get_db)):
     return await get_user.execute(db, usr_id)
 
-@router.patch("/{usr_id}", response_model=UserResponse)
-async def update_existing_user(usr_id: int, data: UserUpdate, db: AsyncSession = Depends(get_db)):
-    return await update_user.execute(UserRepository, db, usr_id, data.model_dump(exclude_unset=True))
+@router.patch("/{usr_id}", response_model=UserCreateResponse)
+async def update_existing_user(
+    usr_id: int,
+    usr_login: Optional[str] = Form(None),
+    usr_first_name: Optional[str] = Form(None),
+    usr_middle_name: Optional[str] = Form(None),
+    usr_last_name: Optional[str] = Form(None),
+    usr_second_last_name: Optional[str] = Form(None),
+    usr_phone_number: Optional[str] = Form(None),
+    usr_is_active: Optional[bool] = Form(None),
+    usr_password: Optional[str] = Form(None),
+    usr_mail: Optional[str] = Form(None),
+    usr_is_Locked: Optional[bool] = Form(None),
+    usr_rol_id: Optional[int] = Form(None),
+    permission_ids: Optional[List[int]] = Form(None),
+    signature: Optional[UploadFile] = File(None),
+    db: AsyncSession = Depends(get_db),
+):
+    if signature is not None and signature.content_type not in ALLOWED_SIGNATURE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Tipo de archivo no permitido. Se aceptan: {', '.join(ALLOWED_SIGNATURE_TYPES)}",
+        )
+
+    signature_bytes: Optional[bytes] = None
+    signature_extension: str = "png"
+    if signature is not None:
+        signature_bytes = await signature.read()
+        signature_extension = os.path.splitext(signature.filename or "sign.png")[1].lstrip(".") or "png"
+
+    update_data = {
+        k: v for k, v in {
+            "usr_login": usr_login,
+            "usr_first_name": usr_first_name,
+            "usr_middle_name": usr_middle_name,
+            "usr_last_name": usr_last_name,
+            "usr_second_last_name": usr_second_last_name,
+            "usr_phone_number": usr_phone_number,
+            "usr_is_active": usr_is_active,
+            "usr_password": usr_password,
+            "usr_mail": usr_mail,
+            "usr_is_Locked": usr_is_Locked,
+            "usr_rol_id": usr_rol_id,
+            "permission_ids": permission_ids,
+        }.items() if v is not None
+    }
+
+    updated_user = await update_user.execute(
+        UserRepository, db, usr_id, update_data, signature_bytes, signature_extension
+    )
+    role_perms = await PermissionRepository.get_permissions_by_role(db, updated_user.usr_rol_id)
+    return {
+        **{c.name: getattr(updated_user, c.name) for c in updated_user.__table__.columns},
+        "role": updated_user.role,
+        "permissions": role_perms,
+    }
 
 @router.post("/login", response_model=LoginResponse)
 async def login_for_access_token(form_data: UserLogin, db: AsyncSession = Depends(get_db)):
