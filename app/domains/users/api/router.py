@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, status, Query, Form, File, UploadFile, H
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.users.api.schemas import (
     UserResponse, UserPaginatedResponse, UserUpdate, UserLogin, LoginResponse,
     PermissionCreate, PermissionUpdate, PermissionResponse, PermissionModuleTreeResponse, RolePermissionAssign,
@@ -23,7 +24,8 @@ router = APIRouter()
 ALLOWED_SIGNATURE_TYPES = {"image/png", "image/jpeg", "image/jpg"}
 
 
-@router.post("/", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=UserCreateResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("AppUsers:Create"))])
 async def create_new_user(
     usr_login: str = Form(...),
     usr_first_name: str = Form(...),
@@ -76,7 +78,8 @@ async def create_new_user(
         "permissions": role_perms,
     }
 
-@router.get("/", response_model=UserPaginatedResponse)
+@router.get("/", response_model=UserPaginatedResponse,
+            dependencies=[Depends(require_permission("AppUsers:List"))])
 async def list_existing_users(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -85,11 +88,13 @@ async def list_existing_users(
 ):
     return await list_users.execute(db, skip, limit, search)
 
-@router.get("/{usr_id}", response_model=UserDetailResponse)
+@router.get("/{usr_id}", response_model=UserDetailResponse,
+            dependencies=[Depends(require_permission("AppUsers:GetOne"))])
 async def get_user_details(usr_id: int, db: AsyncSession = Depends(get_db)):
     return await get_user.execute(db, usr_id)
 
-@router.patch("/{usr_id}", response_model=UserCreateResponse)
+@router.patch("/{usr_id}", response_model=UserCreateResponse,
+              dependencies=[Depends(require_permission("AppUsers:Update"))])
 async def update_existing_user(
     usr_id: int,
     usr_login: Optional[str] = Form(None),
@@ -153,47 +158,56 @@ async def login_for_access_token(form_data: UserLogin, db: AsyncSession = Depend
 
 # ── Permissions ──────────────────────────────────────────────────────────────
 
-@router.get("/permissions/", response_model=List[PermissionResponse], tags=["RBAC"])
+@router.get("/permissions/", response_model=List[PermissionResponse], tags=["RBAC"],
+            dependencies=[Depends(require_permission("Permissions:Read"))])
 async def list_all_permissions(db: AsyncSession = Depends(get_db)):
     return await list_permissions.execute(db)
 
-@router.get("/permissions/tree", response_model=List[PermissionModuleTreeResponse], tags=["RBAC"])
+@router.get("/permissions/tree", response_model=List[PermissionModuleTreeResponse], tags=["RBAC"],
+            dependencies=[Depends(require_permission("Permissions:Read"))])
 async def list_permissions_by_module(db: AsyncSession = Depends(get_db)):
     return await list_permissions_tree.execute(db)
 
-@router.patch("/permissions/{permission_id}", response_model=PermissionResponse, tags=["RBAC"])
+@router.patch("/permissions/{permission_id}", response_model=PermissionResponse, tags=["RBAC"],
+              dependencies=[Depends(require_permission("Permissions:Write"))])
 async def update_existing_permission(
     permission_id: int, data: PermissionUpdate, db: AsyncSession = Depends(get_db)
 ):
     return await update_permission.execute(db, permission_id, data.model_dump(exclude_unset=True))
 
-@router.delete("/permissions/{permission_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["RBAC"])
+@router.delete("/permissions/{permission_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["RBAC"],
+               dependencies=[Depends(require_permission("Permissions:Write"))])
 async def delete_existing_permission(permission_id: int, db: AsyncSession = Depends(get_db)):
     await delete_permission.execute(db, permission_id)
 
 
 # ── Roles ────────────────────────────────────────────────────────────────────
 
-@router.get("/roles/", response_model=List[RolResponse], tags=["RBAC"])
+@router.get("/roles/", response_model=List[RolResponse], tags=["RBAC"],
+            dependencies=[Depends(require_permission("Rols:Read"))])
 async def list_all_roles(db: AsyncSession = Depends(get_db)):
     return await list_roles.execute(db)
 
-@router.post("/roles/", response_model=RolWithPermissionsResponse, status_code=status.HTTP_201_CREATED, tags=["RBAC"])
+@router.post("/roles/", response_model=RolWithPermissionsResponse, status_code=status.HTTP_201_CREATED, tags=["RBAC"],
+             dependencies=[Depends(require_permission("Rols:Create"))])
 async def create_new_role(data: RolCreate, db: AsyncSession = Depends(get_db)):
     return await create_role.execute(db, data.model_dump())
 
-@router.get("/roles/{rol_id}", response_model=RolWithPermissionsResponse, tags=["RBAC"])
+@router.get("/roles/{rol_id}", response_model=RolWithPermissionsResponse, tags=["RBAC"],
+            dependencies=[Depends(require_permission("Rols:Read"))])
 async def get_role_detail(rol_id: int, db: AsyncSession = Depends(get_db)):
     return await get_role.execute(db, rol_id)
 
-@router.patch("/roles/{rol_id}", response_model=RolWithPermissionsResponse, tags=["RBAC"])
+@router.patch("/roles/{rol_id}", response_model=RolWithPermissionsResponse, tags=["RBAC"],
+              dependencies=[Depends(require_permission("Rols:Update"))])
 async def update_existing_role(rol_id: int, data: RolUpdate, db: AsyncSession = Depends(get_db)):
     return await update_role.execute(db, rol_id, data.model_dump(exclude_unset=True))
 
 
 # ── Role ↔ Permission ────────────────────────────────────────────────────────
 
-@router.get("/roles/{rol_id}/permissions", response_model=List[PermissionResponse], tags=["RBAC"])
+@router.get("/roles/{rol_id}/permissions", response_model=List[PermissionResponse], tags=["RBAC"],
+            dependencies=[Depends(require_permission("Rols:Read"))])
 async def get_permissions_for_role(rol_id: int, db: AsyncSession = Depends(get_db)):
     return await role_permissions.execute(db, rol_id)
 
@@ -201,6 +215,7 @@ async def get_permissions_for_role(rol_id: int, db: AsyncSession = Depends(get_d
     "/roles/{rol_id}/permissions",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["RBAC"],
+    dependencies=[Depends(require_permission("AppUserPermissions:Vinculate"))],
 )
 async def assign_permission_to_role(
     rol_id: int, body: RolePermissionAssign, db: AsyncSession = Depends(get_db)
@@ -211,6 +226,7 @@ async def assign_permission_to_role(
     "/roles/{rol_id}/permissions/{permission_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["RBAC"],
+    dependencies=[Depends(require_permission("AppUserPermissions:Vinculate"))],
 )
 async def remove_permission_from_role(
     rol_id: int, permission_id: int, db: AsyncSession = Depends(get_db)
@@ -222,6 +238,7 @@ async def remove_permission_from_role(
     "/roles/{rol_id}/permissions/{permission_id}/active",
     status_code=status.HTTP_204_NO_CONTENT,
     tags=["RBAC"],
+    dependencies=[Depends(require_permission("AppUserPermissions:Vinculate"))],
 )
 async def toggle_role_permission_active(
     rol_id: int,

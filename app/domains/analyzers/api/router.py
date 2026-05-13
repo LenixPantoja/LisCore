@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.analyzers.api.schemas import (
     AnalyzerGroupCreate,
     AnalyzerGroupUpdate,
@@ -23,7 +24,8 @@ router = APIRouter()
 
 # ========== ANALYZER GROUPS ==========
 
-@router.post("/analyzer-groups", response_model=AnalyzerGroupResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/analyzer-groups", response_model=AnalyzerGroupResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Analyzers:CreateGroup"))])
 async def create_analyzer_group(data: AnalyzerGroupCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new analyzer group.
@@ -33,7 +35,8 @@ async def create_analyzer_group(data: AnalyzerGroupCreate, db: AsyncSession = De
     """
     return await analyzer_use_cases.create_analyzer_group(db, data.model_dump())
 
-@router.get("/analyzer-groups", response_model=AnalyzerGroupPaginatedResponse)
+@router.get("/analyzer-groups", response_model=AnalyzerGroupPaginatedResponse,
+            dependencies=[Depends(require_permission("Analyzers:ListGroups"))])
 async def list_analyzer_groups(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -51,14 +54,16 @@ async def list_analyzer_groups(
     """
     return await analyzer_use_cases.list_analyzer_groups(db, skip, limit, search, active)
 
-@router.get("/analyzer-groups/{group_id}", response_model=AnalyzerGroupResponse)
+@router.get("/analyzer-groups/{group_id}", response_model=AnalyzerGroupResponse,
+            dependencies=[Depends(require_permission("Analyzers:GetGroup"))])
 async def get_analyzer_group(group_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get an analyzer group by ID.
     """
     return await analyzer_use_cases.get_analyzer_group_by_id(db, group_id)
 
-@router.patch("/analyzer-groups/{group_id}", response_model=AnalyzerGroupResponse)
+@router.patch("/analyzer-groups/{group_id}", response_model=AnalyzerGroupResponse,
+              dependencies=[Depends(require_permission("Analyzers:UpdateGroup"))])
 async def update_analyzer_group(group_id: int, data: AnalyzerGroupUpdate, db: AsyncSession = Depends(get_db)):
     """
     Update an analyzer group.
@@ -67,7 +72,8 @@ async def update_analyzer_group(group_id: int, data: AnalyzerGroupUpdate, db: As
     """
     return await analyzer_use_cases.update_analyzer_group(db, group_id, data.model_dump(exclude_unset=True))
 
-@router.delete("/analyzer-groups/{group_id}", status_code=status.HTTP_200_OK)
+@router.delete("/analyzer-groups/{group_id}", status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Analyzers:DeleteGroup"))])
 async def delete_analyzer_group(group_id: int, db: AsyncSession = Depends(get_db)):
     """
     Delete an analyzer group.
@@ -77,7 +83,8 @@ async def delete_analyzer_group(group_id: int, db: AsyncSession = Depends(get_db
 
 # ========== ANALYZERS ==========
 
-@router.post("/analyzers", response_model=AnalyzerResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/analyzers", response_model=AnalyzerResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Analyzers:Create"))])
 async def create_analyzer(data: AnalyzerCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new analyzer.
@@ -91,7 +98,8 @@ async def create_analyzer(data: AnalyzerCreate, db: AsyncSession = Depends(get_d
     """
     return await analyzer_use_cases.create_analyzer(db, data.model_dump())
 
-@router.get("/analyzers", response_model=AnalyzerPaginatedResponse)
+@router.get("/analyzers", response_model=AnalyzerPaginatedResponse,
+            dependencies=[Depends(require_permission("Analyzers:List"))])
 async def list_analyzers(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -111,14 +119,16 @@ async def list_analyzers(
     """
     return await analyzer_use_cases.list_analyzers(db, skip, limit, search, active, group_id)
 
-@router.get("/analyzers/{analyzer_id}", response_model=AnalyzerResponse)
+@router.get("/analyzers/{analyzer_id}", response_model=AnalyzerResponse,
+            dependencies=[Depends(require_permission("Analyzers:GetOne"))])
 async def get_analyzer(analyzer_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get an analyzer by ID with its group, work group, and details.
     """
     return await analyzer_use_cases.get_analyzer_by_id(db, analyzer_id)
 
-@router.patch("/analyzers/{analyzer_id}", response_model=AnalyzerResponse)
+@router.patch("/analyzers/{analyzer_id}", response_model=AnalyzerResponse,
+              dependencies=[Depends(require_permission("Analyzers:Update"))])
 async def update_analyzer(analyzer_id: int, data: AnalyzerUpdate, db: AsyncSession = Depends(get_db)):
     """
     Update an analyzer.
@@ -127,7 +137,8 @@ async def update_analyzer(analyzer_id: int, data: AnalyzerUpdate, db: AsyncSessi
     """
     return await analyzer_use_cases.update_analyzer(db, analyzer_id, data.model_dump(exclude_unset=True))
 
-@router.delete("/analyzers/{analyzer_id}", status_code=status.HTTP_200_OK)
+@router.delete("/analyzers/{analyzer_id}", status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Analyzers:Delete"))])
 async def delete_analyzer(analyzer_id: int, db: AsyncSession = Depends(get_db)):
     """
     Delete an analyzer.
@@ -137,7 +148,8 @@ async def delete_analyzer(analyzer_id: int, db: AsyncSession = Depends(get_db)):
 
 # ========== ANALYZER DETAILS ==========
 
-@router.post("/analyzers/{analyzer_id}/details", response_model=AnalyzerDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/analyzers/{analyzer_id}/details", response_model=AnalyzerDetailResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Analyzers:CreateDetail"))])
 async def create_analyzer_detail(analyzer_id: int, data: AnalyzerDetailCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new analyzer detail.
@@ -153,7 +165,8 @@ async def create_analyzer_detail(analyzer_id: int, data: AnalyzerDetailCreate, d
     payload['ad_analyzer_id'] = analyzer_id
     return await analyzer_use_cases.create_analyzer_detail(db, payload)
 
-@router.get("/analyzers/{analyzer_id}/details", response_model=AnalyzerDetailPaginatedResponse)
+@router.get("/analyzers/{analyzer_id}/details", response_model=AnalyzerDetailPaginatedResponse,
+            dependencies=[Depends(require_permission("Analyzers:ListDetails"))])
 async def list_analyzer_details(
     analyzer_id: int,
     skip: int = Query(0, ge=0),
@@ -173,14 +186,16 @@ async def list_analyzer_details(
     """
     return await analyzer_use_cases.list_analyzer_details(db, analyzer_id, skip, limit, search, active)
 
-@router.get("/analyzers/details/{detail_id}", response_model=AnalyzerDetailResponse)
+@router.get("/analyzers/details/{detail_id}", response_model=AnalyzerDetailResponse,
+            dependencies=[Depends(require_permission("Analyzers:GetDetail"))])
 async def get_analyzer_detail(detail_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get an analyzer detail by ID with its linked test information.
     """
     return await analyzer_use_cases.get_analyzer_detail_by_id(db, detail_id)
 
-@router.patch("/analyzers/details/{detail_id}", response_model=AnalyzerDetailResponse)
+@router.patch("/analyzers/details/{detail_id}", response_model=AnalyzerDetailResponse,
+              dependencies=[Depends(require_permission("Analyzers:UpdateDetail"))])
 async def update_analyzer_detail(detail_id: int, data: AnalyzerDetailUpdate, db: AsyncSession = Depends(get_db)):
     """
     Update an analyzer detail.
@@ -189,7 +204,8 @@ async def update_analyzer_detail(detail_id: int, data: AnalyzerDetailUpdate, db:
     """
     return await analyzer_use_cases.update_analyzer_detail(db, detail_id, data.model_dump(exclude_unset=True))
 
-@router.delete("/analyzers/details/{detail_id}", status_code=status.HTTP_200_OK)
+@router.delete("/analyzers/details/{detail_id}", status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Analyzers:DeleteDetail"))])
 async def delete_analyzer_detail(detail_id: int, db: AsyncSession = Depends(get_db)):
     """
     Delete (unlink) an analyzer detail.

@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.testslabs.api.schemas import (
     TestsLabCreate, TestsLabUpdate, TestsLabResponse,
     RangeReferenceCreate, RangeReferenceUpdate,
@@ -19,11 +20,13 @@ router = APIRouter()
 
 # --- TestsLab CRUD ---
 
-@router.post("/", response_model=TestsLabResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=TestsLabResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("TestsLab:Create"))])
 async def create(data: TestsLabCreate, db: AsyncSession = Depends(get_db)):
     return await use_cases.create_test(db, data.model_dump())
 
-@router.get("/", response_model=TestsLabPaginatedResponse)
+@router.get("/", response_model=TestsLabPaginatedResponse,
+            dependencies=[Depends(require_permission("TestsLab:List"))])
 async def list_all(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -32,15 +35,18 @@ async def list_all(
 ):
     return await use_cases.list_tests(db, skip, limit, search)
 
-@router.get("/{id}", response_model=TestsLabResponse)
+@router.get("/{id}", response_model=TestsLabResponse,
+            dependencies=[Depends(require_permission("TestsLab:GetOne"))])
 async def get_one(id: int, db: AsyncSession = Depends(get_db)):
     return await use_cases.get_test_by_id(db, id)
 
-@router.patch("/{id}", response_model=TestsLabResponse)
+@router.patch("/{id}", response_model=TestsLabResponse,
+              dependencies=[Depends(require_permission("TestsLab:Update"))])
 async def update(id: int, data: TestsLabUpdate, db: AsyncSession = Depends(get_db)):
     return await use_cases.update_test(db, id, data.model_dump(exclude_unset=True))
 
-@router.delete("/{id}")
+@router.delete("/{id}",
+               dependencies=[Depends(require_permission("TestsLab:Delete"))])
 async def delete(id: int, db: AsyncSession = Depends(get_db)):
     return await use_cases.delete_test(db, id)
 
@@ -53,6 +59,7 @@ async def delete(id: int, db: AsyncSession = Depends(get_db)):
     status_code=status.HTTP_201_CREATED,
     summary="Crear rango de referencia",
     description="Asocia un nuevo rango de referencia a una prueba de laboratorio.",
+    dependencies=[Depends(require_permission("TestsLab:ManageRanges"))],
 )
 async def create_range_reference(
     test_id: int,
@@ -67,6 +74,7 @@ async def create_range_reference(
     response_model=RangeReferenceListResponse,
     summary="Listar rangos de referencia",
     description="Retorna todos los rangos de referencia asociados a una prueba de laboratorio.",
+    dependencies=[Depends(require_permission("TestsLab:ManageRanges"))],
 )
 async def list_ranges_references(
     test_id: int,
@@ -79,6 +87,7 @@ async def list_ranges_references(
     "/ranges-references/{range_id}",
     response_model=RangeReferenceResponse,
     summary="Obtener rango de referencia",
+    dependencies=[Depends(require_permission("TestsLab:ManageRanges"))],
 )
 async def get_range_reference(range_id: int, db: AsyncSession = Depends(get_db)):
     return await rr_use_cases.get_range_reference(db, range_id)
@@ -88,6 +97,7 @@ async def get_range_reference(range_id: int, db: AsyncSession = Depends(get_db))
     "/ranges-references/{range_id}",
     response_model=RangeReferenceResponse,
     summary="Actualizar rango de referencia",
+    dependencies=[Depends(require_permission("TestsLab:ManageRanges"))],
 )
 async def update_range_reference(
     range_id: int,
@@ -100,6 +110,7 @@ async def update_range_reference(
 @router.delete(
     "/ranges-references/{range_id}",
     summary="Eliminar rango de referencia",
+    dependencies=[Depends(require_permission("TestsLab:ManageRanges"))],
 )
 async def delete_range_reference(range_id: int, db: AsyncSession = Depends(get_db)):
     return await rr_use_cases.delete_range_reference(db, range_id)
@@ -113,6 +124,7 @@ async def delete_range_reference(range_id: int, db: AsyncSession = Depends(get_d
     status_code=status.HTTP_201_CREATED,
     summary="Crear valor de referencia",
     description="Asocia un nuevo valor de referencia a un rango de referencia.",
+    dependencies=[Depends(require_permission("TestsLab:ManageReferenceValues"))],
 )
 async def create_reference_value(
     ranges_references_id: int,
@@ -127,6 +139,7 @@ async def create_reference_value(
     response_model=ReferenceValueListResponse,
     summary="Listar valores de referencia",
     description="Retorna todos los valores de referencia asociados a un rango de referencia.",
+    dependencies=[Depends(require_permission("TestsLab:ManageReferenceValues"))],
 )
 async def list_reference_values(
     ranges_references_id: int,
@@ -139,6 +152,7 @@ async def list_reference_values(
     "/reference-values/{value_id}",
     response_model=ReferenceValueResponse,
     summary="Obtener valor de referencia",
+    dependencies=[Depends(require_permission("TestsLab:ManageReferenceValues"))],
 )
 async def get_reference_value(value_id: int, db: AsyncSession = Depends(get_db)):
     return await rv_use_cases.get_reference_value(db, value_id)
@@ -148,6 +162,7 @@ async def get_reference_value(value_id: int, db: AsyncSession = Depends(get_db))
     "/reference-values/{value_id}",
     response_model=ReferenceValueResponse,
     summary="Actualizar valor de referencia",
+    dependencies=[Depends(require_permission("TestsLab:ManageReferenceValues"))],
 )
 async def update_reference_value(
     value_id: int,
@@ -160,6 +175,7 @@ async def update_reference_value(
 @router.delete(
     "/reference-values/{value_id}",
     summary="Eliminar valor de referencia",
+    dependencies=[Depends(require_permission("TestsLab:ManageReferenceValues"))],
 )
 async def delete_reference_value(value_id: int, db: AsyncSession = Depends(get_db)):
     return await rv_use_cases.delete_reference_value(db, value_id)
