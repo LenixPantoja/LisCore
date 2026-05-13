@@ -128,10 +128,13 @@ async def create_order(db: AsyncSession, data: dict):
 
         # 6. Generar automáticamente registros de muestras (SamplesOrder)
         for st_id in unique_sample_types:
+            from app.domains.samples.domain.models import SampleType
+            sample_type = await db.get(SampleType, st_id)
+            st_sufix = sample_type.st_sufix if sample_type else st_id
             sample_order = SamplesOrder(
                 so_order_id=order.o_id,
                 so_sample_type_id=st_id,
-                so_barcode=f"{order.o_number}-{st_id}",
+                so_barcode=f"{order.o_number}{st_sufix}",
                 so_state=SAMPLE_ORDER_STATE_NO_INGRESADA,
                 so_number_studies=len(studies_ids)
             )
@@ -695,10 +698,13 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
                         )
                     )
                     if not existing_sample.scalar_one_or_none():
+                        from app.domains.samples.domain.models import SampleType
+                        sample_type = await db.get(SampleType, st_id)
+                        st_sufix = sample_type.st_sufix if sample_type else st_id
                         db.add(SamplesOrder(
                             so_order_id=o_id,
                             so_sample_type_id=st_id,
-                            so_barcode=f"{order.o_number}-{st_id}",
+                            so_barcode=f"{order.o_number}{st_sufix}",
                             so_state=1,
                         ))
 

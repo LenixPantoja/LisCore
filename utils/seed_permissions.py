@@ -179,6 +179,17 @@ _PERMISSIONS = [
     # ── Cities ────────────────────────────────────────────────────────────
     {"p_name": "Cities:List",   "p_description": "Listar ciudades", "p_module": "Cities"},
     {"p_name": "Cities:GetOne", "p_description": "Obtener detalle de una ciudad", "p_module": "Cities"},
+
+    # ── Seroteca & Tracking ───────────────────────────────────────────────
+    {"p_name": "Tracking:Read",            "p_description": "Consultar historial de trazabilidad de una muestra",       "p_module": "Seroteca"},
+    {"p_name": "Tracking:Log",             "p_description": "Registrar evento de seguimiento de una muestra",            "p_module": "Seroteca"},
+    {"p_name": "Seroteca:Create",          "p_description": "Crear una nueva seroteca",                                  "p_module": "Seroteca"},
+    {"p_name": "Seroteca:List",            "p_description": "Listar serotecas",                                          "p_module": "Seroteca"},
+    {"p_name": "Seroteca:GetOne",          "p_description": "Obtener detalle de una seroteca",                           "p_module": "Seroteca"},
+    {"p_name": "Seroteca:Update",          "p_description": "Actualizar una seroteca",                                   "p_module": "Seroteca"},
+    {"p_name": "Seroteca:Delete",          "p_description": "Eliminar una seroteca",                                     "p_module": "Seroteca"},
+    {"p_name": "Seroteca:ManageRacks",     "p_description": "Crear, editar y eliminar gradillas de una seroteca",        "p_module": "Seroteca"},
+    {"p_name": "Seroteca:StoreSample",     "p_description": "Almacenar o retirar muestras en posiciones de gradilla",    "p_module": "Seroteca"},
 ]
 
 
