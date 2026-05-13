@@ -2,6 +2,15 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+
+@dataclass
+class Permission:
+    p_id: Optional[int]
+    p_name: str
+    p_description: Optional[str] = None
+    p_module: Optional[str] = None
+
+
 @dataclass
 class User:
     usr_id: Optional[int]

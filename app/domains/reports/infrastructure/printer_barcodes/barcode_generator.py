@@ -25,8 +25,8 @@ _ZPL_TEMPLATE = """\
 ^FO45,60^AB,10,1^FDEMPRESA:{enterprise_name}^FS
 ^FO260,60^AB,10,1^FDEDAD:{age_str}^FS
 
-^BY2,3,150
-^FO28,80^BCN,80,N,Y,N^FD{barcode_value}^FS
+^BY1,3,150
+^FO100,80^BCN,80,N,Y,N^FD{barcode_value}^FS
 
 ^FO370,40^ADB,25,1^FD{label_number}^FS
 ^FO5,80^ABB,15,1^FD{work_group_name}^FS
