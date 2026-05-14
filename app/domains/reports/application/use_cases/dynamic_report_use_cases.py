@@ -100,6 +100,17 @@ def _coerce_params(
             except ValueError:
                 coerced[key] = value
 
+        elif param_type in ("select", "multiselect") and isinstance(value, str):
+            # If the value looks like an integer (e.g. a foreign-key id), coerce it
+            # so asyncpg does not receive a string where the DB column is INTEGER.
+            try:
+                coerced[key] = int(value)
+            except ValueError:
+                try:
+                    coerced[key] = float(value)
+                except ValueError:
+                    coerced[key] = value  # leave as text (e.g. a code string)
+
         else:
             coerced[key] = value
 
