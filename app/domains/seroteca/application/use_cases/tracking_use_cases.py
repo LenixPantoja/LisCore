@@ -11,6 +11,7 @@ from app.domains.seroteca.infrastructure.repository import (
     GradillaPosicionRepository,
 )
 from app.domains.samples.domain.models import SamplesOrder
+from app.domains.samples.domain.constants import SAMPLE_ORDER_STATE_CON_MUESTRA
 
 
 async def _get_sample_by_barcode(db: AsyncSession, barcode: str) -> SamplesOrder:
@@ -48,7 +49,8 @@ async def log_sample_event(
 ) -> dict:
     sample = await _get_sample_by_barcode(db, barcode)
 
-    sample.so_state = state
+    # When a sample is found and tracked, mark it as "Con Muestra" at the order level
+    sample.so_state = SAMPLE_ORDER_STATE_CON_MUESTRA
     if location_id is not None:
         sample.so_current_location_id = location_id
     await db.flush()
