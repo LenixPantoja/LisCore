@@ -117,10 +117,16 @@ class GradillaRepository:
 
     @staticmethod
     async def get_by_id(db: AsyncSession, g_id: int) -> Optional[Gradilla]:
+        sample_loader = selectinload(GradillaPosicion.sample)
         q = (
             select(Gradilla)
             .where(Gradilla.g_id == g_id)
-            .options(selectinload(Gradilla.positions).selectinload(GradillaPosicion.sample))
+            .options(
+                selectinload(Gradilla.positions).options(
+                    sample_loader.selectinload(SamplesOrder.order),
+                    sample_loader.selectinload(SamplesOrder.sample_type),
+                )
+            )
         )
         return (await db.execute(q)).scalars().first()
 

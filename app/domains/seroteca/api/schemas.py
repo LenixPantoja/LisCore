@@ -1,6 +1,6 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_serializer, computed_field
 
 
 # ── Sample States ─────────────────────────────────────────────────────────────
@@ -23,6 +23,15 @@ class LocationBasic(BaseModel):
         from_attributes = True
 
 
+class UserBasic(BaseModel):
+    usr_id: int
+    usr_first_name: Optional[str]
+    usr_last_name: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
 class SampleLogResponse(BaseModel):
     sl_id: int
     log_sample_order_id: Optional[int]
@@ -31,7 +40,14 @@ class SampleLogResponse(BaseModel):
     location: Optional[LocationBasic] = None
     log_observation: Optional[str]
     log_user_id: Optional[int]
+    user: Optional[UserBasic] = None
     log_create_at: Optional[datetime]
+
+    @field_serializer("log_create_at")
+    def serialize_log_create_at(self, value: Optional[datetime]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.strftime("%d/%m/%Y %I:%M %p")
 
     class Config:
         from_attributes = True
@@ -95,6 +111,41 @@ class GradillaUpdate(BaseModel):
     g_active: Optional[bool] = None
 
 
+class SampleTypeBasic(BaseModel):
+    st_id: int
+    st_sufix: Optional[int]
+
+    class Config:
+        from_attributes = True
+
+
+class OrderBasic(BaseModel):
+    o_id: int
+    o_number: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
+class SampleOrderBasic(BaseModel):
+    so_id: int
+    so_barcode: Optional[str]
+    order: Optional[OrderBasic] = None
+    sample_type: Optional[SampleTypeBasic] = None
+
+    @computed_field
+    @property
+    def order_number_with_suffix(self) -> Optional[str]:
+        if self.order and self.sample_type and self.sample_type.st_sufix is not None:
+            return f"{self.order.o_number}-{self.sample_type.st_sufix}"
+        if self.order:
+            return self.order.o_number
+        return None
+
+    class Config:
+        from_attributes = True
+
+
 class GradillaPosicionResponse(BaseModel):
     gp_id: int
     gp_gradilla_id: int
@@ -104,6 +155,7 @@ class GradillaPosicionResponse(BaseModel):
     gp_occupied: bool
     gp_stored_at: Optional[datetime]
     gp_stored_by_id: Optional[int]
+    sample: Optional[SampleOrderBasic] = None
 
     class Config:
         from_attributes = True
