@@ -19,6 +19,18 @@ class SendWhatsAppResultsResponse(BaseModel):
     message: str
 
 
+class SendEmailResultsRequest(BaseModel):
+    order_id: int
+    email: str
+
+
+class SendEmailResultsResponse(BaseModel):
+    order_number: str
+    patient_name: str
+    email: str
+    message: str
+
+
 class LaboratoryReportResponse(BaseModel):
     filename: str
     base64_pdf: str

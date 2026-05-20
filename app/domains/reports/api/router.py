@@ -13,11 +13,13 @@ from app.domains.reports.api.schemas import (
     KpiOrdersBySedeResponse,
     KpiOrdersByPeriodResponse,
     SendWhatsAppResultsRequest, SendWhatsAppResultsResponse,
+    SendEmailResultsRequest, SendEmailResultsResponse,
 )
 from app.domains.reports.application.use_cases import report_use_cases as use_cases
 from app.domains.reports.application.use_cases import stats_use_cases
 from app.domains.reports.application.use_cases import kpis_use_cases
 from app.domains.reports.application.use_cases import send_whatsapp_results
+from app.domains.reports.application.use_cases import send_email_results
 from app.domains.reports.api.pos.router import router as pos_router
 from app.domains.reports.api.printer_barcodes.router import router as barcodes_router
 from app.domains.reports.api.dynamic.router import router as dynamic_reports_router
@@ -58,6 +60,21 @@ async def send_results_via_whatsapp(
     db: AsyncSession = Depends(get_db),
 ):
     return await send_whatsapp_results.execute(db, request.order_id, request.phone_number)
+
+
+@router.post(
+    "/email/send-results",
+    response_model=SendEmailResultsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Enviar resultados por correo electrónico",
+    description="Genera el PDF de resultados de la orden y lo envía al correo electrónico indicado via Gmail.",
+    dependencies=[Depends(require_permission("Reports:GenerateReport"))],
+)
+async def send_results_via_email(
+    request: SendEmailResultsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await send_email_results.execute(db, request.order_id, request.email)
 
 
 @router.get(

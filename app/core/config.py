@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     WHATSAPP_INSTANCE_ID: str = ""
     WHATSAPP_API_KEY: str = ""
 
+    # Email - Gmail SMTP (App Password)
+    GMAIL_SENDER: str = ""
+    GMAIL_APP_PASSWORD: str = ""
+    GMAIL_SMTP_HOST: str = "smtp.gmail.com"
+    GMAIL_SMTP_PORT: int = 587
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
