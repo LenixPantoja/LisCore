@@ -221,6 +221,8 @@ async def assign_permission_to_role(
     rol_id: int, body: RolePermissionAssign, db: AsyncSession = Depends(get_db)
 ):
     await role_permissions.assign(db, rol_id, body.permission_id)
+    from app.core.dependencies import invalidate_permission_cache
+    invalidate_permission_cache(rol_id)
 
 @router.delete(
     "/roles/{rol_id}/permissions/{permission_id}",
@@ -232,6 +234,8 @@ async def remove_permission_from_role(
     rol_id: int, permission_id: int, db: AsyncSession = Depends(get_db)
 ):
     await role_permissions.remove(db, rol_id, permission_id)
+    from app.core.dependencies import invalidate_permission_cache
+    invalidate_permission_cache(rol_id)
 
 
 @router.patch(
@@ -247,3 +251,5 @@ async def toggle_role_permission_active(
     db: AsyncSession = Depends(get_db),
 ):
     await role_permissions.toggle_active(db, rol_id, permission_id, active)
+    from app.core.dependencies import invalidate_permission_cache
+    invalidate_permission_cache(rol_id)

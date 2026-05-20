@@ -7,7 +7,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from app.shared.utils.range_evaluator import evaluate_reference_range
+from app.shared.utils.range_evaluator import (
+    evaluate_reference_range,
+    bulk_fetch_ranges,
+    evaluate_reference_range_sync,
+)
 from utils.minio_client import get_graphic_url
 
 from app.domains.orders.domain.models import Order, OrdersDetail
@@ -369,49 +373,47 @@ async def get_order_details_paginated_by_number(
     order = await OrderRepository.get_order_by_number(db, o_number)
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
-        
-    # 2. Consultar laboratorios paginados
+
+    # 2. Consultar laboratorios y pruebas paginados
     labs, total_labs = await OrderRepository.get_laboratories_paginated(db, order.o_id, skip_labs, limit_labs)
-    
-    # 3. Consultar pruebas (TestsLab) paginadas
     tests, total_tests = await OrderRepository.get_tests_paginated(db, order.o_id, skip_tests, limit_tests)
 
-    # 4. Enriquecer laboratorios con rangos de referencia
+    # 3. Enriquecer laboratorios con rangos de referencia
+    #    Se hace un único batch query para todos los test_ids en vez de N queries individuales.
     patient = order.patient
     patient_dob = getattr(patient, "pt_date_of_birth", None) if patient else None
     patient_sex = getattr(patient, "pt_sex_type", None) if patient else None
 
+    test_ids_with_result = list({
+        lab.l_test_id for lab in labs
+        if lab.l_test_id and (lab.l_result_num is not None or lab.l_result)
+    })
+    ranges_by_test = await bulk_fetch_ranges(db, test_ids_with_result)
+
     enriched_labs = []
     for lab in labs:
         range_type, ref_min, ref_max = (None, None, None)
-        # Obtener valor numérico y textual para evaluación
         result_num = None
         result_text = None
+
         if lab.l_result_num is not None:
             result_num = float(lab.l_result_num)
         elif lab.l_result:
-            # Intentar parsear como número (fallback por si l_result_num no está poblado)
             try:
                 result_num = float(str(lab.l_result).replace(",", "."))
             except (ValueError, AttributeError):
-                # Es texto puro
                 result_text = lab.l_result
 
         if lab.l_test_id and (result_num is not None or result_text):
-            range_type, ref_min, ref_max = await evaluate_reference_range(
-                db,
-                lab.l_test_id,
-                result_num,
-                patient_dob,
-                patient_sex,
-                result_text=result_text,
+            test_ranges = ranges_by_test.get(lab.l_test_id, [])
+            range_type, ref_min, ref_max = evaluate_reference_range_sync(
+                test_ranges, result_num, patient_dob, patient_sex, result_text=result_text
             )
-        # Attach campos extra como atributos transitorios para que Pydantic los serialice
+
         lab.__dict__["range_type"] = range_type
         lab.__dict__["value_range_reference_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["value_range_reference_max"] = float(ref_max) if ref_max is not None else None
 
-        # Resolver imagen gráfica desde MinIO
         if lab.l_result_graphic:
             lab.l_result_graphic = get_graphic_url(lab.l_result_graphic)
 

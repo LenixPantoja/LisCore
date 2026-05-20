@@ -1,7 +1,7 @@
 from typing import List, Optional, Tuple, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload, contains_eager
 from app.domains.orders.domain.models import Order, OrdersDetail
 from datetime import date
 
@@ -271,51 +271,73 @@ class OrderRepository:
     async def get_order_by_number(db: AsyncSession, o_number: str) -> Optional[Order]:
         result = await db.execute(
             select(Order).filter(Order.o_number == o_number).options(
-                selectinload(Order.patient),
-                selectinload(Order.service),
-                selectinload(Order.diagnosis),
-                selectinload(Order.enterprise),
-                selectinload(Order.schooling),
-                selectinload(Order.tariff)
+                joinedload(Order.patient),
+                joinedload(Order.service),
+                joinedload(Order.diagnosis),
+                joinedload(Order.enterprise),
+                joinedload(Order.schooling),
+                joinedload(Order.tariff),
             )
         )
-        return result.scalars().first()
+        return result.unique().scalars().first()
 
     @staticmethod
     async def get_laboratories_paginated(db: AsyncSession, o_id: int, skip: int = 0, limit: int = 100):
         from app.domains.laboratories.domain.models import Laboratory
         from app.domains.orders.domain.models import OrdersDetail
-        
-        query = select(Laboratory).join(
-            OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id
-        ).filter(OrdersDetail.od_order_id == o_id).options(
-            selectinload(Laboratory.test),
-            selectinload(Laboratory.user_validation),
-            selectinload(Laboratory.order_detail).selectinload(OrdersDetail.study)
-        ).order_by(Laboratory.l_id)
-        
-        count_stmt = select(func.count()).select_from(query.subquery())
+
+        # Simplified count — no subquery wrapper needed
+        count_stmt = (
+            select(func.count())
+            .select_from(Laboratory)
+            .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+            .where(OrdersDetail.od_order_id == o_id)
+        )
         total = (await db.execute(count_stmt)).scalar() or 0
-        
-        result = await db.execute(query.offset(skip).limit(limit))
-        return result.scalars().all(), total
+
+        # Single query: uses the JOIN already present for WHERE, then joinedload
+        # for scalar relations (test, user_validation, study) and contains_eager
+        # for order_detail (reuses the JOIN instead of a second SELECT).
+        result = await db.execute(
+            select(Laboratory)
+            .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+            .where(OrdersDetail.od_order_id == o_id)
+            .options(
+                joinedload(Laboratory.test),
+                joinedload(Laboratory.user_validation),
+                contains_eager(Laboratory.order_detail).joinedload(OrdersDetail.study),
+            )
+            .order_by(Laboratory.l_id)
+            .offset(skip)
+            .limit(limit)
+        )
+        return result.unique().scalars().all(), total
 
     @staticmethod
     async def get_tests_paginated(db: AsyncSession, o_id: int, skip: int = 0, limit: int = 100):
         from app.domains.testslabs.domain.models import TestsLab
         from app.domains.studieslab.domain.models import StudiesTestDetail
         from app.domains.orders.domain.models import OrdersDetail
-        
-        query = select(TestsLab).join(
-            StudiesTestDetail, StudiesTestDetail.tests_id == TestsLab.id
-        ).join(
-            OrdersDetail, OrdersDetail.od_study_id == StudiesTestDetail.studies_id
-        ).filter(OrdersDetail.od_order_id == o_id).distinct()
-        
-        count_stmt = select(func.count()).select_from(query.subquery())
+
+        # Direct count with COUNT(DISTINCT) — avoids wrapping a DISTINCT subquery
+        count_stmt = (
+            select(func.count(func.distinct(TestsLab.id)))
+            .select_from(TestsLab)
+            .join(StudiesTestDetail, StudiesTestDetail.tests_id == TestsLab.id)
+            .join(OrdersDetail, OrdersDetail.od_study_id == StudiesTestDetail.studies_id)
+            .where(OrdersDetail.od_order_id == o_id)
+        )
         total = (await db.execute(count_stmt)).scalar() or 0
-        
-        result = await db.execute(query.offset(skip).limit(limit))
+
+        result = await db.execute(
+            select(TestsLab)
+            .join(StudiesTestDetail, StudiesTestDetail.tests_id == TestsLab.id)
+            .join(OrdersDetail, OrdersDetail.od_study_id == StudiesTestDetail.studies_id)
+            .where(OrdersDetail.od_order_id == o_id)
+            .distinct()
+            .offset(skip)
+            .limit(limit)
+        )
         return result.scalars().all(), total
 
     @staticmethod
@@ -325,9 +347,9 @@ class OrderRepository:
         result = await db.execute(
             select(SamplesOrder)
             .filter(SamplesOrder.so_order_id == o_id)
-            .options(selectinload(SamplesOrder.sample_type))
+            .options(joinedload(SamplesOrder.sample_type))
         )
-        return result.scalars().all()
+        return result.unique().scalars().all()
 
     @staticmethod
     async def get_study_ids_for_tariff(db: AsyncSession, tariff_id: int) -> set[int]:
