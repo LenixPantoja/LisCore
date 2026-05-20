@@ -12,10 +12,12 @@ from app.domains.reports.api.schemas import (
     KpiOrdersByWorkGroupResponse,
     KpiOrdersBySedeResponse,
     KpiOrdersByPeriodResponse,
+    SendWhatsAppResultsRequest, SendWhatsAppResultsResponse,
 )
 from app.domains.reports.application.use_cases import report_use_cases as use_cases
 from app.domains.reports.application.use_cases import stats_use_cases
 from app.domains.reports.application.use_cases import kpis_use_cases
+from app.domains.reports.application.use_cases import send_whatsapp_results
 from app.domains.reports.api.pos.router import router as pos_router
 from app.domains.reports.api.printer_barcodes.router import router as barcodes_router
 from app.domains.reports.api.dynamic.router import router as dynamic_reports_router
@@ -41,6 +43,21 @@ async def generate_laboratory_report(
     db: AsyncSession = Depends(get_db),
 ):
     return await use_cases.generate_laboratory_report(db, request.order_id)
+
+
+@router.post(
+    "/whatsapp/send-results",
+    response_model=SendWhatsAppResultsResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Enviar resultados por WhatsApp",
+    description="Genera el PDF de resultados de la orden y lo envía al número de teléfono indicado via WhatsApp.",
+    dependencies=[Depends(require_permission("Reports:GenerateReport"))],
+)
+async def send_results_via_whatsapp(
+    request: SendWhatsAppResultsRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await send_whatsapp_results.execute(db, request.order_id, request.phone_number)
 
 
 @router.get(

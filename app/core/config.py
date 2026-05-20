@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     MINIO_SIGNATURES_BUCKET: str
     MINIO_PRESIGNED_EXPIRES_HOURS: int
 
+    # WhatsApp - Evolution API
+    WHATSAPP_BASE_URL: str = "http://localhost:11300"
+    WHATSAPP_INSTANCE_ID: str = ""
+    WHATSAPP_API_KEY: str = ""
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"
