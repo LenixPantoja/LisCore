@@ -89,6 +89,16 @@ class StudiesLabRepository:
         return False
 
     @staticmethod
+    async def update_test_detail(db: AsyncSession, detail_id: int, update_data: dict) -> Optional[StudiesTestDetail]:
+        detail = await db.get(StudiesTestDetail, detail_id)
+        if detail:
+            for key, value in update_data.items():
+                setattr(detail, key, value)
+            await db.commit()
+            await db.refresh(detail)
+        return detail
+
+    @staticmethod
     async def get_detail_by_id(db: AsyncSession, detail_id: int) -> Optional[StudiesTestDetail]:
         """Recupera un detalle de estudio con sus relaciones cargadas."""
         result = await db.execute(

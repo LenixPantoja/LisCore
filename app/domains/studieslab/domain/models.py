@@ -19,7 +19,12 @@ class StudiesLab(Base):
     work_group = relationship("WorkGroup", foreign_keys=[work_groups_id])
     
     # Relación uno a muchos con el detalle de exámenes
-    test_details = relationship("StudiesTestDetail", back_populates="study", cascade="all, delete-orphan")
+    test_details = relationship(
+        "StudiesTestDetail",
+        back_populates="study",
+        cascade="all, delete-orphan",
+        order_by="StudiesTestDetail.id"
+    )
 
     def __repr__(self):
         return f"<StudiesLab(id={self.id}, name='{self.name}', code='{self.code}')>"
