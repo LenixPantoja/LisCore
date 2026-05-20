@@ -134,11 +134,21 @@ class UserLogin(BaseModel):
 
 class LoginResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
     usr_id: int
     usr_login: str
     usr_full_name: str
     usr_rol_name: Optional[str] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
 
 class UserPaginatedResponse(BaseModel):
     total: int
