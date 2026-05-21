@@ -290,7 +290,7 @@ def build_laboratory_pdf(
                     )
                     story.append(Spacer(1, 4))
                     story.append(
-                        RLImage(img_buf, width=COL_W * 0.75, height=5 * cm,
+                        RLImage(img_buf, width=COL_W, height=10 * cm,
                                 kind="proportional")
                     )
                     story.append(Spacer(1, 8))
