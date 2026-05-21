@@ -2,6 +2,9 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
+PageSize = Literal["carta", "oficio"]
+Orientation = Literal["portrait", "landscape"]
+
 # ---------------------------------------------------------------------------
 # Allowed parameter types
 # ---------------------------------------------------------------------------
@@ -111,6 +114,21 @@ class RunReportRequest(BaseModel):
     )
 
 
+class ExportReportPdfRequest(BaseModel):
+    params: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Valores de los filtros definidos en ReportParameters. Claves = rp_name.",
+    )
+    page_size: PageSize = Field(
+        default="carta",
+        description="Tamaño de hoja: 'carta' (letter 8.5×11in) o 'oficio' (legal 8.5×14in).",
+    )
+    orientation: Orientation = Field(
+        default="portrait",
+        description="Orientación de la hoja: 'portrait' (vertical) o 'landscape' (horizontal).",
+    )
+
+
 class RunReportResponse(BaseModel):
     report_id: int
     report_name: str
@@ -121,5 +139,12 @@ class RunReportResponse(BaseModel):
 class ExportReportPdfResponse(BaseModel):
     filename: str
     base64_pdf: str
+    report_name: str
+    total_rows: int
+
+
+class ExportReportXlsxResponse(BaseModel):
+    filename: str
+    base64_xlsx: str
     report_name: str
     total_rows: int

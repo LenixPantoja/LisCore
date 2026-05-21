@@ -11,8 +11,16 @@ from app.domains.reports.domain.dynamic_report_models import DynamicReport, Repo
 from app.domains.reports.infrastructure.dynamic_report_repository import DynamicReportRepository
 
 
-def _html_to_pdf_bytes(html_content: str) -> bytes:
-    """Convert an HTML string to PDF bytes using xhtml2pdf (no system libs required)."""
+def _html_to_pdf_bytes(
+    html_content: str,
+    page_size: str = "carta",
+    orientation: str = "portrait",
+) -> bytes:
+    """Convert an HTML string to PDF bytes using xhtml2pdf (no system libs required).
+
+    Supported page sizes: 'carta' (letter 8.5×11in), 'oficio' (legal 8.5×14in).
+    Supported orientations: 'portrait', 'landscape'.
+    """
     try:
         from xhtml2pdf import pisa  # type: ignore
     except ImportError as exc:
@@ -21,8 +29,19 @@ def _html_to_pdf_bytes(html_content: str) -> bytes:
             detail="xhtml2pdf no está instalado. No es posible exportar a PDF.",
         ) from exc
 
+    _size_map = {
+        "carta": "letter",
+        "oficio": "legal",
+    }
+    css_size = _size_map.get(page_size, "letter")
+    page_css = (
+        f"<style>@page {{ size: {css_size} {orientation}; "
+        f"margin: 1.5cm; }}</style>\n"
+    )
+    html_with_page = page_css + html_content
+
     buf = io.BytesIO()
-    status_obj = pisa.CreatePDF(html_content, dest=buf, encoding="utf-8")
+    status_obj = pisa.CreatePDF(html_with_page, dest=buf, encoding="utf-8")
     if status_obj.err:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -242,12 +261,19 @@ async def export_report_pdf(
     db: AsyncSession,
     report_id: int,
     filter_params: dict,
-) -> Dict[str, str]:
-    """Run the report and convert the rendered HTML to PDF (base64-encoded)."""
+    page_size: str = "carta",
+    orientation: str = "portrait",
+) -> Dict[str, Any]:
+    """Run the report and convert the rendered HTML to PDF (base64-encoded).
+
+    Args:
+        page_size: 'carta' (letter) or 'oficio' (legal).
+        orientation: 'portrait' or 'landscape'.
+    """
     result = await run_report(db, report_id, filter_params)
     html_content = result["html"]
 
-    pdf_bytes = _html_to_pdf_bytes(html_content)
+    pdf_bytes = _html_to_pdf_bytes(html_content, page_size=page_size, orientation=orientation)
 
     encoded = base64.b64encode(pdf_bytes).decode("utf-8")
     filename = f"reporte_{report_id}_{result['report_name'].replace(' ', '_')}.pdf"
@@ -257,4 +283,84 @@ async def export_report_pdf(
         "base64_pdf": encoded,
         "report_name": result["report_name"],
         "total_rows": result["total_rows"],
+    }
+
+
+async def export_report_xlsx(
+    db: AsyncSession,
+    report_id: int,
+    filter_params: dict,
+) -> Dict[str, Any]:
+    """Run the report SQL and export the raw data rows as an XLSX file (base64-encoded)."""
+    try:
+        import openpyxl  # type: ignore
+        from openpyxl.styles import Font, PatternFill, Alignment  # type: ignore
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="openpyxl no está instalado. No es posible exportar a XLSX.",
+        ) from exc
+
+    report = await DynamicReportRepository.get_by_id(db, report_id)
+
+    # Validate required parameters
+    for param in report.parameters:
+        if param.rp_required and param.rp_name not in filter_params:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"El parámetro requerido '{param.rp_label}' no fue enviado.",
+            )
+
+    typed_params = _coerce_params(filter_params, report.parameters)
+    data_rows = await DynamicReportRepository.execute_report_query(
+        db, report.dr_sql_query, typed_params
+    )
+
+    # Build XLSX
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = report.dr_name[:31]  # Sheet name max 31 chars
+
+    if data_rows:
+        headers = list(data_rows[0].keys())
+
+        # Header row styling
+        header_fill = PatternFill(start_color="233248", end_color="233248", fill_type="solid")
+        header_font = Font(bold=True, color="FFFFFF", size=10)
+        header_alignment = Alignment(horizontal="center", vertical="center")
+
+        for col_idx, header in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = header_alignment
+
+        # Data rows
+        for row_idx, row in enumerate(data_rows, start=2):
+            for col_idx, key in enumerate(headers, start=1):
+                value = row[key]
+                # Convert date/datetime to string for Excel compatibility
+                if hasattr(value, "isoformat"):
+                    value = value.isoformat()
+                ws.cell(row=row_idx, column=col_idx, value=value)
+
+        # Auto-fit column widths (approximate)
+        for col in ws.columns:
+            max_len = max(
+                len(str(cell.value)) if cell.value is not None else 0
+                for cell in col
+            )
+            ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 60)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    encoded = base64.b64encode(buf.getvalue()).decode("utf-8")
+    filename = f"reporte_{report_id}_{report.dr_name.replace(' ', '_')}.xlsx"
+
+    return {
+        "filename": filename,
+        "base64_xlsx": encoded,
+        "report_name": report.dr_name,
+        "total_rows": len(data_rows),
     }

@@ -10,7 +10,9 @@ from app.domains.reports.api.dynamic.schemas import (
     DynamicReportDetail,
     DynamicReportSummary,
     DynamicReportUpdate,
+    ExportReportPdfRequest,
     ExportReportPdfResponse,
+    ExportReportXlsxResponse,
     ReportCategoryNode,
     RunReportRequest,
     RunReportResponse,
@@ -143,14 +145,34 @@ async def run_dynamic_report(
     status_code=status.HTTP_200_OK,
     summary="Exportar reporte a PDF",
     description=(
-        "Ejecuta el reporte con los parámetros dados, genera un PDF con WeasyPrint "
-        "y lo devuelve codificado en base64."
+        "Ejecuta el reporte con los parámetros dados, genera un PDF y lo devuelve codificado en base64. "
+        "Admite control de tamaño de hoja ('carta'/'oficio') y orientación ('portrait'/'landscape')."
     ),
     dependencies=[Depends(require_permission("Reports:DynamicExportPdf"))],
 )
 async def export_dynamic_report_pdf(
     report_id: int,
+    body: ExportReportPdfRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await use_cases.export_report_pdf(
+        db, report_id, body.params, body.page_size, body.orientation
+    )
+
+
+@router.post(
+    "/{report_id}/export-xlsx",
+    response_model=ExportReportXlsxResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Exportar reporte a Excel (XLSX)",
+    description=(
+        "Ejecuta el reporte con los parámetros dados, genera un archivo XLSX y lo devuelve codificado en base64."
+    ),
+    dependencies=[Depends(require_permission("Reports:DynamicExportPdf"))],
+)
+async def export_dynamic_report_xlsx(
+    report_id: int,
     body: RunReportRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    return await use_cases.export_report_pdf(db, report_id, body.params)
+    return await use_cases.export_report_xlsx(db, report_id, body.params)
