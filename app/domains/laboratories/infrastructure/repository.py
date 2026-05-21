@@ -2,6 +2,7 @@ from decimal import Decimal, InvalidOperation
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import update, select
 from app.domains.laboratories.domain.models import Laboratory
+from utils.timezone import get_bogota_now
 from app.domains.testslabs.domain.models import TestsLab
 from app.domains.orders.domain.models import OrdersDetail
 from app.domains.laboratories.domain.constants import (
@@ -340,7 +341,10 @@ class LaboratoryRepository:
                 old_result_comp = lab.l_result_comp
 
                 # Registrar campos provistos y validar (l_state = 3 Validada)
-                fields: Dict[str, Any] = {"l_state": LABORATORY_STATE_VALIDADA}
+                fields: Dict[str, Any] = {
+                    "l_state": LABORATORY_STATE_VALIDADA,
+                    "l_date_validatie": get_bogota_now(),
+                }
                 for key in ("l_result", "l_result_comp", "l_nota_validation", "l_user_validation_id"):
                     if key in item and item[key] is not None:
                         fields[key] = item[key]
