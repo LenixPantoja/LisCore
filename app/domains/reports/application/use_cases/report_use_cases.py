@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA
-from app.domains.studieslab.domain.models import StudiesLab
+from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.enterprises.domain.models import Enterprise
 from app.domains.reports.infrastructure.pdf_generator import (
     build_laboratory_pdf,
@@ -46,6 +46,12 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
     labs_result = await db.execute(
         select(Laboratory)
         .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+        .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+        .outerjoin(
+            StudiesTestDetail,
+            (StudiesTestDetail.studies_id == OrdersDetail.od_study_id)
+            & (StudiesTestDetail.tests_id == Laboratory.l_test_id),
+        )
         .filter(OrdersDetail.od_order_id == order_id)
         .options(
             selectinload(Laboratory.test),
@@ -54,7 +60,11 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
             .selectinload(OrdersDetail.study)
             .selectinload(StudiesLab.work_group),
         )
-        .order_by(Laboratory.l_id)
+        .order_by(
+            StudiesLab.order_of_print.nulls_last(),
+            StudiesTestDetail.order_print.nulls_last(),
+            Laboratory.l_id,
+        )
     )
     laboratories = labs_result.scalars().all()
 

@@ -23,7 +23,7 @@ class StudiesLab(Base):
         "StudiesTestDetail",
         back_populates="study",
         cascade="all, delete-orphan",
-        order_by="StudiesTestDetail.id"
+        order_by="StudiesTestDetail.order_print"
     )
 
     def __repr__(self):

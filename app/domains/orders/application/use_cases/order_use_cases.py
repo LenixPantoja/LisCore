@@ -496,9 +496,13 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     study_order = []
     unique_study_ids_in_order: list[int] = []
 
-    # Pre-populate study_map from all OrdersDetails (includes cancelled ones with empty labs)
+    # Pre-populate study_map from all OrdersDetails ordered by study order_of_print
     seen_od_study_ids: set[int] = set()
-    for detail in order.details:
+    sorted_details = sorted(
+        order.details,
+        key=lambda d: (d.study.order_of_print if d.study and d.study.order_of_print is not None else float("inf")),
+    )
+    for detail in sorted_details:
         study = detail.study
         study_id = study.id if study else 0
         if study_id not in seen_od_study_ids:

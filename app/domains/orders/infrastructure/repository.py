@@ -285,6 +285,7 @@ class OrderRepository:
     async def get_laboratories_paginated(db: AsyncSession, o_id: int, skip: int = 0, limit: int = 100):
         from app.domains.laboratories.domain.models import Laboratory
         from app.domains.orders.domain.models import OrdersDetail
+        from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 
         # Simplified count — no subquery wrapper needed
         count_stmt = (
@@ -295,19 +296,28 @@ class OrderRepository:
         )
         total = (await db.execute(count_stmt)).scalar() or 0
 
-        # Single query: uses the JOIN already present for WHERE, then joinedload
-        # for scalar relations (test, user_validation, study) and contains_eager
-        # for order_detail (reuses the JOIN instead of a second SELECT).
+        # JOIN StudiesLab and StudiesTestDetail to apply ordering by order_of_print / order_print.
+        # contains_eager reuses the explicit JOINs instead of issuing separate SELECTs.
         result = await db.execute(
             select(Laboratory)
             .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+            .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+            .outerjoin(
+                StudiesTestDetail,
+                (StudiesTestDetail.studies_id == OrdersDetail.od_study_id)
+                & (StudiesTestDetail.tests_id == Laboratory.l_test_id),
+            )
             .where(OrdersDetail.od_order_id == o_id)
             .options(
                 joinedload(Laboratory.test),
                 joinedload(Laboratory.user_validation),
-                contains_eager(Laboratory.order_detail).joinedload(OrdersDetail.study),
+                contains_eager(Laboratory.order_detail).contains_eager(OrdersDetail.study),
             )
-            .order_by(Laboratory.l_id)
+            .order_by(
+                StudiesLab.order_of_print.nulls_last(),
+                StudiesTestDetail.order_print.nulls_last(),
+                Laboratory.l_id,
+            )
             .offset(skip)
             .limit(limit)
         )
@@ -329,12 +339,15 @@ class OrderRepository:
         )
         total = (await db.execute(count_stmt)).scalar() or 0
 
+        # GROUP BY primary key (PostgreSQL allows this) lets us aggregate order_print
+        # and sort without DISTINCT conflicts.
         result = await db.execute(
             select(TestsLab)
             .join(StudiesTestDetail, StudiesTestDetail.tests_id == TestsLab.id)
             .join(OrdersDetail, OrdersDetail.od_study_id == StudiesTestDetail.studies_id)
             .where(OrdersDetail.od_order_id == o_id)
-            .distinct()
+            .group_by(TestsLab.id)
+            .order_by(func.min(StudiesTestDetail.order_print).nulls_last(), TestsLab.id)
             .offset(skip)
             .limit(limit)
         )
