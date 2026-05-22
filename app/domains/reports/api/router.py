@@ -53,7 +53,7 @@ async def generate_laboratory_report(
     status_code=status.HTTP_200_OK,
     summary="Enviar resultados por WhatsApp",
     description="Genera el PDF de resultados de la orden y lo envía al número de teléfono indicado via WhatsApp.",
-    dependencies=[Depends(require_permission("Reports:GenerateReport"))],
+    dependencies=[Depends(require_permission("Reports:SendWhatsApp"))],
 )
 async def send_results_via_whatsapp(
     request: SendWhatsAppResultsRequest,
@@ -68,7 +68,7 @@ async def send_results_via_whatsapp(
     status_code=status.HTTP_200_OK,
     summary="Enviar resultados por correo electrónico",
     description="Genera el PDF de resultados de la orden y lo envía al correo electrónico indicado via Gmail.",
-    dependencies=[Depends(require_permission("Reports:GenerateReport"))],
+    dependencies=[Depends(require_permission("Reports:SendEmail"))],
 )
 async def send_results_via_email(
     request: SendEmailResultsRequest,

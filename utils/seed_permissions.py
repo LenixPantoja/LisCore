@@ -149,6 +149,9 @@ _PERMISSIONS = [
     {"p_name": "Reports:DynamicDelete",     "p_description": "Desactivar (baja lógica) reportes dinámicos",            "p_module": "Reports"},
     {"p_name": "Reports:DynamicRun",        "p_description": "Ejecutar un reporte dinámico con filtros",               "p_module": "Reports"},
     {"p_name": "Reports:DynamicExportPdf",  "p_description": "Exportar un reporte dinámico a PDF",                     "p_module": "Reports"},
+    # ── Delivery (Email / WhatsApp) ───────────────────────────────────────
+    {"p_name": "Reports:SendEmail",         "p_description": "Enviar resultados de laboratorio por correo electrónico", "p_module": "Reports"},
+    {"p_name": "Reports:SendWhatsApp",      "p_description": "Enviar resultados de laboratorio por WhatsApp",           "p_module": "Reports"},
 
     # ── Samples ───────────────────────────────────────────────────────────
     {"p_name": "Samples:Create", "p_description": "Crear tipos de muestra", "p_module": "Samples"},
