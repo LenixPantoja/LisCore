@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     GMAIL_SMTP_HOST: str = "smtp.gmail.com"
     GMAIL_SMTP_PORT: int = 587
 
+    # Gotenberg — headless Chromium PDF service
+    GOTENBERG_URL: str = "http://localhost:3000"
+
     @property
     def DATABASE_URL(self) -> str:
         return f"postgresql+asyncpg://{self.DB_USER}:{self.DB_PASSWORD}@{self.DB_HOST}:{self.DB_PORT}/{self.DB_NAME}"

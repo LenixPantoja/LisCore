@@ -1,53 +1,195 @@
+﻿import asyncio
 import base64
 import io
+import re
+import tempfile
+import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+import requests as _requests
 from fastapi import HTTPException, status
 from jinja2 import Template, TemplateError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.domains.reports.domain.dynamic_report_models import DynamicReport, ReportParameter
 from app.domains.reports.infrastructure.dynamic_report_repository import DynamicReportRepository
 
+# ── Logo ─────────────────────────────────────────────────────────────────────
+_LOGO_PATH = (
+    Path(__file__).parent.parent.parent / "infrastructure" / "templates" / "marca_agua.png"
+)
 
-def _html_to_pdf_bytes(
-    html_content: str,
+
+def _get_logo_base64() -> str:
+    """Return the company logo as an inline base64 data URI, or empty string on failure."""
+    try:
+        with open(_LOGO_PATH, "rb") as f:
+            encoded = base64.b64encode(f.read()).decode("utf-8")
+        return f"data:image/png;base64,{encoded}"
+    except Exception:
+        return ""
+
+
+# ── PDF header ────────────────────────────────────────────────────────────────
+
+def _inject_header_into_html(html: str, header_html: str) -> str:
+    """Inject the PDF header right after <body> tag in the existing HTML."""
+    match = re.search(r"(<body[^>]*>)", html, re.IGNORECASE)
+    if match:
+        insert_pos = match.end()
+        return html[:insert_pos] + "\n" + header_html + "\n" + html[insert_pos:]
+    # Fallback: prepend header
+    return header_html + html
+
+
+def _build_pdf_header(
+    report_name: str,
+    dr_code: Optional[str],
+    dr_version: Optional[str],
+    dr_emission_date: Optional[str],
+) -> str:
+    """Build the standard 3-column PDF header using table layout."""
+    logo_src = _get_logo_base64()
+    logo_tag = (
+        f'<img src="{logo_src}" style="height:38px; vertical-align:middle;" />'
+        if logo_src
+        else ""
+    )
+    code_val = dr_code or "—"
+    version_val = dr_version or "—"
+    emission_val = dr_emission_date or "—"
+
+    return f"""
+<table style="width:100%; border-collapse:collapse; margin-bottom:0;" cellspacing="0" cellpadding="6">
+  <tr>
+    <td style="width:22%; vertical-align:middle; padding:6px 8px;">
+      {logo_tag}
+      <div style="color:#233248; font-weight:bold; font-size:12pt; margin-top:2px;">Liscore</div>
+      <div style="color:#4a5568; font-size:7pt; font-style:italic;">Sistema de gestion de laboratorio</div>
+    </td>
+    <td style="text-align:center; vertical-align:middle; padding:6px 8px;">
+      <span style="font-weight:bold; font-size:10.5pt; letter-spacing:0.4pt; text-transform:uppercase;">
+        {report_name}
+      </span>
+    </td>
+    <td style="width:20%; vertical-align:middle; padding:0;">
+      <table style="border:1px solid #233248; font-size:8pt; width:100%; border-collapse:collapse;" cellspacing="0" cellpadding="4">
+        <tr><td style="border-bottom:1px solid #233248; padding:3px 6px;">
+          <span style="color:#4a5568;">C&oacute;digo: </span><b>{code_val}</b>
+        </td></tr>
+        <tr><td style="border-bottom:1px solid #233248; padding:3px 6px;">
+          <span style="color:#4a5568;">Versi&oacute;n: </span><b>{version_val}</b>
+        </td></tr>
+        <tr><td style="padding:3px 6px;">
+          <span style="color:#4a5568;">Emisi&oacute;n: </span><b>{emission_val}</b>
+        </td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<table style="width:100%; border-collapse:collapse; margin-bottom:12px;" cellspacing="0" cellpadding="0">
+  <tr><td style="height:3px; background:#233248;"></td></tr>
+</table>
+"""
+
+
+def _build_complete_pdf_html(
+    header_html: str,
+    body_content: str,
     page_size: str = "carta",
     orientation: str = "portrait",
-) -> bytes:
-    """Convert an HTML string to PDF bytes using xhtml2pdf (no system libs required).
-
-    Supported page sizes: 'carta' (letter 8.5×11in), 'oficio' (legal 8.5×14in).
-    Supported orientations: 'portrait', 'landscape'.
-    """
-    try:
-        from xhtml2pdf import pisa  # type: ignore
-    except ImportError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="xhtml2pdf no está instalado. No es posible exportar a PDF.",
-        ) from exc
-
-    _size_map = {
-        "carta": "letter",
-        "oficio": "legal",
-    }
+) -> str:
+    """Return a complete, self-contained HTML document ready for Gotenberg."""
+    _size_map = {"carta": "letter", "oficio": "legal"}
     css_size = _size_map.get(page_size, "letter")
-    page_css = (
-        f"<style>@page {{ size: {css_size} {orientation}; "
-        f"margin: 1.5cm; }}</style>\n"
-    )
-    html_with_page = page_css + html_content
 
-    buf = io.BytesIO()
-    status_obj = pisa.CreatePDF(html_with_page, dest=buf, encoding="utf-8")
-    if status_obj.err:
+    return f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+    body {{ font-family: Helvetica, Arial, sans-serif; font-size: 9pt; color: #1e293b; }}
+    @page {{ size: {css_size} {orientation}; margin: 1.5cm 1.5cm 2cm 1.5cm; }}
+    table {{ border-collapse: collapse; width: 100%; }}
+  </style>
+</head>
+<body>
+{header_html}
+{body_content}
+</body>
+</html>"""
+
+
+# ── Gotenberg ─────────────────────────────────────────────────────────────────
+
+def _call_gotenberg_sync(html: str, page_size: str, orientation: str) -> bytes:
+    """Write HTML to a temp file, POST it to Gotenberg, delete the file, return PDF bytes."""
+    # Paper dimensions in inches
+    # Carta: 8.5 x 11  |  Oficio (legal): 8.5 x 14
+    size_map = {
+        "carta": (8.5, 11.0),
+        "oficio": (8.5, 14.0),
+        "legal": (8.5, 14.0),
+    }
+    paper_w, paper_h = size_map.get(page_size.lower(), (8.5, 11.0))
+    if orientation == "landscape":
+        paper_w, paper_h = paper_h, paper_w
+
+    # Write HTML to a temporary file
+    tmp_dir = Path(tempfile.gettempdir())
+    tmp_file = tmp_dir / f"report_{uuid.uuid4().hex}.html"
+    tmp_file.write_text(html, encoding="utf-8")
+
+    url = f"{settings.GOTENBERG_URL.rstrip('/')}/forms/chromium/convert/html"
+    data = {
+        "paperWidth": str(paper_w),
+        "paperHeight": str(paper_h),
+        "marginTop": "0.5",
+        "marginBottom": "0.5",
+        "marginLeft": "0.5",
+        "marginRight": "0.5",
+        "scale": "1.0",
+        "printBackground": "true",
+    }
+    try:
+        with tmp_file.open("rb") as fh:
+            files = {"file": ("index.html", fh, "text/html")}
+            response = _requests.post(url, files=files, data=data, timeout=30)
+        response.raise_for_status()
+        return response.content
+    except _requests.exceptions.ConnectionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"No se pudo conectar al servicio Gotenberg en {settings.GOTENBERG_URL}. "
+                   f"Verifique que el contenedor esté corriendo.",
+        ) from exc
+    except _requests.exceptions.HTTPError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al generar el PDF (xhtml2pdf): {status_obj.err}",
-        )
-    return buf.getvalue()
+            detail=f"Gotenberg devolvió un error: {exc.response.status_code} — {exc.response.text[:200]}",
+        ) from exc
+    except _requests.exceptions.Timeout as exc:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Gotenberg tardó demasiado en responder (timeout 30s).",
+        ) from exc
+    finally:
+        # Always remove the temporary HTML file
+        try:
+            tmp_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+async def _html_to_pdf_bytes(html: str, page_size: str, orientation: str) -> bytes:
+    """Async wrapper: runs the Gotenberg HTTP call in a thread pool to avoid blocking."""
+    return await asyncio.get_event_loop().run_in_executor(
+        None, _call_gotenberg_sync, html, page_size, orientation
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -169,7 +311,7 @@ async def list_reports_tree(db: AsyncSession) -> List[Dict[str, Any]]:
 
 
 async def get_report_detail(db: AsyncSession, report_id: int) -> Dict[str, Any]:
-    """Return the report metadata together with each parameter's options resolved."""
+    """Return the report metadata together with each parameter options resolved."""
     report = await DynamicReportRepository.get_by_id(db, report_id)
 
     resolved_params = []
@@ -238,7 +380,7 @@ async def run_report(
         if param.rp_required and param.rp_name not in filter_params:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"El parámetro requerido '{param.rp_label}' no fue enviado.",
+                detail=f"El par\u00e1metro requerido '{param.rp_label}' no fue enviado.",
             )
 
     # Coerce string values to proper Python types for asyncpg
@@ -264,16 +406,19 @@ async def export_report_pdf(
     page_size: str = "carta",
     orientation: str = "portrait",
 ) -> Dict[str, Any]:
-    """Run the report and convert the rendered HTML to PDF (base64-encoded).
+    """Run the report and convert the rendered HTML to PDF via Gotenberg (base64-encoded).
+
+    The PDF includes a standard 3-column header:
+      [Logo + brand] | [Report title centered] | [C\u00f3digo / Versi\u00f3n / Emisi\u00f3n box]
 
     Args:
         page_size: 'carta' (letter) or 'oficio' (legal).
         orientation: 'portrait' or 'landscape'.
     """
     result = await run_report(db, report_id, filter_params)
-    html_content = result["html"]
 
-    pdf_bytes = _html_to_pdf_bytes(html_content, page_size=page_size, orientation=orientation)
+    # Use exactly the same HTML that /run returns — preserves all design and styles
+    pdf_bytes = await _html_to_pdf_bytes(result["html"], page_size, orientation)
 
     encoded = base64.b64encode(pdf_bytes).decode("utf-8")
     filename = f"reporte_{report_id}_{result['report_name'].replace(' ', '_')}.pdf"
@@ -298,7 +443,7 @@ async def export_report_xlsx(
     except ImportError as exc:
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="openpyxl no está instalado. No es posible exportar a XLSX.",
+            detail="openpyxl no est\u00e1 instalado. No es posible exportar a XLSX.",
         ) from exc
 
     report = await DynamicReportRepository.get_by_id(db, report_id)
@@ -308,7 +453,7 @@ async def export_report_xlsx(
         if param.rp_required and param.rp_name not in filter_params:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=f"El parámetro requerido '{param.rp_label}' no fue enviado.",
+                detail=f"El par\u00e1metro requerido '{param.rp_label}' no fue enviado.",
             )
 
     typed_params = _coerce_params(filter_params, report.parameters)

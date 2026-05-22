@@ -1,3 +1,5 @@
+"""Temp script: rewrite dynamic_report_models.py with the new fields."""
+content = """\
 from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -53,3 +55,18 @@ class ReportParameter(Base):
 
     def __repr__(self) -> str:
         return f"<ReportParameter(id={self.rp_id}, name={self.rp_name!r}, type={self.rp_type!r})>"
+"""
+
+target = "app/domains/reports/domain/dynamic_report_models.py"
+with open(target, "w", encoding="utf-8", newline="\n") as f:
+    f.write(content)
+print(f"Written: {target}")
+
+# Verify
+from app.domains.reports.domain.dynamic_report_models import DynamicReport
+cols = [c.key for c in DynamicReport.__table__.columns]
+print("Columns:", cols)
+assert "dr_code" in cols, "dr_code missing!"
+assert "dr_version" in cols, "dr_version missing!"
+assert "dr_emission_date" in cols, "dr_emission_date missing!"
+print("All new columns verified OK.")
