@@ -128,7 +128,7 @@ def _build_complete_pdf_html(
 
 def _call_gotenberg_sync(html: str, page_size: str, orientation: str) -> bytes:
     """Write HTML to a temp file, POST it to Gotenberg, delete the file, return PDF bytes."""
-    # Paper dimensions in inches
+    # Paper dimensions in inches (always portrait order; Gotenberg handles landscape rotation)
     # Carta: 8.5 x 11  |  Oficio (legal): 8.5 x 14
     size_map = {
         "carta": (8.5, 11.0),
@@ -136,28 +136,54 @@ def _call_gotenberg_sync(html: str, page_size: str, orientation: str) -> bytes:
         "legal": (8.5, 14.0),
     }
     paper_w, paper_h = size_map.get(page_size.lower(), (8.5, 11.0))
-    if orientation == "landscape":
-        paper_w, paper_h = paper_h, paper_w
+    is_landscape = orientation == "landscape"
 
     # Write HTML to a temporary file
     tmp_dir = Path(tempfile.gettempdir())
-    tmp_file = tmp_dir / f"report_{uuid.uuid4().hex}.html"
+    unique_id = uuid.uuid4().hex
+    tmp_file = tmp_dir / f"report_{unique_id}.html"
+    tmp_footer = tmp_dir / f"footer_{unique_id}.html"
     tmp_file.write_text(html, encoding="utf-8")
+
+    # Footer HTML with date/time and page number (Gotenberg Chromium supports these vars)
+    now_str = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    footer_html = f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <style>
+    body {{ margin: 0; font-family: Helvetica, Arial, sans-serif; font-size: 8pt; color: #4a5568; }}
+    .footer {{ display: flex; justify-content: space-between; align-items: center;
+               padding: 0 0.5cm; width: 100%; }}
+  </style>
+</head>
+<body>
+  <div class="footer">
+    <span>Generado el {now_str}</span>
+    <span>P&aacute;gina <span class="pageNumber"></span> de <span class="totalPages"></span></span>
+  </div>
+</body>
+</html>"""
+    tmp_footer.write_text(footer_html, encoding="utf-8")
 
     url = f"{settings.GOTENBERG_URL.rstrip('/')}/forms/chromium/convert/html"
     data = {
         "paperWidth": str(paper_w),
         "paperHeight": str(paper_h),
         "marginTop": "0.5",
-        "marginBottom": "0.5",
+        "marginBottom": "1.0",
         "marginLeft": "0.5",
         "marginRight": "0.5",
         "scale": "1.0",
         "printBackground": "true",
+        "landscape": "true" if is_landscape else "false",
     }
     try:
-        with tmp_file.open("rb") as fh:
-            files = {"file": ("index.html", fh, "text/html")}
+        with tmp_file.open("rb") as fh, tmp_footer.open("rb") as ff:
+            files = {
+                "file": ("index.html", fh, "text/html"),
+                "footer.html": ("footer.html", ff, "text/html"),
+            }
             response = _requests.post(url, files=files, data=data, timeout=30)
         response.raise_for_status()
         return response.content
@@ -178,9 +204,13 @@ def _call_gotenberg_sync(html: str, page_size: str, orientation: str) -> bytes:
             detail="Gotenberg tardó demasiado en responder (timeout 30s).",
         ) from exc
     finally:
-        # Always remove the temporary HTML file
+        # Always remove the temporary HTML files
         try:
             tmp_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+        try:
+            tmp_footer.unlink(missing_ok=True)
         except OSError:
             pass
 
