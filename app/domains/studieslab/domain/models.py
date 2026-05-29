@@ -2,32 +2,6 @@ from sqlalchemy import Column, Integer, String, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
-class StudiesLab(Base):
-    __tablename__ = "StudiesLab"
-
-    id = Column(Integer, primary_key=True, index=True)
-    code = Column(String(255))
-    cups_code = Column(String(500))
-    name = Column(String(255))
-    order_of_print = Column(Integer)
-    referral_location_id = Column(Integer, ForeignKey("Referral_locations.id"), nullable=True)
-    work_groups_id = Column(Integer, ForeignKey("Work_groups.wg_id"), nullable=True)
-    active = Column(Boolean, default=True)
-
-    # Relaciones con Masters utilizando los modelos definidos anteriormente
-    referral_location = relationship("ReferralLocation", foreign_keys=[referral_location_id])
-    work_group = relationship("WorkGroup", foreign_keys=[work_groups_id])
-    
-    # Relación uno a muchos con el detalle de exámenes
-    test_details = relationship(
-        "StudiesTestDetail",
-        back_populates="study",
-        cascade="all, delete-orphan",
-        order_by="StudiesTestDetail.order_print"
-    )
-
-    def __repr__(self):
-        return f"<StudiesLab(id={self.id}, name='{self.name}', code='{self.code}')>"
 
 class StudiesTestDetail(Base):
     __tablename__ = "StudiesTestDetail"
@@ -46,3 +20,32 @@ class StudiesTestDetail(Base):
 
     def __repr__(self):
         return f"<StudiesTestDetail(id={self.id}, study_id={self.studies_id}, test_id={self.tests_id})>"
+
+
+class StudiesLab(Base):
+    __tablename__ = "StudiesLab"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(255))
+    cups_code = Column(String(500))
+    name = Column(String(255))
+    order_of_print = Column(Integer)
+    referral_location_id = Column(Integer, ForeignKey("Referral_locations.id"), nullable=True)
+    work_groups_id = Column(Integer, ForeignKey("Work_groups.wg_id"), nullable=True)
+    active = Column(Boolean, default=True)
+
+    # Relaciones con Masters utilizando los modelos definidos anteriormente
+    referral_location = relationship("ReferralLocation", foreign_keys=[referral_location_id])
+    work_group = relationship("WorkGroup", foreign_keys=[work_groups_id])
+
+    # Relación uno a muchos con el detalle de exámenes
+    # Orden estable: order_print ASC, luego id ASC como desempate (evita reordenamientos tras UPDATE en PostgreSQL)
+    test_details = relationship(
+        "StudiesTestDetail",
+        back_populates="study",
+        cascade="all, delete-orphan",
+        order_by=[StudiesTestDetail.order_print, StudiesTestDetail.id],
+    )
+
+    def __repr__(self):
+        return f"<StudiesLab(id={self.id}, name='{self.name}', code='{self.code}')>"

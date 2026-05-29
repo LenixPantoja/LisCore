@@ -22,11 +22,11 @@ class StudiesLabRepository:
     ) -> Tuple[Sequence[StudiesLab], int]:
         # 1. Base de la consulta
         query = select(StudiesLab).options(
-            selectinload(StudiesLab.test_details)
-            .selectinload(StudiesTestDetail.test),
-            selectinload(StudiesLab.test_details)
-            .selectinload(StudiesTestDetail.work_group),
-            selectinload(StudiesLab.work_group)
+            selectinload(StudiesLab.test_details).options(
+                selectinload(StudiesTestDetail.test),
+                selectinload(StudiesTestDetail.work_group),
+            ),
+            selectinload(StudiesLab.work_group),
         )
         
         # 2. Filtro de búsqueda (Opcional por nombre o código)
@@ -51,11 +51,11 @@ class StudiesLabRepository:
             select(StudiesLab)
             .filter(StudiesLab.id == study_id)
             .options(
-                selectinload(StudiesLab.test_details)
-                .selectinload(StudiesTestDetail.test),
-                selectinload(StudiesLab.test_details)
-                .selectinload(StudiesTestDetail.work_group),
-                selectinload(StudiesLab.work_group)
+                selectinload(StudiesLab.test_details).options(
+                    selectinload(StudiesTestDetail.test),
+                    selectinload(StudiesTestDetail.work_group),
+                ),
+                selectinload(StudiesLab.work_group),
             )
         )
         return result.scalars().first()
