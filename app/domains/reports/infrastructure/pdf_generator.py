@@ -174,6 +174,7 @@ def build_laboratory_pdf(
     s_ent      = ParagraphStyle("ent",      fontName="Helvetica-Bold", fontSize=10, textColor=C_NAVY,  alignment=TA_RIGHT)
     s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
     s_comp     = ParagraphStyle("comp",     fontName="Courier",         fontSize=7.5, textColor=C_DARK, leading=11, leftIndent=8)
+    s_alt_ref  = ParagraphStyle("alt_ref",  fontName="Helvetica-Oblique", fontSize=7,   textColor=C_GRAY, leading=10, leftIndent=8)
 
     # ── Página: letter, márgenes ───────────────────────
     PAGE_W, PAGE_H = letter
@@ -258,10 +259,11 @@ def build_laboratory_pdf(
                     ])
                     if row.get("result_comp"):
                         comp_idx = len(res_rows)
-                        res_rows.append([
-                            Preformatted(row["result_comp"], s_comp),
-                            "", "", "",
-                        ])
+                        comp_cell = [Preformatted(row["result_comp"], s_comp)]
+                        if row.get("alternative_range_value"):
+                            comp_cell.append(Spacer(1, 4))
+                            comp_cell.append(Paragraph(_xml_escape(row["alternative_range_value"]).replace("\n", "<br/>"), s_alt_ref))
+                        res_rows.append([comp_cell, "", "", ""])
                         comp_row_indices.add(comp_idx)
 
                 col_widths = [COL_W * 0.35, COL_W * 0.18, COL_W * 0.14, COL_W * 0.33]
@@ -593,6 +595,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
         "note": lab.l_nota_validation or "",
         "graphic_object_name": lab.l_result_graphic or None,
         "result_comp": lab.l_result_comp or "",
+        "alternative_range_value": (lab.test.alternative_range_value or "") if lab.test else "",
     }
 
 
