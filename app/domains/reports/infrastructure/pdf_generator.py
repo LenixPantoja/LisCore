@@ -150,12 +150,8 @@ def build_laboratory_pdf(
 
     # Ciudad
     city_name = "—"
-    if order.enterprise and hasattr(order.enterprise, "city") and order.enterprise.city:
-        city_name = (
-            getattr(order.enterprise.city, "name", None)
-            or getattr(order.enterprise.city, "c_name", None)
-            or "—"
-        )
+    if patient and hasattr(patient, "city") and patient.city:
+        city_name = getattr(patient.city, "city_name", None) or "—"
 
     studies = _group_by_study(laboratories, is_female)
 

@@ -10,6 +10,7 @@ from app.domains.laboratories.domain.models import Laboratory
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.enterprises.domain.models import Enterprise
+from app.domains.patients.domain.models import Patient
 from app.domains.reports.infrastructure.pdf_generator import (
     build_laboratory_pdf,
     pdf_to_base64,
@@ -24,7 +25,7 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         select(Order)
         .filter(Order.o_id == order_id)
         .options(
-            selectinload(Order.patient),
+            selectinload(Order.patient).selectinload(Patient.city),
             selectinload(Order.enterprise).selectinload(Enterprise.regimen),
             selectinload(Order.enterprise).selectinload(Enterprise.classification),
             selectinload(Order.enterprise).selectinload(Enterprise.document_type),
