@@ -3,6 +3,7 @@ import io
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape as _xml_escape
 
 from PIL import Image as PILImage
 from reportlab.lib import colors
@@ -12,6 +13,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import (
     Image as RLImage,
     Paragraph,
+    Preformatted,
     SimpleDocTemplate,
     Spacer,
     Table,
@@ -171,6 +173,7 @@ def build_laboratory_pdf(
     s_empty    = ParagraphStyle("empty",    fontName="Helvetica-Oblique", fontSize=8, textColor=C_NAVY)
     s_ent      = ParagraphStyle("ent",      fontName="Helvetica-Bold", fontSize=10, textColor=C_NAVY,  alignment=TA_RIGHT)
     s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
+    s_comp     = ParagraphStyle("comp",     fontName="Courier",         fontSize=7.5, textColor=C_DARK, leading=11, leftIndent=8)
 
     # ── Página: letter, márgenes ───────────────────────
     PAGE_W, PAGE_H = letter
@@ -244,13 +247,23 @@ def build_laboratory_pdf(
                     Paragraph("VALOR DE REFERENCIA", s_th),
                 ]
                 res_rows = [th_row]
-                for i, row in enumerate(study["rows"]):
+                comp_row_indices: set[int] = set()
+
+                for row in study["rows"]:
                     res_rows.append([
                         Paragraph(row["test_name"], s_test),
                         Paragraph(row["result"], s_res_bad if row["is_abnormal"] else s_res_ok),
                         Paragraph(row["units"], s_unit),
                         Paragraph(row["reference"], s_ref),
                     ])
+                    if row.get("result_comp"):
+                        comp_idx = len(res_rows)
+                        res_rows.append([
+                            Preformatted(row["result_comp"], s_comp),
+                            "", "", "",
+                        ])
+                        comp_row_indices.add(comp_idx)
+
                 col_widths = [COL_W * 0.35, COL_W * 0.18, COL_W * 0.14, COL_W * 0.33]
                 res_tbl = Table(res_rows, colWidths=col_widths, repeatRows=1)
 
@@ -263,11 +276,27 @@ def build_laboratory_pdf(
                     ("BOX",         (0, 0), (-1, -1), 0.5, colors.HexColor("#bfdbfe")),
                     ("VALIGN",      (0, 0), (-1, -1), "TOP"),
                 ]
+
+                # Filas de resultado compuesto: abarcan todas las columnas
+                for comp_idx in comp_row_indices:
+                    tbl_style.extend([
+                        ("SPAN",          (0, comp_idx), (-1, comp_idx)),
+                        ("BACKGROUND",    (0, comp_idx), (-1, comp_idx), colors.HexColor("#f8faff")),
+                        ("LEFTPADDING",   (0, comp_idx), (-1, comp_idx), 20),
+                        ("TOPPADDING",    (0, comp_idx), (-1, comp_idx), 4),
+                        ("BOTTOMPADDING", (0, comp_idx), (-1, comp_idx), 6),
+                    ])
+
+                # Fondo alternado solo en filas de datos normales
+                data_row_num = 0
                 for i in range(1, len(res_rows)):
-                    if i % 2 == 1:
+                    if i in comp_row_indices:
+                        continue
+                    if data_row_num % 2 == 0:
                         tbl_style.append(("BACKGROUND", (0, i), (-1, i), C_LIGHT))
                     else:
                         tbl_style.append(("BACKGROUND", (0, i), (-1, i), colors.transparent))
+                    data_row_num += 1
 
                 res_tbl.setStyle(TableStyle(tbl_style))
                 story.append(res_tbl)
@@ -563,6 +592,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
         "is_abnormal": is_abnormal,
         "note": lab.l_nota_validation or "",
         "graphic_object_name": lab.l_result_graphic or None,
+        "result_comp": lab.l_result_comp or "",
     }
 
 
@@ -590,7 +620,8 @@ def _format_result(lab: Any) -> str:
         return str(lab.l_result_num)
     if lab.l_result:
         return lab.l_result
-    return lab.l_result_comp or "—"
+    # l_result_comp se muestra debajo del examen como fila compuesta, no en esta columna
+    return "—"
 
 
 def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
