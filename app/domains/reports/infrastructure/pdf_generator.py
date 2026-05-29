@@ -11,6 +11,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
+    Flowable,
     Image as RLImage,
     Paragraph,
     Preformatted,
@@ -28,6 +29,34 @@ from reportlab.lib.utils import ImageReader
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 WATERMARK_PNG = str(TEMPLATES_DIR / "marca_agua.png")
 LOGO_PNG = str(TEMPLATES_DIR / "marca_agua.png")  # Usamos la misma imagen como logo
+
+
+class _RoundedFrame(Flowable):
+    """Envuelve un flowable con un borde de esquinas redondeadas."""
+
+    def __init__(self, content: Flowable, radius: float = 5, color=None):
+        Flowable.__init__(self)
+        self._content = content
+        self._radius = radius
+        self._color = color or colors.HexColor("#bfdbfe")
+        self._w = self._h = 0
+
+    def wrap(self, available_w, available_h):
+        self._w, self._h = self._content.wrap(available_w, available_h)
+        return self._w, self._h
+
+    def split(self, available_w, available_h):
+        parts = self._content.split(available_w, available_h)
+        return [_RoundedFrame(p, self._radius, self._color) for p in parts]
+
+    def draw(self):
+        c = self.canv
+        c.saveState()
+        c.setStrokeColor(self._color)
+        c.setLineWidth(0.5)
+        c.roundRect(0, 0, self._w, self._h, self._radius, stroke=1, fill=0)
+        c.restoreState()
+        self._content.drawOn(c, 0, 0)
 
 
 def _load_watermark_image(opacity: float = 0.10) -> io.BytesIO:
@@ -271,7 +300,6 @@ def build_laboratory_pdf(
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
                     ("LEFTPADDING", (0, 0), (-1, -1), 8),
                     ("LINEBELOW",   (0, 0), (-1, -1), 0.3, colors.HexColor("#dbeafe")),
-                    ("BOX",         (0, 0), (-1, -1), 0.5, colors.HexColor("#bfdbfe")),
                     ("VALIGN",      (0, 0), (-1, -1), "TOP"),
                 ]
 
@@ -297,7 +325,7 @@ def build_laboratory_pdf(
                     data_row_num += 1
 
                 res_tbl.setStyle(TableStyle(tbl_style))
-                story.append(res_tbl)
+                story.append(_RoundedFrame(res_tbl, radius=5, color=colors.HexColor("#bfdbfe")))
                 story.append(Spacer(1, 8))
 
                 # ── Gráficas de resultado ──────────────────────────
@@ -494,7 +522,7 @@ def build_laboratory_pdf(
         # Línea divisoria
         canvas.setStrokeColor(colors.HexColor("#bfdbfe"))
         canvas.setLineWidth(0.5)
-        canvas.rect(LEFT, PAGE_H - 6.0 * cm, COL_W, 2.8 * cm, fill=0, stroke=1)
+        canvas.roundRect(LEFT, PAGE_H - 6.0 * cm, COL_W, 2.8 * cm, 5, fill=0, stroke=1)
         
         canvas.restoreState()
 
