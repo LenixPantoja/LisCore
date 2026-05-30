@@ -20,6 +20,7 @@ from app.domains.requests.api.router import router as requests_router
 from app.integrations.InterfazDG.router import router as interfaz_dg_router
 from app.domains.traces.api.router import router as traces_router
 from app.domains.seroteca.api.router import router as seroteca_router
+from app.domains.kpis.api.router import router as kpis_router
 
 api_router = APIRouter()
 
@@ -44,3 +45,4 @@ api_router.include_router(requests_router, prefix="/inbound-orders", tags=["Inbo
 api_router.include_router(interfaz_dg_router, prefix="/Dinamica/Laboratorio", tags=["InterfazDG"])
 api_router.include_router(traces_router, prefix="/traces", tags=["Traces"])
 api_router.include_router(seroteca_router)
+api_router.include_router(kpis_router, prefix="/kpis", tags=["KPIs"])
