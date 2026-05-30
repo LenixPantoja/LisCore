@@ -113,6 +113,7 @@ _PERMISSIONS = [
     {"p_name": "TestsLab:Delete",              "p_description": "Eliminar una prueba", "p_module": "TestsLab"},
     {"p_name": "TestsLab:ManageRanges",        "p_description": "Gestionar rangos de referencia de pruebas", "p_module": "TestsLab"},
     {"p_name": "TestsLab:ManageReferenceValues","p_description": "Gestionar valores de referencia de pruebas", "p_module": "TestsLab"},
+    {"p_name": "TestsLab:ManageFormats",       "p_description": "Gestionar formatos de completado y sus vínculos con pruebas", "p_module": "TestsLab"},
 
     # ── StudiesLab ────────────────────────────────────────────────────────
     {"p_name": "StudiesLab:Create",      "p_description": "Crear estudios de laboratorio", "p_module": "StudiesLab"},
