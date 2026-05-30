@@ -1,1 +1,17 @@
-sdfsdfsdf
+version: '3.8'
+
+services:
+  # Servicio de Gotenberg (API de conversión de HTML a PDF usando Chromium)
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: gotenberg_pdf_api
+    ports:
+      - "3000:3000"
+    restart: always
+    environment:
+      - CHROMIUM_DISABLE_WEB_SECURITY=true # Util por si necesitas cargar imágenes locales o logos dinámicos
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
