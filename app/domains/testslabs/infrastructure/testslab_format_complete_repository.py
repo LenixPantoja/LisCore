@@ -1,4 +1,4 @@
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -71,3 +71,28 @@ class TestslabFormatCompleteRepository:
             await db.commit()
             return True
         return False
+
+    @staticmethod
+    async def get_formats_by_testslab_ids(
+        db: AsyncSession, testslab_ids: List[int]
+    ) -> Dict[int, List[TestslabFormatComplete]]:
+        """
+        Batch query: returns a dict {testslab_id: [TestslabFormatComplete, ...]}
+        sorted by tfc_order_index. Avoids N+1 queries.
+        """
+        if not testslab_ids:
+            return {}
+        result = await db.execute(
+            select(TestslabFormatComplete)
+            .where(TestslabFormatComplete.tfc_testslab_id.in_(testslab_ids))
+            .options(selectinload(TestslabFormatComplete.format_complete))
+            .order_by(
+                TestslabFormatComplete.tfc_testslab_id,
+                TestslabFormatComplete.tfc_order_index.asc(),
+            )
+        )
+        rows = result.scalars().all()
+        grouped: Dict[int, List[TestslabFormatComplete]] = {}
+        for row in rows:
+            grouped.setdefault(row.tfc_testslab_id, []).append(row)
+        return grouped

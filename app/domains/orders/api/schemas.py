@@ -211,6 +211,7 @@ class LaboratoryResponse(BaseModel):
     order_detail: Optional[BasicOrdersDetailResponse] = None
     test: Optional[TestsLabResponse] = None
     user_validation: Optional[UserValidationResponse] = None
+    formats_complete: List[str] = []
 
     @field_validator('l_state', mode='before')
     @classmethod

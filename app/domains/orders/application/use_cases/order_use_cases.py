@@ -14,6 +14,9 @@ from app.shared.utils.range_evaluator import (
     evaluate_reference_range_sync,
 )
 from utils.minio_client import get_graphic_url
+from app.domains.testslabs.infrastructure.testslab_format_complete_repository import (
+    TestslabFormatCompleteRepository,
+)
 
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_DETAIL_STATE_INGRESADO
@@ -391,6 +394,10 @@ async def get_order_details_paginated_by_number(
     })
     ranges_by_test = await bulk_fetch_ranges(db, test_ids_with_result)
 
+    # Batch-fetch formats for all test_ids present in labs (with or without result)
+    all_test_ids = list({lab.l_test_id for lab in labs if lab.l_test_id})
+    formats_by_test = await TestslabFormatCompleteRepository.get_formats_by_testslab_ids(db, all_test_ids)
+
     enriched_labs = []
     for lab in labs:
         range_type, ref_min, ref_max = (None, None, None)
@@ -417,6 +424,12 @@ async def get_order_details_paginated_by_number(
 
         if lab.l_result_graphic:
             lab.l_result_graphic = get_graphic_url(lab.l_result_graphic)
+
+        lab.__dict__["formats_complete"] = [
+            link.format_complete.fc_name
+            for link in formats_by_test.get(lab.l_test_id, [])
+            if link.format_complete
+        ]
 
         enriched_labs.append(lab)
 
