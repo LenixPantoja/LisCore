@@ -9,8 +9,10 @@ Logic:
       Each study's test_details → TestsLab.samples_type_id (which tube type)
   - For each tube (SamplesOrder):
       Find studies whose tests cover the tube's sample type.
-      Group studies by StudiesLab.work_groups_id → one sticker per group.
-      tests_line shows study codes (-BHC-QS - SUERO).
+      If a single work group → one sticker with full group name.
+      If multiple work groups share the same sample type → ONE merged sticker:
+        work_group_name = first 5 chars of each group joined with "-" (e.g. QUIMI-ESPEC)
+        tests_line      = all study codes from all groups combined.
 """
 from collections import defaultdict
 from datetime import date
@@ -160,7 +162,9 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
         )
         age_str = f"{years} A"
 
-    # 8. Build sticker data list: one sticker per (tube × work_group)
+    # 8. Build sticker data list: one sticker per tube.
+    #    If multiple work groups share the same sample type, they are merged into
+    #    a single sticker with abbreviated names (max 5 chars each, joined with "-").
     stickers = []
 
     for tube in tubes:
@@ -188,7 +192,9 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
             ),
         )
 
-        for wg_id in sorted_wg_ids:
+        if len(sorted_wg_ids) == 1:
+            # Single work group → generate sticker with full name (no abbreviation)
+            wg_id = sorted_wg_ids[0]
             wg: WorkGroup | None = wg_map.get(wg_id)
             wg_name = (wg.wg_name or "").upper() if wg else f"GRUPO {wg_id}"
             codes = wg_studies_for_tube[wg_id]
@@ -200,6 +206,31 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
                 "enterprise_name": enterprise_name,
                 "age_str": age_str,
                 "work_group_name": wg_name,
+                "barcode_value": barcode_value,
+                "label_number": label_number,
+                "tests_line": tests_line,
+                "sample_type_name": sample_type_name,
+            })
+        else:
+            # Multiple work groups share the same sample type → merge into one sticker.
+            # Each work group name is truncated to 5 chars and joined with "-".
+            wg_name_parts: list[str] = []
+            all_codes: list[str] = []
+            for wg_id in sorted_wg_ids:
+                wg: WorkGroup | None = wg_map.get(wg_id)
+                wg_full_name = (wg.wg_name or "").upper() if wg else f"GRP{wg_id}"
+                wg_name_parts.append(wg_full_name[:5])
+                all_codes.extend(wg_studies_for_tube[wg_id])
+
+            combined_wg_name = "-".join(wg_name_parts)
+            tests_line = "-" + "-".join(all_codes)
+
+            stickers.append({
+                "patient_full_name": patient_full_name,
+                "identification": identification,
+                "enterprise_name": enterprise_name,
+                "age_str": age_str,
+                "work_group_name": combined_wg_name,
                 "barcode_value": barcode_value,
                 "label_number": label_number,
                 "tests_line": tests_line,

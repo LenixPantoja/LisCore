@@ -138,7 +138,8 @@ async def create_order(db: AsyncSession, data: dict):
         for st_id in unique_sample_types:
             from app.domains.samples.domain.models import SampleType
             sample_type = await db.get(SampleType, st_id)
-            st_sufix = sample_type.st_sufix if sample_type else st_id
+            # Fallback a st_id si no tiene sufijo configurado, para garantizar unicidad del barcode
+            st_sufix = (sample_type.st_sufix if sample_type and sample_type.st_sufix is not None else st_id)
             sample_order = SamplesOrder(
                 so_order_id=order.o_id,
                 so_sample_type_id=st_id,
@@ -737,7 +738,8 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
                     if not existing_sample.scalar_one_or_none():
                         from app.domains.samples.domain.models import SampleType
                         sample_type = await db.get(SampleType, st_id)
-                        st_sufix = sample_type.st_sufix if sample_type else st_id
+                        # Fallback a st_id si no tiene sufijo configurado, para garantizar unicidad del barcode
+                        st_sufix = (sample_type.st_sufix if sample_type and sample_type.st_sufix is not None else st_id)
                         db.add(SamplesOrder(
                             so_order_id=o_id,
                             so_sample_type_id=st_id,
