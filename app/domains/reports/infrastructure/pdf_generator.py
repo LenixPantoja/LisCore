@@ -273,7 +273,11 @@ def build_laboratory_pdf(
                     Paragraph("VALOR DE REFERENCIA", s_th),
                 ]
                 res_rows = [th_row]
-                comp_row_indices: set[int] = set()
+                # Compound results are collected separately so they can be rendered
+                # as standalone flowables after the table. Embedding them as table
+                # rows with SPAN prevents Table.split() from working when the
+                # compound text is taller than a full page, causing LayoutError.
+                pending_compounds: list[dict] = []
 
                 for row in study["rows"]:
                     res_rows.append([
@@ -283,13 +287,10 @@ def build_laboratory_pdf(
                         Paragraph(row["reference"], s_ref),
                     ])
                     if row.get("result_comp"):
-                        comp_idx = len(res_rows)
-                        comp_cell = [Preformatted(row["result_comp"], s_comp)]
-                        if row.get("alternative_range_value"):
-                            comp_cell.append(Spacer(1, 4))
-                            comp_cell.append(Paragraph(_xml_escape(row["alternative_range_value"]).replace("\n", "<br/>"), s_alt_ref))
-                        res_rows.append([comp_cell, "", "", ""])
-                        comp_row_indices.add(comp_idx)
+                        pending_compounds.append({
+                            "result_comp": row["result_comp"],
+                            "alternative_range_value": row.get("alternative_range_value"),
+                        })
 
                 col_widths = [COL_W * 0.35, COL_W * 0.18, COL_W * 0.14, COL_W * 0.33]
                 res_tbl = Table(res_rows, colWidths=col_widths, repeatRows=1)
@@ -303,29 +304,24 @@ def build_laboratory_pdf(
                     ("VALIGN",      (0, 0), (-1, -1), "TOP"),
                 ]
 
-                # Filas de resultado compuesto: abarcan todas las columnas
-                for comp_idx in comp_row_indices:
-                    tbl_style.extend([
-                        ("SPAN",          (0, comp_idx), (-1, comp_idx)),
-                        ("BACKGROUND",    (0, comp_idx), (-1, comp_idx), colors.HexColor("#f8faff")),
-                        ("LEFTPADDING",   (0, comp_idx), (-1, comp_idx), 20),
-                        ("TOPPADDING",    (0, comp_idx), (-1, comp_idx), 4),
-                        ("BOTTOMPADDING", (0, comp_idx), (-1, comp_idx), 6),
-                    ])
-
-                # Fondo alternado solo en filas de datos normales
-                data_row_num = 0
+                # Alternating background on data rows
                 for i in range(1, len(res_rows)):
-                    if i in comp_row_indices:
-                        continue
-                    if data_row_num % 2 == 0:
+                    if (i - 1) % 2 == 0:
                         tbl_style.append(("BACKGROUND", (0, i), (-1, i), C_LIGHT))
-                    else:
-                        tbl_style.append(("BACKGROUND", (0, i), (-1, i), colors.transparent))
-                    data_row_num += 1
 
                 res_tbl.setStyle(TableStyle(tbl_style))
                 story.append(_RoundedFrame(res_tbl, radius=5, color=colors.HexColor("#bfdbfe")))
+
+                # Compound results as standalone flowables so they split across pages
+                for comp in pending_compounds:
+                    story.append(Preformatted(comp["result_comp"], s_comp))
+                    if comp.get("alternative_range_value"):
+                        story.append(Spacer(1, 4))
+                        story.append(Paragraph(
+                            _xml_escape(comp["alternative_range_value"]).replace("\n", "<br/>"),
+                            s_alt_ref,
+                        ))
+
                 story.append(Spacer(1, 8))
 
                 # ── Gráficas de resultado ──────────────────────────
