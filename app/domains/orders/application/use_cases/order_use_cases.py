@@ -845,6 +845,7 @@ async def get_grafico_evolutivo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prueba de laboratorio no encontrada.")
 
     # 3. Consultar histórico: Orders → OrdersDetails → Laboratories para este paciente+test
+    #    Solo órdenes con o_order_state in (3,4) y laboratorios con l_state in (2,3,4)
     stmt = (
         select(Laboratory, Order)
         .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
@@ -852,6 +853,8 @@ async def get_grafico_evolutivo(
         .where(
             Order.o_his_id == patient_id,
             Laboratory.l_test_id == test_id,
+            Order.o_order_state.in_([3, 4]),
+            Laboratory.l_state.in_([2, 3, 4]),
         )
         .order_by(Order.o_date.asc(), Order.o_id.asc())
     )
