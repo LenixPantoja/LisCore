@@ -83,7 +83,8 @@ async def create_order(db: AsyncSession, data: dict):
         order = await OrderRepository.create(db, data)
         await db.flush() # Obtenemos o_id sin confirmar la transacción todavía        
         # Diccionario para evitar duplicar tipos de muestra en una misma orden
-        unique_sample_types = set()
+        # st_sufix → (first_st_id, set_of_st_ids) - agrupa por sufijo
+        sample_suffix_map: dict[int, tuple[int, set[int]]] = {}
         # Mapa study_id → primer od_id creado (para InvoiceDetail)
         study_od_map: dict[int, int] = {}
         # Pruebas ya registradas en la orden (evita duplicados entre estudios)
@@ -130,19 +131,23 @@ async def create_order(db: AsyncSession, data: dict):
                     db.add(blank_result)
                     seen_test_ids.add(link.tests_id)
 
-                # 4. Recolectar tipos de muestra para SamplesOrder
+                # 4. Recolectar tipos de muestra para SamplesOrder agrupando por st_sufix
+                #    Si dos SampleTypes tienen el mismo sufijo, solo se crea un SamplesOrder
                 if link.test and link.test.samples_type_id:
-                    unique_sample_types.add(link.test.samples_type_id)
+                    from app.domains.samples.domain.models import SampleType
+                    st_obj = await db.get(SampleType, link.test.samples_type_id)
+                    st_sufix = (st_obj.st_sufix if st_obj and st_obj.st_sufix is not None else link.test.samples_type_id)
+                    if st_sufix not in sample_suffix_map:
+                        sample_suffix_map[st_sufix] = (link.test.samples_type_id, set())
+                    sample_suffix_map[st_sufix][1].add(link.test.samples_type_id)
 
         # 6. Generar automáticamente registros de muestras (SamplesOrder)
-        for st_id in unique_sample_types:
-            from app.domains.samples.domain.models import SampleType
-            sample_type = await db.get(SampleType, st_id)
-            # Fallback a st_id si no tiene sufijo configurado, para garantizar unicidad del barcode
-            st_sufix = (sample_type.st_sufix if sample_type and sample_type.st_sufix is not None else st_id)
+        #    Se agrupa por sufix: si dos SampleTypes comparten el mismo sufijo,
+        #    solo se crea un registro SamplesOrder (con el primer st_id como FK)
+        for st_sufix, (first_st_id, _all_st_ids) in sample_suffix_map.items():
             sample_order = SamplesOrder(
                 so_order_id=order.o_id,
-                so_sample_type_id=st_id,
+                so_sample_type_id=first_st_id,
                 so_barcode=f"{order.o_number}{st_sufix}",
                 so_state=SAMPLE_ORDER_STATE_NO_INGRESADA,
                 so_number_studies=len(studies_ids)
@@ -726,20 +731,27 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
                     if link.test and link.test.samples_type_id:
                         new_sample_types.add(link.test.samples_type_id)
 
-                # Agregar muestras nuevas si el tipo no existe ya en la orden
-                for st_id in new_sample_types:
-                    from app.domains.samples.domain.models import SamplesOrder
-                    existing_sample = await db.execute(
-                        select(SamplesOrder).where(
-                            SamplesOrder.so_order_id == o_id,
-                            SamplesOrder.so_sample_type_id == st_id,
-                        )
+                # Agregar muestras nuevas si el sufijo no existe ya en la orden
+                # (dos SampleTypes con el mismo sufijo comparten el mismo barcode)
+                seen_suffixes: set[int] = set()
+                existing_samples = await db.execute(
+                    select(SamplesOrder).where(
+                        SamplesOrder.so_order_id == o_id,
                     )
-                    if not existing_sample.scalar_one_or_none():
-                        from app.domains.samples.domain.models import SampleType
-                        sample_type = await db.get(SampleType, st_id)
-                        # Fallback a st_id si no tiene sufijo configurado, para garantizar unicidad del barcode
-                        st_sufix = (sample_type.st_sufix if sample_type and sample_type.st_sufix is not None else st_id)
+                )
+                for existing in existing_samples.scalars().all():
+                    st_type = existing.sample_type
+                    if st_type and st_type.st_sufix is not None:
+                        seen_suffixes.add(st_type.st_sufix)
+                    elif st_type:
+                        seen_suffixes.add(st_type.st_id)
+
+                from app.domains.samples.domain.models import SampleType
+                for st_id in new_sample_types:
+                    sample_type = await db.get(SampleType, st_id)
+                    st_sufix = (sample_type.st_sufix if sample_type and sample_type.st_sufix is not None else st_id)
+                    if st_sufix not in seen_suffixes:
+                        seen_suffixes.add(st_sufix)
                         db.add(SamplesOrder(
                             so_order_id=o_id,
                             so_sample_type_id=st_id,
