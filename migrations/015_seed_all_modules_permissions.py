@@ -164,6 +164,9 @@ _PERMISSIONS = [
     # ── Traces ────────────────────────────────────────────────────────────
     {"p_name": "Traces:Read", "p_description": "Consultar trazas de órdenes y exámenes", "p_module": "Traces"},
 
+    # ── KPIs ────────────────────────────────────────────────────────────────
+    {"p_name": "Kpis:ValidatedStudies", "p_description": "Consultar KPI de estudios validados por mes", "p_module": "Kpis"},
+
     # ── Laboratories ──────────────────────────────────────────────────────
     {"p_name": "Laboratories:BulkUpdate",    "p_description": "Actualizacion masiva de resultados de laboratorio", "p_module": "Laboratories"},
     {"p_name": "Laboratories:Invalidate",    "p_description": "Desvalidar laboratorios",                         "p_module": "Laboratories"},
