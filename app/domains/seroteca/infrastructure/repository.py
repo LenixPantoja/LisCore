@@ -194,8 +194,20 @@ class GradillaPosicionRepository:
         pos.gp_occupied = True
         pos.gp_stored_at = get_bogota_now()
         pos.gp_stored_by_id = user_id
+        await db.flush()
+        # Eagerly load the sample relationship and nested relations to avoid MissingGreenlet on serialization
+        result = await db.execute(
+            select(GradillaPosicion)
+            .where(GradillaPosicion.gp_id == gp_id)
+            .options(
+                selectinload(GradillaPosicion.sample).options(
+                    selectinload(SamplesOrder.order),
+                    selectinload(SamplesOrder.sample_type),
+                )
+            )
+        )
+        pos = result.scalars().first()
         await db.commit()
-        await db.refresh(pos)
         return pos
 
     @staticmethod
@@ -207,6 +219,18 @@ class GradillaPosicionRepository:
         pos.gp_occupied = False
         pos.gp_stored_at = None
         pos.gp_stored_by_id = None
+        await db.flush()
+        # Eagerly load the sample relationship and nested relations to avoid MissingGreenlet on serialization
+        result = await db.execute(
+            select(GradillaPosicion)
+            .where(GradillaPosicion.gp_id == gp_id)
+            .options(
+                selectinload(GradillaPosicion.sample).options(
+                    selectinload(SamplesOrder.order),
+                    selectinload(SamplesOrder.sample_type),
+                )
+            )
+        )
+        pos = result.scalars().first()
         await db.commit()
-        await db.refresh(pos)
         return pos

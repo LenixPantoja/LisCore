@@ -11,7 +11,10 @@ from app.domains.seroteca.infrastructure.repository import (
     GradillaPosicionRepository,
 )
 from app.domains.samples.domain.models import SamplesOrder
-from app.domains.samples.domain.constants import SAMPLE_ORDER_STATE_CON_MUESTRA
+from app.domains.samples.domain.constants import (
+    SAMPLE_ORDER_STATE_CON_MUESTRA,
+    SAMPLE_ORDER_STATE_ALMACENADA,
+)
 
 
 async def _get_sample_by_barcode(db: AsyncSession, barcode: str) -> SamplesOrder:
@@ -100,7 +103,7 @@ async def auto_store_in_rack(
         "log_user_id": user_id,
     })
 
-    sample.so_state = 2
+    sample.so_state = SAMPLE_ORDER_STATE_ALMACENADA
     await db.commit()
     return pos
 
@@ -129,7 +132,7 @@ async def manual_store_in_position(
         "log_user_id": user_id,
     })
 
-    sample.so_state = 2
+    sample.so_state = SAMPLE_ORDER_STATE_ALMACENADA
     await db.commit()
     return pos
 
