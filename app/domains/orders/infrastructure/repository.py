@@ -311,6 +311,7 @@ class OrderRepository:
             .options(
                 joinedload(Laboratory.test),
                 joinedload(Laboratory.user_validation),
+                selectinload(Laboratory.preliminaries),
                 contains_eager(Laboratory.order_detail).contains_eager(OrdersDetail.study),
             )
             .order_by(

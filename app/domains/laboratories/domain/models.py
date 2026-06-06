@@ -27,6 +27,29 @@ class Laboratory(Base):
     order_detail = relationship("OrdersDetail", foreign_keys=[l_order_detail_id])
     test = relationship("TestsLab", foreign_keys=[l_test_id])
     user_validation = relationship("AppUser", foreign_keys=[l_user_validation_id])
+    preliminaries = relationship("LaboratoryPreliminary", back_populates="laboratory", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Laboratory(id={self.l_id}, order_detail_id={self.l_order_detail_id}, result='{self.l_result}')>"
+
+
+class LaboratoryPreliminary(Base):
+    """
+    Almacena resultados preliminares para un laboratorio (ej. microbiología).
+    Cada registro representa un resultado parcial en una secuencia, registrado
+    por un analizador en una fecha/hora determinada.
+    """
+    __tablename__ = "LaboratoryPreliminaries"
+
+    lp_id = Column(Integer, primary_key=True, index=True)
+    lp_laboratory_id = Column(Integer, ForeignKey("Laboratories.l_id"), nullable=False)
+    lp_secuence = Column(Integer, nullable=False)
+    lp_result = Column(Text, nullable=True)
+    lp_date_preliminary = Column(DateTime, nullable=True)
+    analyzer = Column(String(255), nullable=True)
+
+    # Relaciones
+    laboratory = relationship("Laboratory", back_populates="preliminaries")
+
+    def __repr__(self):
+        return f"<LaboratoryPreliminary(id={self.lp_id}, lab_id={self.lp_laboratory_id}, seq={self.lp_secuence})>"

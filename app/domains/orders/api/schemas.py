@@ -186,6 +186,30 @@ class BasicOrdersDetailResponse(BaseModel):
     class Config:
         from_attributes = True
 
+
+class LaboratoryPreliminaryResponse(BaseModel):
+    """Resultado preliminar de un laboratorio (ej. microbiología)."""
+    lp_id: int
+    lp_laboratory_id: int
+    lp_secuence: int
+    lp_result: Optional[str] = None
+    lp_date_preliminary: Optional[str] = None
+    analyzer: Optional[str] = None
+
+    @field_validator('lp_date_preliminary', mode='before')
+    @classmethod
+    def format_datetime_with_ampm(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v
+        # v es un datetime object → formatear con AM/PM
+        return v.strftime("%Y-%m-%d %I:%M:%S %p")
+
+    class Config:
+        from_attributes = True
+
+
 class LaboratoryResponse(BaseModel):
     l_id: int
     l_order_detail_id: Optional[int] = None
@@ -211,7 +235,7 @@ class LaboratoryResponse(BaseModel):
     order_detail: Optional[BasicOrdersDetailResponse] = None
     test: Optional[TestsLabResponse] = None
     user_validation: Optional[UserValidationResponse] = None
-    formats_complete: List[str] = []
+    preliminaries: List["LaboratoryPreliminaryResponse"] = []
 
     @field_validator('l_state', mode='before')
     @classmethod
@@ -323,6 +347,7 @@ class SlimLaboratoryResponse(BaseModel):
 
     test: Optional[TestsLabResponse] = None
     user_validation: Optional[UserValidationResponse] = None
+    preliminaries: List["LaboratoryPreliminaryResponse"] = []
 
     @field_validator('l_state', mode='before')
     @classmethod
