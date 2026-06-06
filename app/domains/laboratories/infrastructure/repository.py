@@ -1,6 +1,6 @@
 from decimal import Decimal, InvalidOperation
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update, select
+from sqlalchemy import update, select, delete
 from app.domains.laboratories.domain.models import Laboratory
 from utils.timezone import get_bogota_now
 from app.domains.testslabs.domain.models import TestsLab
@@ -42,6 +42,17 @@ class LaboratoryRepository:
         for item in updates:
             l_id = item.pop("l_id")
             usr_id = item.pop("l_user_validation_id", None)
+            preliminaries_data = item.pop("preliminaries", None)
+            
+            # Extract content string from l_result_comp if it's a dict/object
+            # (some clients send {content: "...", preliminaries: [...]} instead of plain string)
+            if "l_result_comp" in item and isinstance(item["l_result_comp"], dict):
+                comp_obj = item["l_result_comp"]
+                item["l_result_comp"] = comp_obj.get("content") or ""
+                # Extract preliminaries from the object if not already extracted
+                if preliminaries_data is None and "preliminaries" in comp_obj:
+                    preliminaries_data = comp_obj.get("preliminaries")
+            
             # If no items to update besides l_id, skip
             if not item:
                 continue
@@ -97,6 +108,33 @@ class LaboratoryRepository:
                 .values(**item)
             )
             await db.execute(stmt)
+            
+            # Update only lp_result on existing preliminaries, preserving other fields
+            if preliminaries_data:
+                from app.domains.laboratories.domain.models import LaboratoryPreliminary
+                # Fetch existing preliminaries for this lab
+                existing_result = await db.execute(
+                    select(LaboratoryPreliminary)
+                    .where(LaboratoryPreliminary.lp_laboratory_id == l_id)
+                    .order_by(LaboratoryPreliminary.lp_secuence)
+                )
+                existing_prelims = existing_result.scalars().all()
+
+                for i, prelim in enumerate(preliminaries_data):
+                    seq = prelim.get("lp_secuence", i + 1)
+                    # Find matching existing preliminary by sequence
+                    matched = [p for p in existing_prelims if p.lp_secuence == seq]
+                    if matched:
+                        # Update only lp_result, preserve other fields
+                        matched[0].lp_result = prelim.get("lp_result")
+                    else:
+                        # Create new with only lp_result
+                        db.add(LaboratoryPreliminary(
+                            lp_laboratory_id=l_id,
+                            lp_secuence=seq,
+                            lp_result=prelim.get("lp_result"),
+                        ))
+            
             updated_count += 1
 
             # Registrar datos para la traza si se actualizó algún resultado
@@ -386,6 +424,7 @@ class LaboratoryRepository:
         """
         Limpia los resultados de laboratorios y establece el estado a 0 (Sin Resultados), solo si su estado es < 3 (no validado).
         Establece l_result, l_result_num y l_result_comp a None/NULL y l_state a 0.
+        También elimina todos los resultados preliminares asociados al laboratorio.
         
         Retorna:
             - Cantidad de laboratorios limpios exitosamente
@@ -394,6 +433,8 @@ class LaboratoryRepository:
         if not laboratory_ids:
             return 0, {"not_found": [], "invalid_state": []}
         
+        from app.domains.laboratories.domain.models import LaboratoryPreliminary
+
         cleared_count = 0
         invalid_state_ids = []
         not_found_ids = []
@@ -412,6 +453,13 @@ class LaboratoryRepository:
             if lab.l_state >= LABORATORY_STATE_VALIDADA:
                 invalid_state_ids.append(l_id)
                 continue
+            
+            # Eliminar resultados preliminares asociados
+            await db.execute(
+                delete(LaboratoryPreliminary).where(
+                    LaboratoryPreliminary.lp_laboratory_id == l_id
+                )
+            )
             
             # Limpiar los resultados y establecer estado a 0 (Sin Resultados)
             stmt = (
