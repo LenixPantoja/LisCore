@@ -137,3 +137,60 @@ def build_signature_object_name(usr_id: int, extension: str = "png") -> str:
     ts = datetime.now().strftime("%Y%m%d%H%M%S")
     ext = extension.lstrip(".").lower()
     return f"SIGN_{usr_id}_{ts}.{ext}"
+
+
+def upload_annexed_pdf(
+    file_data: bytes,
+    object_name: str,
+    content_type: str = "application/pdf",
+) -> str:
+    """
+    Sube un archivo PDF al bucket de resultados anexos de MinIO y retorna el object_name.
+    Lanza una excepción si la subida falla.
+    """
+    client = get_minio_client()
+    # Ensure bucket exists
+    if not client.bucket_exists(settings.MINIO_ANNEXE_RESULT_BUCKET):
+        client.make_bucket(settings.MINIO_ANNEXE_RESULT_BUCKET)
+    buf = io.BytesIO(file_data)
+    client.put_object(
+        settings.MINIO_ANNEXE_RESULT_BUCKET,
+        object_name,
+        buf,
+        length=len(file_data),
+        content_type=content_type,
+    )
+    return object_name
+
+
+def download_annexed_pdf(object_name: str) -> Optional[bytes]:
+    """
+    Descarga un PDF desde el bucket de resultados anexos de MinIO.
+    Retorna los bytes del archivo o None si ocurre un error.
+    """
+    if not object_name:
+        return None
+    try:
+        client = get_minio_client()
+        response = client.get_object(
+            settings.MINIO_ANNEXE_RESULT_BUCKET,
+            object_name,
+        )
+        data = response.read()
+        response.close()
+        response.release_conn()
+        return data
+    except Exception:
+        return None
+
+
+def build_annexed_object_name(order_number: str, ar_id: int, original_filename: str) -> str:
+    """
+    Genera un nombre de objeto estándar para un PDF anexo.
+    Formato: ANNEX_{order_number}_{ar_id}_{timestamp}.pdf
+    """
+    ts = datetime.now().strftime("%Y%m%d%H%M%S")
+    # Sanitize filename
+    name_part = original_filename.rsplit(".", 1)[0] if "." in original_filename else original_filename
+    safe_name = "".join(c for c in name_part if c.isalnum() or c in "._- ")[:30]
+    return f"ANNEX_{order_number}_{ar_id}_{ts}_{safe_name}.pdf"

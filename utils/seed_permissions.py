@@ -154,6 +154,11 @@ _PERMISSIONS = [
     {"p_name": "Reports:SendEmail",         "p_description": "Enviar resultados de laboratorio por correo electrónico", "p_module": "Reports"},
     {"p_name": "Reports:SendWhatsApp",      "p_description": "Enviar resultados de laboratorio por WhatsApp",           "p_module": "Reports"},
 
+    # ── Annexed Results ────────────────────────────────────────────────────
+    {"p_name": "AnnexedResults:Upload",     "p_description": "Subir PDF anexo a resultados de una orden",               "p_module": "AnnexedResults"},
+    {"p_name": "AnnexedResults:List",       "p_description": "Listar PDFs anexos de una orden",                        "p_module": "AnnexedResults"},
+    {"p_name": "AnnexedResults:Delete",     "p_description": "Eliminar un PDF anexo de resultados",                    "p_module": "AnnexedResults"},
+
     # ── Samples ───────────────────────────────────────────────────────────
     {"p_name": "Samples:Create", "p_description": "Crear tipos de muestra", "p_module": "Samples"},
     {"p_name": "Samples:List",   "p_description": "Listar tipos de muestra", "p_module": "Samples"},

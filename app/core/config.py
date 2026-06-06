@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool
     MINIO_GRAPHICS_BUCKET: str
     MINIO_SIGNATURES_BUCKET: str
+    MINIO_ANNEXE_RESULT_BUCKET: str = "annexedResult"
     MINIO_PRESIGNED_EXPIRES_HOURS: int
 
     # WhatsApp - Evolution API

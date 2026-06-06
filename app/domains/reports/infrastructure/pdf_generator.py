@@ -687,6 +687,28 @@ def _is_abnormal(lab: Any) -> bool:
 
 
 # ─────────────────────────────────────────────
+# PDF Merge
+# ─────────────────────────────────────────────
+def merge_pdfs(main_pdf: bytes, annex_pdfs: list[bytes]) -> bytes:
+    """Merge the main PDF with a list of annexed PDFs into a single PDF."""
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    reader = PdfReader(io.BytesIO(main_pdf))
+    for page in reader.pages:
+        writer.add_page(page)
+
+    for annex_bytes in annex_pdfs:
+        annex_reader = PdfReader(io.BytesIO(annex_bytes))
+        for page in annex_reader.pages:
+            writer.add_page(page)
+
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
+
+
+# ─────────────────────────────────────────────
 # Encoder Base64
 # ─────────────────────────────────────────────
 def pdf_to_base64(pdf_bytes: bytes) -> str:

@@ -14,6 +14,7 @@ from app.domains.patients.domain.models import Patient
 from app.domains.reports.infrastructure.pdf_generator import (
     build_laboratory_pdf,
     pdf_to_base64,
+    merge_pdfs,
     _full_name,
 )
 from app.shared.utils.range_evaluator import evaluate_reference_range
@@ -152,8 +153,29 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
                 "usr_document_number": user.usr_document_number or "",
             })
 
-    # 7. Generar PDF
+    # 7. Cargar PDFs anexos
+    from app.domains.annexes.domain.models import AnnexedResult
+    from utils.minio_client import download_annexed_pdf
+
+    annex_result = await db.execute(
+        select(AnnexedResult)
+        .where(AnnexedResult.ar_order_id == order_id)
+        .order_by(AnnexedResult.ar_created_at.asc())
+    )
+    annexed_records = annex_result.scalars().all()
+
+    annex_pdfs: list[bytes] = []
+    for ann in annexed_records:
+        pdf_data = download_annexed_pdf(ann.ar_file)
+        if pdf_data:
+            annex_pdfs.append(pdf_data)
+
+    # 8. Generar PDF principal
     pdf_bytes = build_laboratory_pdf(order, patient, validated_labs, signatures_map)
+
+    # 9. Anexar PDFs al final si existen
+    if annex_pdfs:
+        pdf_bytes = merge_pdfs(pdf_bytes, annex_pdfs)
     b64 = pdf_to_base64(pdf_bytes)
 
     # 7. Nombre de archivo sugerido
