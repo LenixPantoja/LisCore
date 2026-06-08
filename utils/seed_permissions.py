@@ -159,6 +159,14 @@ _PERMISSIONS = [
     {"p_name": "AnnexedResults:List",       "p_description": "Listar PDFs anexos de una orden",                        "p_module": "AnnexedResults"},
     {"p_name": "AnnexedResults:Delete",     "p_description": "Eliminar un PDF anexo de resultados",                    "p_module": "AnnexedResults"},
 
+    # ── Remissions ──────────────────────────────────────────────────────────
+    {"p_name": "Remissions:View",              "p_description": "Ver y listar remisiones",                       "p_module": "Remissions"},
+    {"p_name": "Remissions:Create",            "p_description": "Crear remisiones y agregar/quitar ítems",       "p_module": "Remissions"},
+    {"p_name": "Remissions:Ship",              "p_description": "Enviar remisiones",                             "p_module": "Remissions"},
+    {"p_name": "Remissions:Receive",           "p_description": "Procesar recepción de ítems en destino",        "p_module": "Remissions"},
+    {"p_name": "Remissions:Cancel",            "p_description": "Cancelar remisiones pendientes",                "p_module": "Remissions"},
+    {"p_name": "Remissions:ManageExternalLabs","p_description": "Crear, editar y eliminar laboratorios externos","p_module": "Remissions"},
+
     # ── Samples ───────────────────────────────────────────────────────────
     {"p_name": "Samples:Create", "p_description": "Crear tipos de muestra", "p_module": "Samples"},
     {"p_name": "Samples:List",   "p_description": "Listar tipos de muestra", "p_module": "Samples"},
