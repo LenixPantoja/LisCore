@@ -32,6 +32,7 @@ class Order(Base):
     o_created_at = Column(DateTime, default=get_bogota_now)
     o_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
     o_tariff_id = Column(Integer, ForeignKey("Tariffs.t_id"), nullable=True)
+    o_cancelled = Column(Integer, default=0, nullable=False)
 
     # Relaciones
     patient = relationship("Patient", foreign_keys=[o_his_id])
@@ -52,6 +53,7 @@ class OrdersDetail(Base):
     od_order_id = Column(Integer, ForeignKey("Orders.o_id"))
     od_study_id = Column(Integer, ForeignKey("StudiesLab.id"))
     od_state = Column(Integer)
+    od_cancelled = Column(Integer, default=0, nullable=False)
     od_print_date = Column(DateTime, nullable=True)
     o_checking_date = Column(DateTime, nullable=True)
     od_created_at = Column(DateTime, default=get_bogota_now)

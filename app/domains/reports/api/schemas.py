@@ -7,6 +7,30 @@ class LaboratoryReportRequest(BaseModel):
     order_id: int
 
 
+class SendWhatsAppResultsRequest(BaseModel):
+    order_id: int
+    phone_number: str
+
+
+class SendWhatsAppResultsResponse(BaseModel):
+    order_number: str
+    patient_name: str
+    phone_number: str
+    message: str
+
+
+class SendEmailResultsRequest(BaseModel):
+    order_id: int
+    email: str
+
+
+class SendEmailResultsResponse(BaseModel):
+    order_number: str
+    patient_name: str
+    email: str
+    message: str
+
+
 class LaboratoryReportResponse(BaseModel):
     filename: str
     base64_pdf: str

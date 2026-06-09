@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.enterprises.api.schemas import (
     EnterpriseCreate, EnterpriseResponse, EnterpriseUpdate,
     EnterprisePaginatedResponse, EnterpriseContractsPaginatedResponse,
@@ -14,7 +15,8 @@ from app.domains.enterprises.application.use_cases import (
 
 router = APIRouter()
 
-@router.post("/", response_model=EnterpriseResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=EnterpriseResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Enterprises:Create"))])
 async def create_new_enterprise(data: EnterpriseCreate, db: AsyncSession = Depends(get_db)):
     """
     Endpoint para crear una nueva empresa.
@@ -35,14 +37,16 @@ async def create_new_enterprise(data: EnterpriseCreate, db: AsyncSession = Depen
     """
     return await create_enterprise.execute(db, data.model_dump())
 
-@router.patch("/{en_id}", response_model=EnterpriseResponse)
+@router.patch("/{en_id}", response_model=EnterpriseResponse,
+              dependencies=[Depends(require_permission("Enterprises:Update"))])
 async def update_existing_enterprise(en_id: int, data: EnterpriseUpdate, db: AsyncSession = Depends(get_db)):
     """
     Endpoint para actualizar o inactivar una empresa.
     """
     return await update_enterprise.execute(db, en_id, data.model_dump(exclude_unset=True))
 
-@router.get("/", response_model=EnterprisePaginatedResponse)
+@router.get("/", response_model=EnterprisePaginatedResponse,
+            dependencies=[Depends(require_permission("Enterprises:List"))])
 async def list_existing_enterprises(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -54,7 +58,8 @@ async def list_existing_enterprises(
     """
     return await list_enterprises.execute(db, skip, limit, search)
 
-@router.get("/{en_id}", response_model=EnterpriseResponse)
+@router.get("/{en_id}", response_model=EnterpriseResponse,
+            dependencies=[Depends(require_permission("Enterprises:GetOne"))])
 async def get_enterprise_details(en_id: int, db: AsyncSession = Depends(get_db)):
     """
     Endpoint para obtener el detalle de una empresa específica por su ID.
@@ -62,7 +67,8 @@ async def get_enterprise_details(en_id: int, db: AsyncSession = Depends(get_db))
     return await get_enterprise.execute(db, en_id)
 
 
-@router.get("/{en_id}/contracts", response_model=EnterpriseContractsPaginatedResponse)
+@router.get("/{en_id}/contracts", response_model=EnterpriseContractsPaginatedResponse,
+            dependencies=[Depends(require_permission("Enterprises:GetContracts"))])
 async def list_enterprise_contracts(
     en_id: int,
     skip: int = Query(0, ge=0),

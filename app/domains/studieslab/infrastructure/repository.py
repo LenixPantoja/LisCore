@@ -22,11 +22,11 @@ class StudiesLabRepository:
     ) -> Tuple[Sequence[StudiesLab], int]:
         # 1. Base de la consulta
         query = select(StudiesLab).options(
-            selectinload(StudiesLab.test_details)
-            .selectinload(StudiesTestDetail.test),
-            selectinload(StudiesLab.test_details)
-            .selectinload(StudiesTestDetail.work_group),
-            selectinload(StudiesLab.work_group)
+            selectinload(StudiesLab.test_details).options(
+                selectinload(StudiesTestDetail.test),
+                selectinload(StudiesTestDetail.work_group),
+            ),
+            selectinload(StudiesLab.work_group),
         )
         
         # 2. Filtro de búsqueda (Opcional por nombre o código)
@@ -51,11 +51,11 @@ class StudiesLabRepository:
             select(StudiesLab)
             .filter(StudiesLab.id == study_id)
             .options(
-                selectinload(StudiesLab.test_details)
-                .selectinload(StudiesTestDetail.test),
-                selectinload(StudiesLab.test_details)
-                .selectinload(StudiesTestDetail.work_group),
-                selectinload(StudiesLab.work_group)
+                selectinload(StudiesLab.test_details).options(
+                    selectinload(StudiesTestDetail.test),
+                    selectinload(StudiesTestDetail.work_group),
+                ),
+                selectinload(StudiesLab.work_group),
             )
         )
         return result.scalars().first()
@@ -87,6 +87,16 @@ class StudiesLabRepository:
             await db.commit()
             return True
         return False
+
+    @staticmethod
+    async def update_test_detail(db: AsyncSession, detail_id: int, update_data: dict) -> Optional[StudiesTestDetail]:
+        detail = await db.get(StudiesTestDetail, detail_id)
+        if detail:
+            for key, value in update_data.items():
+                setattr(detail, key, value)
+            await db.commit()
+            await db.refresh(detail)
+        return detail
 
     @staticmethod
     async def get_detail_by_id(db: AsyncSession, detail_id: int) -> Optional[StudiesTestDetail]:

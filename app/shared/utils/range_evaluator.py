@@ -162,6 +162,9 @@ async def evaluate_reference_range(
 
     Si no hay resultado evaluable o no se encuentra rango aplicable,
     retorna (None, None, None).
+
+    NOTE: Para evaluar múltiples resultados en un solo request, usar
+    `bulk_fetch_ranges` + `evaluate_reference_range_sync` para evitar N+1 queries.
     """
     if result_num is None and not result_text:
         return (None, None, None)
@@ -178,12 +181,57 @@ async def evaluate_reference_range(
     result = await db.execute(stmt)
     ranges: list[RangeReference] = list(result.scalars().all())
 
+    return evaluate_reference_range_sync(ranges, result_num, patient_dob, patient_sex_type_id, result_text)
+
+
+async def bulk_fetch_ranges(
+    db: AsyncSession,
+    test_ids: list[int],
+) -> dict[int, list[RangeReference]]:
+    """
+    Carga todos los RangeReference (con sus ReferenceValues) para múltiples
+    test_ids en una sola consulta batch.
+
+    Retorna un dict: {test_id: [RangeReference ordenados por priority asc]}.
+    Usar junto con `evaluate_reference_range_sync` para evitar N+1 queries.
+    """
+    if not test_ids:
+        return {}
+
+    stmt = (
+        select(RangeReference)
+        .where(RangeReference.test_id.in_(test_ids))
+        .options(selectinload(RangeReference.reference_values))
+        .order_by(RangeReference.test_id, RangeReference.priority.asc())
+    )
+    result = await db.execute(stmt)
+    lookup: dict[int, list[RangeReference]] = {}
+    for r in result.scalars().all():
+        lookup.setdefault(r.test_id, []).append(r)
+    return lookup
+
+
+def evaluate_reference_range_sync(
+    ranges: list[RangeReference],
+    result_num: Optional[float],
+    patient_dob: Optional[date],
+    patient_sex_type_id: Optional[int],
+    result_text: Optional[str] = None,
+) -> Tuple[Optional[str], Optional[Decimal], Optional[Decimal]]:
+    """
+    Evaluación pura en memoria usando rangos ya cargados (sin queries DB).
+    Usar con los datos obtenidos por `bulk_fetch_ranges`.
+    """
+    if result_num is None and not result_text:
+        return (None, None, None)
+
+    result_decimal = Decimal(str(result_num)) if result_num is not None else None
+
     for range_ref in ranges:
         if not _gender_matches(range_ref.gender, patient_sex_type_id):
             continue
         if not _age_matches(range_ref, patient_dob):
             continue
-        # El rango aplica al paciente; verificar valores de referencia
         for ref_val in range_ref.reference_values:
             if _value_in_reference(result_decimal, result_text, ref_val):
                 min_v = Decimal(str(ref_val.min_value)) if ref_val.min_value is not None else None

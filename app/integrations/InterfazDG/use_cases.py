@@ -181,10 +181,11 @@ async def registrar_solicitud_dg(
         print(f"[InterfazDG] diagnostico_codigo='{dp.diagnostico_codigo}' → diagnostic_id={diagnostic_id}")
 
     # --- 6. Construir datos del InboundOrder ---
+    now = datetime.utcnow()
     order_data = {
         "io_number_request": dg.ord_consec if dg else None,
-        "io_date_request": _parse_datetime(dg.fecha_servicio if dg else None),
-        "io_date_transmission": datetime.utcnow(),
+        "io_date_request": now,
+        "io_date_transmission": now,
         "io_patient_id": patient.pt_id,
         "io_origin": dg.id_origen if dg else None,
         "io_medic_document_number": do.medico_codigo if do else None,

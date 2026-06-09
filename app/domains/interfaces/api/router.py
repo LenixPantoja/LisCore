@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.interfaces.api.schemas import (
     InterfacesRestCreate,
     InterfacesRestUpdate,
@@ -19,7 +20,8 @@ router = APIRouter()
 
 # ========== INTERFACES REST ==========
 
-@router.post("/interfaces-rest", response_model=InterfacesRestResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/interfaces-rest", response_model=InterfacesRestResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Interfaces:Create"))])
 async def create_interface(data: InterfacesRestCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new interface REST.
@@ -30,7 +32,8 @@ async def create_interface(data: InterfacesRestCreate, db: AsyncSession = Depend
     """
     return await use_cases.create(db, data.model_dump())
 
-@router.get("/interfaces-rest", response_model=InterfacesRestPaginatedResponse)
+@router.get("/interfaces-rest", response_model=InterfacesRestPaginatedResponse,
+            dependencies=[Depends(require_permission("Interfaces:List"))])
 async def list_interfaces(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -53,14 +56,16 @@ async def list_interfaces(
     """
     return await use_cases.list_paginated(db, skip, limit, search=search, state=state, enterprise_id=enterprise_id)
 
-@router.get("/interfaces-rest/{interface_id}", response_model=InterfacesRestResponse)
+@router.get("/interfaces-rest/{interface_id}", response_model=InterfacesRestResponse,
+            dependencies=[Depends(require_permission("Interfaces:GetOne"))])
 async def get_interface(interface_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get an interface REST by ID with its enterprise, tariff, and details.
     """
     return await use_cases.get_by_id(db, interface_id)
 
-@router.patch("/interfaces-rest/{interface_id}", response_model=InterfacesRestResponse)
+@router.patch("/interfaces-rest/{interface_id}", response_model=InterfacesRestResponse,
+              dependencies=[Depends(require_permission("Interfaces:Update"))])
 async def update_interface(interface_id: int, data: InterfacesRestUpdate, db: AsyncSession = Depends(get_db)):
     """
     Update an interface REST.
@@ -69,7 +74,8 @@ async def update_interface(interface_id: int, data: InterfacesRestUpdate, db: As
     """
     return await use_cases.update(db, interface_id, data.model_dump(exclude_unset=True))
 
-@router.delete("/interfaces-rest/{interface_id}", status_code=status.HTTP_200_OK)
+@router.delete("/interfaces-rest/{interface_id}", status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Interfaces:Delete"))])
 async def delete_interface(interface_id: int, db: AsyncSession = Depends(get_db)):
     """
     Delete an interface REST.
@@ -79,7 +85,8 @@ async def delete_interface(interface_id: int, db: AsyncSession = Depends(get_db)
 
 # ========== INTERFACES REST DETAILS ==========
 
-@router.post("/interfaces-rest/{interface_id}/details", response_model=InterfacesRestDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/interfaces-rest/{interface_id}/details", response_model=InterfacesRestDetailResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Interfaces:ManageDetails"))])
 async def create_interface_detail(interface_id: int, data: InterfacesRestDetailCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new interface REST detail.
@@ -93,7 +100,8 @@ async def create_interface_detail(interface_id: int, data: InterfacesRestDetailC
     payload['itd_interface_rest_id'] = interface_id
     return await use_cases.create_detail(db, payload)
 
-@router.get("/interfaces-rest/{interface_id}/details", response_model=InterfacesRestDetailPaginatedResponse)
+@router.get("/interfaces-rest/{interface_id}/details", response_model=InterfacesRestDetailPaginatedResponse,
+            dependencies=[Depends(require_permission("Interfaces:ManageDetails"))])
 async def list_interface_details(
     interface_id: int,
     skip: int = Query(0, ge=0),
@@ -111,14 +119,16 @@ async def list_interface_details(
     """
     return await use_cases.list_details_paginated(db, interface_id, skip, limit, search)
 
-@router.get("/interfaces-rest/details/{detail_id}", response_model=InterfacesRestDetailResponse)
+@router.get("/interfaces-rest/details/{detail_id}", response_model=InterfacesRestDetailResponse,
+            dependencies=[Depends(require_permission("Interfaces:ManageDetails"))])
 async def get_interface_detail(detail_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get an interface REST detail by ID with its linked study information.
     """
     return await use_cases.get_detail_by_id(db, detail_id)
 
-@router.patch("/interfaces-rest/details/{detail_id}", response_model=InterfacesRestDetailResponse)
+@router.patch("/interfaces-rest/details/{detail_id}", response_model=InterfacesRestDetailResponse,
+              dependencies=[Depends(require_permission("Interfaces:ManageDetails"))])
 async def update_interface_detail(detail_id: int, data: InterfacesRestDetailUpdate, db: AsyncSession = Depends(get_db)):
     """
     Update an interface REST detail.
@@ -127,7 +137,8 @@ async def update_interface_detail(detail_id: int, data: InterfacesRestDetailUpda
     """
     return await use_cases.update_detail(db, detail_id, data.model_dump(exclude_unset=True))
 
-@router.delete("/interfaces-rest/details/{detail_id}", status_code=status.HTTP_200_OK)
+@router.delete("/interfaces-rest/details/{detail_id}", status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Interfaces:ManageDetails"))])
 async def delete_interface_detail(detail_id: int, db: AsyncSession = Depends(get_db)):
     """
     Delete (unlink) an interface REST detail.

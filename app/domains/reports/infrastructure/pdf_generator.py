@@ -3,6 +3,7 @@ import io
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from xml.sax.saxutils import escape as _xml_escape
 
 from PIL import Image as PILImage
 from reportlab.lib import colors
@@ -10,8 +11,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
+    Flowable,
     Image as RLImage,
     Paragraph,
+    Preformatted,
     SimpleDocTemplate,
     Spacer,
     Table,
@@ -26,6 +29,34 @@ from reportlab.lib.utils import ImageReader
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 WATERMARK_PNG = str(TEMPLATES_DIR / "marca_agua.png")
 LOGO_PNG = str(TEMPLATES_DIR / "marca_agua.png")  # Usamos la misma imagen como logo
+
+
+class _RoundedFrame(Flowable):
+    """Envuelve un flowable con un borde de esquinas redondeadas."""
+
+    def __init__(self, content: Flowable, radius: float = 5, color=None):
+        Flowable.__init__(self)
+        self._content = content
+        self._radius = radius
+        self._color = color or colors.HexColor("#bfdbfe")
+        self._w = self._h = 0
+
+    def wrap(self, available_w, available_h):
+        self._w, self._h = self._content.wrap(available_w, available_h)
+        return self._w, self._h
+
+    def split(self, available_w, available_h):
+        parts = self._content.split(available_w, available_h)
+        return [_RoundedFrame(p, self._radius, self._color) for p in parts]
+
+    def draw(self):
+        c = self.canv
+        c.saveState()
+        c.setStrokeColor(self._color)
+        c.setLineWidth(0.5)
+        c.roundRect(0, 0, self._w, self._h, self._radius, stroke=1, fill=0)
+        c.restoreState()
+        self._content.drawOn(c, 0, 0)
 
 
 def _load_watermark_image(opacity: float = 0.10) -> io.BytesIO:
@@ -54,6 +85,24 @@ def _get_watermark() -> io.BytesIO:
 def _get_logo() -> ImageReader:
     """Carga el logo para la cabecera."""
     return ImageReader(LOGO_PNG)
+
+
+def _fetch_signature_image(object_name: str | None) -> io.BytesIO | None:
+    """Descarga la firma desde el bucket 'signatures' de MinIO y la retorna como BytesIO."""
+    if not object_name:
+        return None
+    try:
+        from utils.minio_client import get_minio_client
+        from app.core.config import settings as _settings
+        client = get_minio_client()
+        response = client.get_object(_settings.MINIO_SIGNATURES_BUCKET, object_name)
+        buf = io.BytesIO(response.read())
+        response.close()
+        response.release_conn()
+        buf.seek(0)
+        return buf
+    except Exception:
+        return None
 
 
 def _fetch_graphic_image(object_name: str | None) -> io.BytesIO | None:
@@ -104,7 +153,12 @@ SEX_LABELS = {
 # ─────────────────────────────────────────────
 # Función pública principal
 # ─────────────────────────────────────────────
-def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
+def build_laboratory_pdf(
+    order: Any,
+    patient: Any,
+    laboratories: list,
+    signatures_map: dict | None = None,
+) -> bytes:
     """
     Genera el PDF del reporte de laboratorio usando reportlab.
     La cabecera (logo + datos del paciente) se repite en todas las páginas.
@@ -125,12 +179,8 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
 
     # Ciudad
     city_name = "—"
-    if order.enterprise and hasattr(order.enterprise, "city") and order.enterprise.city:
-        city_name = (
-            getattr(order.enterprise.city, "name", None)
-            or getattr(order.enterprise.city, "c_name", None)
-            or "—"
-        )
+    if patient and hasattr(patient, "city") and patient.city:
+        city_name = getattr(patient.city, "city_name", None) or "—"
 
     studies = _group_by_study(laboratories, is_female)
 
@@ -148,6 +198,8 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
     s_empty    = ParagraphStyle("empty",    fontName="Helvetica-Oblique", fontSize=8, textColor=C_NAVY)
     s_ent      = ParagraphStyle("ent",      fontName="Helvetica-Bold", fontSize=10, textColor=C_NAVY,  alignment=TA_RIGHT)
     s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
+    s_comp     = ParagraphStyle("comp",     fontName="Courier",         fontSize=7.5, textColor=C_DARK, leading=11, leftIndent=8)
+    s_alt_ref  = ParagraphStyle("alt_ref",  fontName="Helvetica-Oblique", fontSize=7,   textColor=C_GRAY, leading=10, leftIndent=8)
 
     # ── Página: letter, márgenes ───────────────────────
     PAGE_W, PAGE_H = letter
@@ -221,13 +273,25 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
                     Paragraph("VALOR DE REFERENCIA", s_th),
                 ]
                 res_rows = [th_row]
-                for i, row in enumerate(study["rows"]):
+                # Compound results are collected separately so they can be rendered
+                # as standalone flowables after the table. Embedding them as table
+                # rows with SPAN prevents Table.split() from working when the
+                # compound text is taller than a full page, causing LayoutError.
+                pending_compounds: list[dict] = []
+
+                for row in study["rows"]:
                     res_rows.append([
                         Paragraph(row["test_name"], s_test),
                         Paragraph(row["result"], s_res_bad if row["is_abnormal"] else s_res_ok),
                         Paragraph(row["units"], s_unit),
                         Paragraph(row["reference"], s_ref),
                     ])
+                    if row.get("result_comp"):
+                        pending_compounds.append({
+                            "result_comp": row["result_comp"],
+                            "alternative_range_value": row.get("alternative_range_value"),
+                        })
+
                 col_widths = [COL_W * 0.35, COL_W * 0.18, COL_W * 0.14, COL_W * 0.33]
                 res_tbl = Table(res_rows, colWidths=col_widths, repeatRows=1)
 
@@ -237,17 +301,27 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
                     ("LEFTPADDING", (0, 0), (-1, -1), 8),
                     ("LINEBELOW",   (0, 0), (-1, -1), 0.3, colors.HexColor("#dbeafe")),
-                    ("BOX",         (0, 0), (-1, -1), 0.5, colors.HexColor("#bfdbfe")),
                     ("VALIGN",      (0, 0), (-1, -1), "TOP"),
                 ]
+
+                # Alternating background on data rows
                 for i in range(1, len(res_rows)):
-                    if i % 2 == 1:
+                    if (i - 1) % 2 == 0:
                         tbl_style.append(("BACKGROUND", (0, i), (-1, i), C_LIGHT))
-                    else:
-                        tbl_style.append(("BACKGROUND", (0, i), (-1, i), colors.transparent))
 
                 res_tbl.setStyle(TableStyle(tbl_style))
-                story.append(res_tbl)
+                story.append(_RoundedFrame(res_tbl, radius=5, color=colors.HexColor("#bfdbfe")))
+
+                # Compound results as standalone flowables so they split across pages
+                for comp in pending_compounds:
+                    story.append(Preformatted(comp["result_comp"], s_comp))
+                    if comp.get("alternative_range_value"):
+                        story.append(Spacer(1, 4))
+                        story.append(Paragraph(
+                            _xml_escape(comp["alternative_range_value"]).replace("\n", "<br/>"),
+                            s_alt_ref,
+                        ))
+
                 story.append(Spacer(1, 8))
 
                 # ── Gráficas de resultado ──────────────────────────
@@ -267,10 +341,67 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
                     )
                     story.append(Spacer(1, 4))
                     story.append(
-                        RLImage(img_buf, width=COL_W * 0.75, height=5 * cm,
+                        RLImage(img_buf, width=COL_W, height=10 * cm,
                                 kind="proportional")
                     )
                     story.append(Spacer(1, 8))
+
+                # ── Firma(s) del validador ────────────────────────────────────────
+                if signatures_map:
+                    study_sigs = signatures_map.get((wg_group["wg_name"], study["name"]), [])
+                    if study_sigs:
+                        sig_col_w = COL_W / max(len(study_sigs), 1)
+                        sig_row = []
+                        for sig_info in study_sigs:
+                            sig_buf = _fetch_signature_image(sig_info["usr_Signature"])
+                            cell = []
+                            if sig_buf:
+                                cell.append(
+                                    RLImage(
+                                        sig_buf,
+                                        width=min(sig_col_w * 0.5, 3 * cm),
+                                        height=1.5 * cm,
+                                        kind="proportional",
+                                    )
+                                )
+                            cell.append(
+                                Paragraph(
+                                    sig_info["user_name"],
+                                    ParagraphStyle(
+                                        "sig_name",
+                                        fontName="Helvetica-Bold",
+                                        fontSize=7,
+                                        textColor=C_NAVY,
+                                        alignment=TA_RIGHT,
+                                    ),
+                                )
+                            )
+                            if sig_info.get("usr_document_number"):
+                                cell.append(
+                                    Paragraph(
+                                        sig_info["usr_document_number"],
+                                        ParagraphStyle(
+                                            "sig_doc",
+                                            fontName="Helvetica",
+                                            fontSize=7,
+                                            textColor=C_GRAY,
+                                            alignment=TA_RIGHT,
+                                        ),
+                                    )
+                                )
+                            sig_row.append(cell)
+                        sig_tbl = Table(
+                            [sig_row], colWidths=[sig_col_w] * len(study_sigs)
+                        )
+                        sig_tbl.setStyle(TableStyle([
+                            ("ALIGN",         (0, 0), (-1, -1), "RIGHT"),
+                            ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+                            ("TOPPADDING",    (0, 0), (-1, -1), 6),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                            ("LINEABOVE",     (0, 0), (-1, 0),  0.5, C_NAVY),
+                        ]))
+                        story.append(sig_tbl)
+                        story.append(Spacer(1, 6))
     else:
         story.append(Paragraph("No hay resultados registrados para esta orden.", s_empty))
 
@@ -387,7 +518,7 @@ def build_laboratory_pdf(order: Any, patient: Any, laboratories: list) -> bytes:
         # Línea divisoria
         canvas.setStrokeColor(colors.HexColor("#bfdbfe"))
         canvas.setLineWidth(0.5)
-        canvas.rect(LEFT, PAGE_H - 6.0 * cm, COL_W, 2.8 * cm, fill=0, stroke=1)
+        canvas.roundRect(LEFT, PAGE_H - 6.0 * cm, COL_W, 2.8 * cm, 5, fill=0, stroke=1)
         
         canvas.restoreState()
 
@@ -483,6 +614,8 @@ def _build_row(lab: Any, is_female: bool) -> dict:
         "is_abnormal": is_abnormal,
         "note": lab.l_nota_validation or "",
         "graphic_object_name": lab.l_result_graphic or None,
+        "result_comp": lab.l_result_comp or "",
+        "alternative_range_value": (lab.test.alternative_range_value or "") if lab.test else "",
     }
 
 
@@ -510,7 +643,8 @@ def _format_result(lab: Any) -> str:
         return str(lab.l_result_num)
     if lab.l_result:
         return lab.l_result
-    return lab.l_result_comp or "—"
+    # l_result_comp se muestra debajo del examen como fila compuesta, no en esta columna
+    return "—"
 
 
 def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
@@ -550,6 +684,28 @@ def _is_abnormal(lab: Any) -> bool:
     if hi is not None and val > hi:
         return False
     return False
+
+
+# ─────────────────────────────────────────────
+# PDF Merge
+# ─────────────────────────────────────────────
+def merge_pdfs(main_pdf: bytes, annex_pdfs: list[bytes]) -> bytes:
+    """Merge the main PDF with a list of annexed PDFs into a single PDF."""
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    reader = PdfReader(io.BytesIO(main_pdf))
+    for page in reader.pages:
+        writer.add_page(page)
+
+    for annex_bytes in annex_pdfs:
+        annex_reader = PdfReader(io.BytesIO(annex_bytes))
+        for page in annex_reader.pages:
+            writer.add_page(page)
+
+    buf = io.BytesIO()
+    writer.write(buf)
+    return buf.getvalue()
 
 
 # ─────────────────────────────────────────────

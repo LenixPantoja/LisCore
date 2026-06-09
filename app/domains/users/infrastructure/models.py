@@ -1,8 +1,28 @@
-from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
 from utils.timezone import get_bogota_now
+
+
+class Permission(Base):
+    __tablename__ = "Permissions"
+
+    p_id = Column(Integer, primary_key=True, index=True)
+    p_name = Column(String(255), unique=True, nullable=False)
+    p_description = Column(String(255), nullable=True)
+    p_module = Column(String(100), nullable=True)
+
+    roles = relationship("Rol", secondary="RolPermissions", back_populates="permissions")
+
+
+class RolPermission(Base):
+    __tablename__ = "RolPermissions"
+
+    rp_rol_id = Column(Integer, ForeignKey("Rols.r_id", ondelete="CASCADE"), primary_key=True)
+    rp_permission_id = Column(Integer, ForeignKey("Permissions.p_id", ondelete="CASCADE"), primary_key=True)
+    rp_active = Column(Boolean, default=True, nullable=False)
+
 
 class Rol(Base):
     __tablename__ = "Rols"
@@ -12,6 +32,7 @@ class Rol(Base):
     r_description = Column(String(255))
 
     users = relationship("AppUser", back_populates="role")
+    permissions = relationship("Permission", secondary="RolPermissions", back_populates="roles")
 
 class AppUser(Base):
     __tablename__ = "AppUsers"

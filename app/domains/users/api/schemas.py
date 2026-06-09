@@ -2,6 +2,70 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime
 
+
+# ── Permission schemas ──────────────────────────────────────────────────────
+
+class PermissionBase(BaseModel):
+    p_name: str
+    p_description: Optional[str] = None
+    p_module: Optional[str] = None
+
+
+class PermissionCreate(PermissionBase):
+    pass
+
+
+class PermissionUpdate(BaseModel):
+    p_name: Optional[str] = None
+    p_description: Optional[str] = None
+    p_module: Optional[str] = None
+
+
+class PermissionResponse(PermissionBase):
+    p_id: int
+
+    class Config:
+        from_attributes = True
+
+
+class PermissionModuleTreeResponse(BaseModel):
+    module: str
+    permissions: List[PermissionResponse]
+
+
+class RolePermissionAssign(BaseModel):
+    permission_id: int
+
+
+# ── Rol schemas ─────────────────────────────────────────────────────────────
+
+class RolCreate(BaseModel):
+    r_name: str
+    r_description: Optional[str] = None
+    permission_ids: Optional[List[int]] = None
+
+
+class RolUpdate(BaseModel):
+    r_name: Optional[str] = None
+    r_description: Optional[str] = None
+    permission_ids: Optional[List[int]] = None
+
+
+class RolResponse(BaseModel):
+    r_id: int
+    r_name: str
+    r_description: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class RolWithPermissionsResponse(RolResponse):
+    permissions: List["PermissionResponse"] = []
+
+
+# ── User schemas ────────────────────────────────────────────────────────────
+
 class UserBase(BaseModel):
     usr_login: str
     usr_first_name: str
@@ -16,6 +80,8 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     usr_password: str
+    permission_ids: Optional[List[int]] = None
+
 
 class UserUpdate(BaseModel):
     usr_login: Optional[str] = None
@@ -30,6 +96,7 @@ class UserUpdate(BaseModel):
     usr_is_Locked: Optional[bool] = None
     usr_Signature: Optional[str] = None
     usr_rol_id: Optional[int] = None
+    permission_ids: Optional[List[int]] = None
 
 class UserResponse(UserBase):
     usr_id: int
@@ -44,17 +111,44 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True
 
+
+class UserCreateResponse(UserResponse):
+    role: Optional[RolResponse] = None
+    permissions: List[PermissionResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+class UserDetailResponse(UserCreateResponse):
+    usr_Signature: Optional[str] = None
+    signature_url: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class UserLogin(BaseModel):
     usr_login: str
     usr_password: str
 
 class LoginResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str
     usr_id: int
     usr_login: str
     usr_full_name: str
     usr_rol_name: Optional[str] = None
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
+class RefreshTokenResponse(BaseModel):
+    access_token: str
+    token_type: str
 
 class UserPaginatedResponse(BaseModel):
     total: int

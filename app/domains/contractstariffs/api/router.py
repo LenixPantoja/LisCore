@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.contractstariffs.api.schemas import (
     ContractPaginatedResponse,
     ContractResponse,
@@ -31,7 +32,8 @@ router = APIRouter()
 
 # --- Tariffs (Tarifas) ---
 
-@router.post("/tariffs", response_model=TariffResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/tariffs", response_model=TariffResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Tariffs:Create"))])
 async def create_new_tariff(data: TariffCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new tariff with optional details.
@@ -43,14 +45,16 @@ async def create_new_tariff(data: TariffCreate, db: AsyncSession = Depends(get_d
     """
     return await tariff_contracts_use_cases.create_tariff(db, data.model_dump())
 
-@router.get("/tariffs", response_model=List[TariffResponse])
+@router.get("/tariffs", response_model=List[TariffResponse],
+            dependencies=[Depends(require_permission("Tariffs:List"))])
 async def list_all_tariffs(db: AsyncSession = Depends(get_db)):
     """
     Get all tariffs with their details.
     """
     return await tariff_contracts_use_cases.list_tariffs(db)
 
-@router.get("/enterprises/{enterprise_id}/tariffs", response_model=TariffPaginatedResponse)
+@router.get("/enterprises/{enterprise_id}/tariffs", response_model=TariffPaginatedResponse,
+            dependencies=[Depends(require_permission("Tariffs:List"))])
 async def list_tariffs_by_enterprise(
     enterprise_id: int,
     skip: int = Query(0, ge=0),
@@ -72,7 +76,8 @@ async def list_tariffs_by_enterprise(
         db, enterprise_id, skip, limit, search, active
     )
 
-@router.get("/enterprises/{enterprise_id}/tariffs/{tariff_id}/studies", response_model=EnterpriseTariffStudiesResponse)
+@router.get("/enterprises/{enterprise_id}/tariffs/{tariff_id}/studies", response_model=EnterpriseTariffStudiesResponse,
+            dependencies=[Depends(require_permission("Tariffs:List"))])
 async def list_tariff_studies_by_enterprise(
     enterprise_id: int,
     tariff_id: int,
@@ -98,7 +103,8 @@ async def list_tariff_studies_by_enterprise(
         db, enterprise_id, tariff_id, skip, limit, search, active
     )
 
-@router.get("/enterprises/{enterprise_id}/contracts", response_model=EnterpriseContractsPaginatedResponse)
+@router.get("/enterprises/{enterprise_id}/contracts", response_model=EnterpriseContractsPaginatedResponse,
+            dependencies=[Depends(require_permission("Contracts:List"))])
 async def list_contracts_by_enterprise(
     enterprise_id: int,
     skip: int = Query(0, ge=0),
@@ -122,7 +128,8 @@ async def list_contracts_by_enterprise(
         db, enterprise_id, skip, limit, search, active
     )
 
-@router.get("/tariffs/paginated", response_model=TariffPaginatedResponse)
+@router.get("/tariffs/paginated", response_model=TariffPaginatedResponse,
+            dependencies=[Depends(require_permission("Tariffs:List"))])
 async def list_tariffs(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -142,14 +149,16 @@ async def list_tariffs(
         db, skip, limit, search, active
     )
 
-@router.get("/tariffs/{tariff_id}", response_model=TariffResponse)
+@router.get("/tariffs/{tariff_id}", response_model=TariffResponse,
+            dependencies=[Depends(require_permission("Tariffs:GetOne"))])
 async def get_tariff(tariff_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get a tariff by ID with its details.
     """
     return await tariff_contracts_use_cases.get_tariff_by_id(db, tariff_id)
 
-@router.get("/tariffs/{tariff_id}/details", response_model=TariffDetailPaginatedResponse)
+@router.get("/tariffs/{tariff_id}/details", response_model=TariffDetailPaginatedResponse,
+            dependencies=[Depends(require_permission("Tariffs:ManageDetails"))])
 async def list_tariff_details(
     tariff_id: int,
     skip: int = Query(0, ge=0),
@@ -173,7 +182,8 @@ async def list_tariff_details(
         db, tariff_id, skip, limit, search, active
     )
 
-@router.post("/tariffs/{tariff_id}/details", response_model=TariffDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/tariffs/{tariff_id}/details", response_model=TariffDetailResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Tariffs:ManageDetails"))])
 async def add_detail_to_tariff(tariff_id: int, data: TariffDetailBase, db: AsyncSession = Depends(get_db)):
     """
     Add a detail line to an existing tariff.
@@ -187,7 +197,8 @@ async def add_detail_to_tariff(tariff_id: int, data: TariffDetailBase, db: Async
     """
     return await tariff_contracts_use_cases.add_detail_to_tariff(db, tariff_id, data.model_dump())
 
-@router.patch("/tariffs/details/{detail_id}", response_model=TariffDetailWithStudieResponse)
+@router.patch("/tariffs/details/{detail_id}", response_model=TariffDetailWithStudieResponse,
+              dependencies=[Depends(require_permission("Tariffs:ManageDetails"))])
 async def update_tariff_detail(detail_id: int, data: TariffDetailUpdate, db: AsyncSession = Depends(get_db)):
     """
     Update a tariff detail.
@@ -202,7 +213,8 @@ async def update_tariff_detail(detail_id: int, data: TariffDetailUpdate, db: Asy
     """
     return await tariff_contracts_use_cases.update_tariff_detail(db, detail_id, data.model_dump(exclude_unset=True))
 
-@router.delete("/tariffs/details/{detail_id}", status_code=status.HTTP_200_OK)
+@router.delete("/tariffs/details/{detail_id}", status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Tariffs:ManageDetails"))])
 async def delete_tariff_detail(detail_id: int, db: AsyncSession = Depends(get_db)):
     """
     Delete (unlink) a tariff detail.
@@ -212,7 +224,8 @@ async def delete_tariff_detail(detail_id: int, db: AsyncSession = Depends(get_db
     """
     return await tariff_contracts_use_cases.delete_tariff_detail(db, detail_id)
 
-@router.patch("/tariffs/{tariff_id}", response_model=TariffResponse)
+@router.patch("/tariffs/{tariff_id}", response_model=TariffResponse,
+              dependencies=[Depends(require_permission("Tariffs:Update"))])
 async def update_tariff(tariff_id: int, data: TariffUpdate, db: AsyncSession = Depends(get_db)):
     """
     Update a tariff's information.
@@ -221,7 +234,8 @@ async def update_tariff(tariff_id: int, data: TariffUpdate, db: AsyncSession = D
     """
     return await tariff_contracts_use_cases.update_tariff(db, tariff_id, data.model_dump(exclude_unset=True))
 
-@router.delete("/tariffs/{tariff_id}", status_code=status.HTTP_200_OK)
+@router.delete("/tariffs/{tariff_id}", status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Tariffs:Delete"))])
 async def delete_tariff(tariff_id: int, db: AsyncSession = Depends(get_db)):
     """
     Delete a tariff and its associated details.
@@ -233,7 +247,8 @@ async def delete_tariff(tariff_id: int, db: AsyncSession = Depends(get_db)):
 
 # --- Contracts (Contratos) ---
 
-@router.post("/contracts", response_model=ContractResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/contracts", response_model=ContractResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Contracts:Create"))])
 async def create_new_contract(data: ContractCreate, db: AsyncSession = Depends(get_db)):
     """
     Create a new contract.
@@ -251,7 +266,8 @@ async def create_new_contract(data: ContractCreate, db: AsyncSession = Depends(g
     """
     return await tariff_contracts_use_cases.create_contract(db, data.model_dump())
 
-@router.patch("/contracts/{contract_id}", response_model=ContractResponse)
+@router.patch("/contracts/{contract_id}", response_model=ContractResponse,
+              dependencies=[Depends(require_permission("Contracts:Update"))])
 async def update_contract(contract_id: int, data: ContractUpdate, db: AsyncSession = Depends(get_db)):
     """
     Update a contract's information.
@@ -274,7 +290,8 @@ async def update_contract(contract_id: int, data: ContractUpdate, db: AsyncSessi
     """
     return await tariff_contracts_use_cases.update_contract(db, contract_id, data.model_dump(exclude_unset=True))
 
-@router.get("/contracts", response_model=ContractPaginatedResponse)
+@router.get("/contracts", response_model=ContractPaginatedResponse,
+            dependencies=[Depends(require_permission("Contracts:List"))])
 async def list_contracts(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -289,7 +306,8 @@ async def list_contracts(
         db, skip, limit, search, enterprise_id
     )
 
-@router.get("/contracts/{contract_id}", response_model=ContractResponse)
+@router.get("/contracts/{contract_id}", response_model=ContractResponse,
+            dependencies=[Depends(require_permission("Contracts:GetOne"))])
 async def get_contract(contract_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get a contract by ID with its enterprise information and linked tariffs.
@@ -301,7 +319,8 @@ async def get_contract(contract_id: int, db: AsyncSession = Depends(get_db)):
     """
     return await tariff_contracts_use_cases.get_contract_by_id(db, contract_id)
 
-@router.post("/contracts/link-tariff", response_model=ContractTariffResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/contracts/link-tariff", response_model=ContractTariffResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Contracts:LinkTariff"))])
 async def link_tariff_to_contract(data: LinkTariffToContractRequest, db: AsyncSession = Depends(get_db)):
     """
     Link a tariff to a contract.
@@ -320,7 +339,8 @@ async def link_tariff_to_contract(data: LinkTariffToContractRequest, db: AsyncSe
     """
     return await tariff_contracts_use_cases.link_tariff_to_contract(db, data.model_dump())
 
-@router.delete("/contracts/unlink-tariff", response_model=UnlinkTariffFromContractResponse, status_code=status.HTTP_200_OK)
+@router.delete("/contracts/unlink-tariff", response_model=UnlinkTariffFromContractResponse, status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Contracts:UnlinkTariff"))])
 async def unlink_tariff_from_contract(data: UnlinkTariffFromContractRequest, db: AsyncSession = Depends(get_db)):
     """
     Unlink (remove) a tariff from a contract.
@@ -339,7 +359,8 @@ async def unlink_tariff_from_contract(data: UnlinkTariffFromContractRequest, db:
         db, data.ct_contract_id, data.ct_tariff_id
     )
 
-@router.get("/contracts/{contract_id}/tariffs", response_model=ContractTariffsPaginatedResponse)
+@router.get("/contracts/{contract_id}/tariffs", response_model=ContractTariffsPaginatedResponse,
+            dependencies=[Depends(require_permission("Contracts:List"))])
 async def get_contract_tariffs(
     contract_id: int,
     skip: int = Query(0, ge=0),

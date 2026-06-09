@@ -1,8 +1,11 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.patients.infrastructure.repository import PatientRepository
 from app.domains.patients.domain.rules import calculate_age
+from app.domains.traces.constants import OPERATION_EDIT_DEMOGRAPHICS
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
+from utils.trace import register_trace
+import json
 
 async def create_patient(db: AsyncSession, data: dict):
     try:
@@ -45,11 +48,22 @@ async def get_patient_by_id(db: AsyncSession, pt_id: int):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado")
     return patient
 
-async def update_patient(db: AsyncSession, pt_id: int, data: dict):
+async def update_patient(db: AsyncSession, pt_id: int, data: dict, usr_id: int = None):
     try:
         patient = await PatientRepository.update(db, pt_id, data)
         if not patient:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado")
+
+        # Serialize updated fields for trace, converting non-serializable types to str
+        serializable = {k: str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v for k, v in data.items()}
+        await register_trace(
+            db=db,
+            operation_type=OPERATION_EDIT_DEMOGRAPHICS,
+            operation_description=f"Actualización datos paciente ID {pt_id}",
+            usr_id=usr_id,
+            notes=json.dumps(serializable, ensure_ascii=False),
+        )
+
         return patient
     except IntegrityError:
         await db.rollback()
