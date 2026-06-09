@@ -3,12 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.cities.api.schemas import CityResponse, CityPaginatedResponse
 from app.domains.cities.application.use_cases import city_use_cases as use_cases
 
 router = APIRouter()
 
-@router.get("/", response_model=CityPaginatedResponse)
+@router.get("/", response_model=CityPaginatedResponse,
+            dependencies=[Depends(require_permission("Cities:List"))])
 async def list_cities(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -26,7 +28,8 @@ async def list_cities(
     """
     return await use_cases.list_cities(db, skip, limit, search, department_id)
 
-@router.get("/{city_id}", response_model=CityResponse)
+@router.get("/{city_id}", response_model=CityResponse,
+            dependencies=[Depends(require_permission("Cities:GetOne"))])
 async def get_city(city_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get a city by ID.

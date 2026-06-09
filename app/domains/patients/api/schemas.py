@@ -28,15 +28,20 @@ class PatientCreate(PatientBase):
     pt_password: Optional[str] = None
 
 class PatientUpdate(BaseModel):
+    pt_Number_document: Optional[str] = None
     pt_firts_name: Optional[str] = None
     pt_middle_name: Optional[str] = None
     pt_last_name: Optional[str] = None
     pt_second_last_name: Optional[str] = None
+    pt_sex_type: Optional[int] = None
     pt_phone_number: Optional[str] = None
     pt_mail: Optional[EmailStr] = None
     pt_address: Optional[str] = None
+    pt_date_of_birth: Optional[date] = None
     pt_authorize_habeas_data: Optional[bool] = None
+    pt_afiliation_type: Optional[int] = None
     pt_enterprise_id: Optional[int] = None
+    pt_Document_Type_id: Optional[int] = None
     pt_city_id: Optional[int] = None
     pt_password: Optional[str] = None
 

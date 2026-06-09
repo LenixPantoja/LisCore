@@ -1,3 +1,5 @@
+from typing import List
+
 from pydantic import BaseModel
 
 
@@ -11,3 +13,4 @@ class BarcodeStickerResponse(BaseModel):
     order_number: str
     order_id: int
     total_stickers: int
+    zpl_codes: List[str]

@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.laboratories.api.schemas import (
     LaboratoryBulkUpdateItem,
     LaboratoryBulkUpdateResponse,
@@ -21,7 +22,8 @@ from app.domains.laboratories.application.use_cases import laboratory_use_cases 
 
 router = APIRouter()
 
-@router.put("/bulk-update", response_model=LaboratoryBulkUpdateResponse, status_code=status.HTTP_200_OK)
+@router.put("/bulk-update", response_model=LaboratoryBulkUpdateResponse, status_code=status.HTTP_200_OK,
+            dependencies=[Depends(require_permission("Laboratories:BulkUpdate"))])
 async def bulk_update(
     data: List[LaboratoryBulkUpdateItem],
     db: AsyncSession = Depends(get_db)
@@ -34,7 +36,8 @@ async def bulk_update(
     data_dicts = [item.model_dump(exclude_unset=True) for item in data]
     return await use_cases.bulk_update_laboratories(db, data_dicts)
 
-@router.post("/invalidate", response_model=InvalidateLaboratoriesResponse, status_code=status.HTTP_200_OK)
+@router.post("/invalidate", response_model=InvalidateLaboratoriesResponse, status_code=status.HTTP_200_OK,
+             dependencies=[Depends(require_permission("Laboratories:Invalidate"))])
 async def invalidate_laboratories(
     request: InvalidateLaboratoriesRequest,
     db: AsyncSession = Depends(get_db)
@@ -51,7 +54,8 @@ async def invalidate_laboratories(
     """
     return await use_cases.invalidate_laboratories(db, request.laboratory_ids, request.usr_id, request.note)
 
-@router.post("/validate", response_model=ValidateLaboratoriesResponse, status_code=status.HTTP_200_OK)
+@router.post("/validate", response_model=ValidateLaboratoriesResponse, status_code=status.HTTP_200_OK,
+             dependencies=[Depends(require_permission("Laboratories:Validate"))])
 async def validate_laboratories(
     request: ValidateLaboratoriesRequest,
     db: AsyncSession = Depends(get_db)
@@ -71,7 +75,8 @@ async def validate_laboratories(
     items = [item.model_dump() for item in request.items]
     return await use_cases.validate_laboratories(db, items)
 
-@router.post("/clear-results", response_model=ClearLaboratoryResultsResponse, status_code=status.HTTP_200_OK)
+@router.post("/clear-results", response_model=ClearLaboratoryResultsResponse, status_code=status.HTTP_200_OK,
+             dependencies=[Depends(require_permission("Laboratories:ClearResults"))])
 async def clear_laboratory_results(
     request: ClearLaboratoryResultsRequest,
     db: AsyncSession = Depends(get_db)
@@ -93,7 +98,8 @@ async def clear_laboratory_results(
 @router.patch(
     "/orders/{order_id}/studies/{study_id}/state",
     response_model=UpdateOrderDetailStateResponse,
-    status_code=status.HTTP_200_OK
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permission("Laboratories:UpdateState"))],
 )
 async def update_order_detail_state(
     order_id: int,
@@ -111,7 +117,8 @@ async def update_order_detail_state(
     return await use_cases.update_order_detail_state(db, order_id, study_id, data.state)
 
 
-@router.post("/{l_id}/graphic", response_model=GraphicUploadResponse, status_code=status.HTTP_200_OK)
+@router.post("/{l_id}/graphic", response_model=GraphicUploadResponse, status_code=status.HTTP_200_OK,
+             dependencies=[Depends(require_permission("Laboratories:ManageGraphics"))])
 async def upload_laboratory_graphic(
     l_id: int,
     file: UploadFile = File(...),
@@ -135,7 +142,8 @@ async def upload_laboratory_graphic(
     )
 
 
-@router.post("/{l_id}/graphic/link", response_model=GraphicUploadResponse, status_code=status.HTTP_200_OK)
+@router.post("/{l_id}/graphic/link", response_model=GraphicUploadResponse, status_code=status.HTTP_200_OK,
+             dependencies=[Depends(require_permission("Laboratories:ManageGraphics"))])
 async def link_laboratory_graphic(
     l_id: int,
     data: GraphicLinkRequest,

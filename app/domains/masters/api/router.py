@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.masters.api.schemas import (
     CountryResponse, CountryPaginatedResponse,
     DepartmentResponse, DepartmentPaginatedResponse,
@@ -23,7 +24,8 @@ from app.domains.masters.domain.models import Technique, WorkGroup, ReferralLoca
 
 router = APIRouter()
 
-@router.get("/countries", response_model=CountryPaginatedResponse)
+@router.get("/countries", response_model=CountryPaginatedResponse,
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_countries(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -37,7 +39,8 @@ async def read_countries(
     items, total = await MastersRepository.get_countries_paginated(db, skip, limit, search, active)
     return {"total": total, "skip": skip, "limit": limit, "items": items}
 
-@router.get("/departments", response_model=DepartmentPaginatedResponse)
+@router.get("/departments", response_model=DepartmentPaginatedResponse,
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_departments(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -51,7 +54,8 @@ async def read_departments(
     items, total = await MastersRepository.get_departments_paginated(db, country_id, skip, limit, search)
     return {"total": total, "skip": skip, "limit": limit, "items": items}
 
-@router.get("/cities", response_model=CityPaginatedResponse)
+@router.get("/cities", response_model=CityPaginatedResponse,
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_cities(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -65,30 +69,36 @@ async def read_cities(
     items, total = await MastersRepository.get_cities_paginated(db, department_id, skip, limit, search)
     return {"total": total, "skip": skip, "limit": limit, "items": items}
 
-@router.get("/cities/{city_id}", response_model=CityResponse)
+@router.get("/cities/{city_id}", response_model=CityResponse,
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_city(city_id: int, db: AsyncSession = Depends(get_db)):
     """
     Endpoint para obtener una ciudad por su ID.
     """
     return await crud.get_item_by_id(db, City, city_id)
 
-@router.get("/document-types", response_model=List[DocumentTypeResponse])
+@router.get("/document-types", response_model=List[DocumentTypeResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_document_types(db: AsyncSession = Depends(get_db)):
     return await get_document_types.execute(db)
 
-@router.get("/sex-types", response_model=List[SexTypeResponse])
+@router.get("/sex-types", response_model=List[SexTypeResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_sex_types(db: AsyncSession = Depends(get_db)):
     return await get_sex_types.execute(db)
 
-@router.get("/afiliation-types", response_model=List[AfiliationTypeResponse])
+@router.get("/afiliation-types", response_model=List[AfiliationTypeResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_afiliation_types(db: AsyncSession = Depends(get_db)):
     return await get_afiliation_types.execute(db)
 
-@router.get("/regimes", response_model=List[RegimeResponse])
+@router.get("/regimes", response_model=List[RegimeResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_regimes(db: AsyncSession = Depends(get_db)):
     return await get_regimes.execute(db)
 
-@router.get("/services", response_model=ServicePaginatedResponse)
+@router.get("/services", response_model=ServicePaginatedResponse,
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_services(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -102,37 +112,45 @@ async def read_services(
     items, total = await MastersRepository.get_services_paginated(db, skip, limit, search, active)
     return {"total": total, "skip": skip, "limit": limit, "items": items}
 
-@router.get("/type-liabilities", response_model=List[TypeLiabilityResponse])
+@router.get("/type-liabilities", response_model=List[TypeLiabilityResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_type_liabilities(db: AsyncSession = Depends(get_db)):
     return await get_type_liabilities.execute(db)
 
-@router.get("/classifications", response_model=List[ClassificationResponse])
+@router.get("/classifications", response_model=List[ClassificationResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_classifications(db: AsyncSession = Depends(get_db)):
     return await get_classifications.execute(db)
 
 # --- Techniques ---
-@router.post("/techniques", response_model=TechniqueResponse)
+@router.post("/techniques", response_model=TechniqueResponse,
+             dependencies=[Depends(require_permission("Masters:CreateTechnique"))])
 async def create_technique(data: TechniqueCreate, db: AsyncSession = Depends(get_db)):
     return await crud.create_item(db, Technique, data.model_dump())
 
-@router.get("/techniques", response_model=List[TechniqueResponse])
+@router.get("/techniques", response_model=List[TechniqueResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_techniques(db: AsyncSession = Depends(get_db)):
     return await crud.get_items(db, Technique)
 
-@router.patch("/techniques/{id}", response_model=TechniqueResponse)
+@router.patch("/techniques/{id}", response_model=TechniqueResponse,
+              dependencies=[Depends(require_permission("Masters:UpdateTechnique"))])
 async def update_technique(id: int, data: TechniqueUpdate, db: AsyncSession = Depends(get_db)):
     return await crud.update_item(db, Technique, id, data.model_dump(exclude_unset=True))
 
 # --- Work Groups ---
-@router.post("/work-groups", response_model=WorkGroupResponse)
+@router.post("/work-groups", response_model=WorkGroupResponse,
+             dependencies=[Depends(require_permission("Masters:CreateWorkGroup"))])
 async def create_work_group(data: WorkGroupCreate, db: AsyncSession = Depends(get_db)):
     return await crud.create_item(db, WorkGroup, data.model_dump())
 
-@router.get("/work-groups", response_model=List[WorkGroupResponse])
+@router.get("/work-groups", response_model=List[WorkGroupResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_work_groups(db: AsyncSession = Depends(get_db)):
     return await crud.get_items(db, WorkGroup)
 
-@router.patch("/work-groups/{id}", response_model=WorkGroupResponse)
+@router.patch("/work-groups/{id}", response_model=WorkGroupResponse,
+              dependencies=[Depends(require_permission("Masters:UpdateWorkGroup"))])
 async def update_work_group(id: int, data: WorkGroupUpdate, db: AsyncSession = Depends(get_db)):
     # En Work_groups la PK es wg_id, pero nuestro crud genérico usa db.get(model, id)
     # Si el modelo tiene una PK distinta a 'id', debemos manejarlo.
@@ -140,20 +158,24 @@ async def update_work_group(id: int, data: WorkGroupUpdate, db: AsyncSession = D
     return await crud.update_item(db, WorkGroup, id, data.model_dump(exclude_unset=True))
 
 # --- Referral Locations ---
-@router.post("/referral-locations", response_model=ReferralLocationResponse)
+@router.post("/referral-locations", response_model=ReferralLocationResponse,
+             dependencies=[Depends(require_permission("Masters:CreateReferralLocation"))])
 async def create_referral_location(data: ReferralLocationCreate, db: AsyncSession = Depends(get_db)):
     return await crud.create_item(db, ReferralLocation, data.model_dump())
 
-@router.get("/referral-locations", response_model=List[ReferralLocationResponse])
+@router.get("/referral-locations", response_model=List[ReferralLocationResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_referral_locations(db: AsyncSession = Depends(get_db)):
     return await crud.get_items(db, ReferralLocation)
 
-@router.patch("/referral-locations/{id}", response_model=ReferralLocationResponse)
+@router.patch("/referral-locations/{id}", response_model=ReferralLocationResponse,
+              dependencies=[Depends(require_permission("Masters:UpdateReferralLocation"))])
 async def update_referral_location(id: int, data: ReferralLocationUpdate, db: AsyncSession = Depends(get_db)):
     return await crud.update_item(db, ReferralLocation, id, data.model_dump(exclude_unset=True))
 
 # --- Diagnoses ---
-@router.get("/diagnoses", response_model=DiagnosisPaginatedResponse)
+@router.get("/diagnoses", response_model=DiagnosisPaginatedResponse,
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_diagnoses(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -168,15 +190,18 @@ async def read_diagnoses(
     items, total = await MastersRepository.get_diagnoses_paginated(db, skip, limit, code, description, search)
     return {"total": total, "skip": skip, "limit": limit, "items": items}
 
-@router.get("/diagnoses/{id}", response_model=DiagnosisResponse)
+@router.get("/diagnoses/{id}", response_model=DiagnosisResponse,
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_diagnosis(id: int, db: AsyncSession = Depends(get_db)):
     return await crud.get_item_by_id(db, Diagnosis, id)
 
 # --- Schooling ---
-@router.get("/schooling", response_model=List[SchoolingResponse])
+@router.get("/schooling", response_model=List[SchoolingResponse],
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_schoolings(db: AsyncSession = Depends(get_db)):
     return await crud.get_items(db, Schooling)
 
-@router.get("/schooling/{id}", response_model=SchoolingResponse)
+@router.get("/schooling/{id}", response_model=SchoolingResponse,
+            dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_schooling(id: int, db: AsyncSession = Depends(get_db)):
     return await crud.get_item_by_id(db, Schooling, id)

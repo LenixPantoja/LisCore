@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.orders.infrastructure.repository import OrderRepository
@@ -7,8 +8,15 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
 
-from app.shared.utils.range_evaluator import evaluate_reference_range
+from app.shared.utils.range_evaluator import (
+    evaluate_reference_range,
+    bulk_fetch_ranges,
+    evaluate_reference_range_sync,
+)
 from utils.minio_client import get_graphic_url
+from app.domains.testslabs.infrastructure.testslab_format_complete_repository import (
+    TestslabFormatCompleteRepository,
+)
 
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_DETAIL_STATE_INGRESADO
@@ -70,13 +78,17 @@ async def create_order(db: AsyncSession, data: dict):
         data["o_number"] = await generate_order_number(db, data.get("o_date"))
         # Estado inicial de la orden: Ingresada
         data["o_order_state"] = ORDER_STATE_INGRESADA
+        data["o_cancelled"] = 0
 
         order = await OrderRepository.create(db, data)
         await db.flush() # Obtenemos o_id sin confirmar la transacción todavía        
         # Diccionario para evitar duplicar tipos de muestra en una misma orden
-        unique_sample_types = set()
+        # st_sufix → (first_st_id, set_of_st_ids) - agrupa por sufijo
+        sample_suffix_map: dict[int, tuple[int, set[int]]] = {}
         # Mapa study_id → primer od_id creado (para InvoiceDetail)
         study_od_map: dict[int, int] = {}
+        # Pruebas ya registradas en la orden (evita duplicados entre estudios)
+        seen_test_ids: set[int] = set()
 
         for study_id in studies_ids:
             # 2. Consultar StudiesTestDetail para obtener las pruebas y tipos de muestra
@@ -94,12 +106,13 @@ async def create_order(db: AsyncSession, data: dict):
                     detail=f"El estudio con ID {study_id} no tiene exámenes configurados en StudiesTestDetail."
                 )
 
-            # 3. Crear un OrdersDetail y un Laboratory por cada prueba del estudio
+            # 3. Crear un OrdersDetail por estudio y un Laboratory por prueba única
             for link in test_links:
                 order_detail = OrdersDetail(
                     od_order_id=order.o_id,
                     od_study_id=study_id,
-                    od_state=ORDER_DETAIL_STATE_INGRESADO
+                    od_state=ORDER_DETAIL_STATE_INGRESADO,
+                    od_cancelled=0
                 )
                 db.add(order_detail)
                 await db.flush()  # Para obtener od_id
@@ -108,23 +121,34 @@ async def create_order(db: AsyncSession, data: dict):
                 if study_id not in study_od_map:
                     study_od_map[study_id] = order_detail.od_id
 
-                blank_result = Laboratory(
-                    l_order_detail_id=order_detail.od_id,
-                    l_test_id=link.tests_id,
-                    l_state=LABORATORY_STATE_SIN_RESULTADOS
-                )
-                db.add(blank_result)
+                # Crear el registro de laboratorio solo si la prueba no existe ya en esta orden
+                if link.tests_id not in seen_test_ids:
+                    blank_result = Laboratory(
+                        l_order_detail_id=order_detail.od_id,
+                        l_test_id=link.tests_id,
+                        l_state=LABORATORY_STATE_SIN_RESULTADOS
+                    )
+                    db.add(blank_result)
+                    seen_test_ids.add(link.tests_id)
 
-                # 4. Recolectar tipos de muestra para SamplesOrder
+                # 4. Recolectar tipos de muestra para SamplesOrder agrupando por st_sufix
+                #    Si dos SampleTypes tienen el mismo sufijo, solo se crea un SamplesOrder
                 if link.test and link.test.samples_type_id:
-                    unique_sample_types.add(link.test.samples_type_id)
+                    from app.domains.samples.domain.models import SampleType
+                    st_obj = await db.get(SampleType, link.test.samples_type_id)
+                    st_sufix = (st_obj.st_sufix if st_obj and st_obj.st_sufix is not None else link.test.samples_type_id)
+                    if st_sufix not in sample_suffix_map:
+                        sample_suffix_map[st_sufix] = (link.test.samples_type_id, set())
+                    sample_suffix_map[st_sufix][1].add(link.test.samples_type_id)
 
         # 6. Generar automáticamente registros de muestras (SamplesOrder)
-        for st_id in unique_sample_types:
+        #    Se agrupa por sufix: si dos SampleTypes comparten el mismo sufijo,
+        #    solo se crea un registro SamplesOrder (con el primer st_id como FK)
+        for st_sufix, (first_st_id, _all_st_ids) in sample_suffix_map.items():
             sample_order = SamplesOrder(
                 so_order_id=order.o_id,
-                so_sample_type_id=st_id,
-                so_barcode=f"{order.o_number}-{st_id}",
+                so_sample_type_id=first_st_id,
+                so_barcode=f"{order.o_number}{st_sufix}",
                 so_state=SAMPLE_ORDER_STATE_NO_INGRESADA,
                 so_number_studies=len(studies_ids)
             )
@@ -288,6 +312,15 @@ async def create_order(db: AsyncSession, data: dict):
         
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error de integridad al crear la orden.")
 
+
+async def cancel_order_studies(db: AsyncSession, o_id: int, study_ids: list[int]) -> dict:
+    """Cancels specific studies from an order and cleans up related records."""
+    result = await OrderRepository.cancel_studies(db, o_id, study_ids)
+    if result["not_found"]:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada.")
+    return result
+
+
 async def list_orders(
     db: AsyncSession,
     skip: int = 0,
@@ -350,51 +383,59 @@ async def get_order_details_paginated_by_number(
     order = await OrderRepository.get_order_by_number(db, o_number)
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
-        
-    # 2. Consultar laboratorios paginados
+
+    # 2. Consultar laboratorios y pruebas paginados
     labs, total_labs = await OrderRepository.get_laboratories_paginated(db, order.o_id, skip_labs, limit_labs)
-    
-    # 3. Consultar pruebas (TestsLab) paginadas
     tests, total_tests = await OrderRepository.get_tests_paginated(db, order.o_id, skip_tests, limit_tests)
 
-    # 4. Enriquecer laboratorios con rangos de referencia
+    # 3. Enriquecer laboratorios con rangos de referencia
+    #    Se hace un único batch query para todos los test_ids en vez de N queries individuales.
     patient = order.patient
     patient_dob = getattr(patient, "pt_date_of_birth", None) if patient else None
     patient_sex = getattr(patient, "pt_sex_type", None) if patient else None
 
+    test_ids_with_result = list({
+        lab.l_test_id for lab in labs
+        if lab.l_test_id and (lab.l_result_num is not None or lab.l_result)
+    })
+    ranges_by_test = await bulk_fetch_ranges(db, test_ids_with_result)
+
+    # Batch-fetch formats for all test_ids present in labs (with or without result)
+    all_test_ids = list({lab.l_test_id for lab in labs if lab.l_test_id})
+    formats_by_test = await TestslabFormatCompleteRepository.get_formats_by_testslab_ids(db, all_test_ids)
+
     enriched_labs = []
     for lab in labs:
         range_type, ref_min, ref_max = (None, None, None)
-        # Obtener valor numérico y textual para evaluación
         result_num = None
         result_text = None
+
         if lab.l_result_num is not None:
             result_num = float(lab.l_result_num)
         elif lab.l_result:
-            # Intentar parsear como número (fallback por si l_result_num no está poblado)
             try:
                 result_num = float(str(lab.l_result).replace(",", "."))
             except (ValueError, AttributeError):
-                # Es texto puro
                 result_text = lab.l_result
 
         if lab.l_test_id and (result_num is not None or result_text):
-            range_type, ref_min, ref_max = await evaluate_reference_range(
-                db,
-                lab.l_test_id,
-                result_num,
-                patient_dob,
-                patient_sex,
-                result_text=result_text,
+            test_ranges = ranges_by_test.get(lab.l_test_id, [])
+            range_type, ref_min, ref_max = evaluate_reference_range_sync(
+                test_ranges, result_num, patient_dob, patient_sex, result_text=result_text
             )
-        # Attach campos extra como atributos transitorios para que Pydantic los serialice
+
         lab.__dict__["range_type"] = range_type
         lab.__dict__["value_range_reference_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["value_range_reference_max"] = float(ref_max) if ref_max is not None else None
 
-        # Resolver imagen gráfica desde MinIO
         if lab.l_result_graphic:
             lab.l_result_graphic = get_graphic_url(lab.l_result_graphic)
+
+        lab.__dict__["formats_complete"] = [
+            link.format_complete.fc_name
+            for link in formats_by_test.get(lab.l_test_id, [])
+            if link.format_complete
+        ]
 
         enriched_labs.append(lab)
 
@@ -431,63 +472,129 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     if order.o_headquarter_id:
         headquarter = await db.get(Headquarter, order.o_headquarter_id)
 
-    # Obtener los od_id de esta orden para buscar los valores en InvoicesDetail
-    od_ids = [lab.order_detail.od_id for lab in labs if lab.order_detail]
+    # Consultar InvoiceDetail directamente por orden, sin depender de labs
     study_invoice_value: dict[int, object] = {}
     invoice_summary: dict = {}
 
-    if od_ids:
-        inv_detail_result = await db.execute(
-            select(InvoiceDetail).where(InvoiceDetail.invd_order_detail_id.in_(od_ids))
+    inv_detail_result = await db.execute(
+        select(InvoiceDetail)
+        .join(OrdersDetail, InvoiceDetail.invd_order_detail_id == OrdersDetail.od_id)
+        .where(OrdersDetail.od_order_id == o_id)
+    )
+    inv_details = inv_detail_result.scalars().all()
+
+    for inv_det in inv_details:
+        if inv_det.invd_study_id and inv_det.invd_study_id not in study_invoice_value:
+            study_invoice_value[inv_det.invd_study_id] = inv_det.invd_value
+
+    # Obtener el encabezado de la factura directamente desde Invoices
+    invoice_ids = list({d.invd_invoice_id for d in inv_details if d.invd_invoice_id})
+    if invoice_ids:
+        inv_result = await db.execute(
+            select(Invoice).where(Invoice.inv_id.in_(invoice_ids)).limit(1)
         )
-        inv_details = inv_detail_result.scalars().all()
-
-        for inv_det in inv_details:
-            if inv_det.invd_study_id and inv_det.invd_study_id not in study_invoice_value:
-                study_invoice_value[inv_det.invd_study_id] = inv_det.invd_value
-
-        # Obtener el encabezado de la factura para el resumen
-        invoice_ids = list({d.invd_invoice_id for d in inv_details if d.invd_invoice_id})
-        if invoice_ids:
-            inv_result = await db.execute(
-                select(Invoice).where(Invoice.inv_id.in_(invoice_ids)).limit(1)
-            )
-            inv = inv_result.scalars().first()
-            if inv:
-                invoice_summary = {
-                    "inv_id": inv.inv_id,
-                    "inv_number": inv.inv_number,
-                    "inv_subtotal": inv.inv_subtotal,
-                    "inv_tax": inv.inv_tax,
-                    "inv_total": inv.inv_total,
-                    "inv_state": inv.inv_state,
-                    "inv_state_name": INVOICE_STATES.get(inv.inv_state) if inv.inv_state is not None else None,
-                    "inv_type": inv.inv_type,
-                    "inv_type_name": INVOICE_TYPES.get(inv.inv_type) if inv.inv_type is not None else None,
-                    "inv_sub_type_invoice": inv.inv_sub_type_invoice,
-                    "inv_sub_type_name": INVOICE_SUB_TYPES.get(inv.inv_sub_type_invoice) if inv.inv_sub_type_invoice is not None else None,
-                }
+        inv = inv_result.scalars().first()
+        if inv:
+            invoice_summary = {
+                "inv_id": inv.inv_id,
+                "inv_number": inv.inv_number,
+                "inv_subtotal": float(inv.inv_subtotal) if inv.inv_subtotal is not None else None,
+                "inv_tax": float(inv.inv_tax) if inv.inv_tax is not None else None,
+                "inv_total": float(inv.inv_total) if inv.inv_total is not None else None,
+                "inv_state": inv.inv_state,
+                "inv_state_name": INVOICE_STATES.get(inv.inv_state) if inv.inv_state is not None else None,
+                "inv_type": inv.inv_type,
+                "inv_type_name": INVOICE_TYPES.get(inv.inv_type) if inv.inv_type is not None else None,
+                "inv_sub_type_invoice": inv.inv_sub_type_invoice,
+                "inv_sub_type_name": INVOICE_SUB_TYPES.get(inv.inv_sub_type_invoice) if inv.inv_sub_type_invoice is not None else None,
+            }
 
     # Agrupar laboratories por estudio y obtener study_ids únicos
     from collections import defaultdict
     study_map = {}
     study_order = []
     unique_study_ids_in_order: list[int] = []
-    for lab in labs:
-        study = lab.order_detail.study if lab.order_detail else None
+
+    # Pre-populate study_map from all OrdersDetails ordered by study order_of_print
+    seen_od_study_ids: set[int] = set()
+    sorted_details = sorted(
+        order.details,
+        key=lambda d: (d.study.order_of_print if d.study and d.study.order_of_print is not None else float("inf")),
+    )
+    for detail in sorted_details:
+        study = detail.study
         study_id = study.id if study else 0
-        if study_id not in study_map:
+        if study_id not in seen_od_study_ids:
+            seen_od_study_ids.add(study_id)
+            od_cancelled = detail.od_cancelled if detail.od_cancelled is not None else 0
             study_map[study_id] = {
                 "study_id": study_id,
                 "study_name": study.name if study else None,
                 "study_code": study.code if study else None,
                 "study_value": study_invoice_value.get(study_id),
+                "od_cancelled": od_cancelled,
                 "laboratories": [],
             }
             study_order.append(study_id)
             if study_id and study_invoice_value.get(study_id) is None:
                 unique_study_ids_in_order.append(study_id)
-        study_map[study_id]["laboratories"].append(lab)
+
+    # Attach laboratories to their study
+    for lab in labs:
+        study = lab.order_detail.study if lab.order_detail else None
+        study_id = study.id if study else 0
+        if study_id in study_map:
+            study_map[study_id]["laboratories"].append(lab)
+
+    # Load required test config per study to compute study state
+    all_study_ids = [sid for sid in study_order if sid]
+    required_tests_by_study: dict[int, set[int]] = {}
+    if all_study_ids:
+        std_result = await db.execute(
+            select(StudiesTestDetail).where(
+                StudiesTestDetail.studies_id.in_(all_study_ids),
+                StudiesTestDetail.is_required == True,
+            )
+        )
+        for std in std_result.scalars().all():
+            required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
+
+    # Compute state per study based on labs with required tests
+    STUDY_STATE_PENDIENTE = "Pendiente"
+    STUDY_STATE_CON_RESULTADOS = "Con Resultados"
+    STUDY_STATE_SIN_RESULTADOS = "Sin Resultados"
+    STATES_WITH_RESULTS = {2, 3, 4}  # Con Resultados, Validada, Impreso
+
+    for study_id, entry in study_map.items():
+        required_test_ids = required_tests_by_study.get(study_id, set())
+        study_labs = entry["laboratories"]
+        labs_by_test: dict[int, int] = {
+            lab.l_test_id: lab.l_state for lab in study_labs if lab.l_test_id is not None
+        }
+
+        if not required_test_ids:
+            # No required tests defined: use lab states as-is
+            if not study_labs:
+                entry["study_state"] = STUDY_STATE_SIN_RESULTADOS
+            elif all(labs_by_test.get(tid, 0) in STATES_WITH_RESULTS for tid in labs_by_test):
+                entry["study_state"] = STUDY_STATE_CON_RESULTADOS
+            else:
+                entry["study_state"] = STUDY_STATE_PENDIENTE
+        else:
+            # Only required tests determine the state
+            required_with_results = all(
+                labs_by_test.get(tid, 0) in STATES_WITH_RESULTS
+                for tid in required_test_ids
+            )
+            if required_with_results:
+                entry["study_state"] = STUDY_STATE_CON_RESULTADOS
+            elif any(
+                labs_by_test.get(tid, 0) not in STATES_WITH_RESULTS
+                for tid in required_test_ids
+            ):
+                entry["study_state"] = STUDY_STATE_PENDIENTE
+            else:
+                entry["study_state"] = STUDY_STATE_SIN_RESULTADOS
 
     # Fallback: si algún estudio no tiene valor desde InvoicesDetail, buscarlo en TariffsDetail
     tariff_id = order.o_tariff_id if hasattr(order, "o_tariff_id") else None
@@ -506,8 +613,7 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
         "order": order,
         "patient": order.patient,
         "headquarter": headquarter,
-        "laboratories_by_study": [study_map[sid] for sid in study_order],
-        "tests": tests,
+        "studies": [study_map[sid] for sid in study_order],
         "samples": samples,
         "invoice": invoice_summary if invoice_summary else None,
     }
@@ -549,6 +655,19 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
         added_studies: list[int] = []
         skipped_studies: list[int] = []
         invalid_studies: list[int] = []
+        study_od_map: dict[int, int] = {}
+
+        # Buscar la factura existente asociada a la orden
+        invoice: Invoice | None = None
+        existing_inv_detail_result = await db.execute(
+            select(InvoiceDetail)
+            .join(OrdersDetail, InvoiceDetail.invd_order_detail_id == OrdersDetail.od_id)
+            .where(OrdersDetail.od_order_id == o_id)
+            .limit(1)
+        )
+        existing_inv_detail = existing_inv_detail_result.scalars().first()
+        if existing_inv_detail:
+            invoice = await db.get(Invoice, existing_inv_detail.invd_invoice_id)
 
         if studies_to_add:
             # Tarifa efectiva: la del request (ya aplicada) o la de la orden
@@ -598,6 +717,10 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
                     db.add(order_detail)
                     await db.flush()
 
+                    # Registrar el primer od_id de este estudio para InvoiceDetail
+                    if study_id not in study_od_map:
+                        study_od_map[study_id] = order_detail.od_id
+
                     blank_result = Laboratory(
                         l_order_detail_id=order_detail.od_id,
                         l_test_id=link.tests_id,
@@ -608,25 +731,68 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
                     if link.test and link.test.samples_type_id:
                         new_sample_types.add(link.test.samples_type_id)
 
-                # Agregar muestras nuevas si el tipo no existe ya en la orden
-                for st_id in new_sample_types:
-                    from app.domains.samples.domain.models import SamplesOrder
-                    existing_sample = await db.execute(
-                        select(SamplesOrder).where(
-                            SamplesOrder.so_order_id == o_id,
-                            SamplesOrder.so_sample_type_id == st_id,
-                        )
+                # Agregar muestras nuevas si el sufijo no existe ya en la orden
+                # (dos SampleTypes con el mismo sufijo comparten el mismo barcode)
+                seen_suffixes: set[int] = set()
+                existing_samples = await db.execute(
+                    select(SamplesOrder).where(
+                        SamplesOrder.so_order_id == o_id,
                     )
-                    if not existing_sample.scalar_one_or_none():
+                )
+                for existing in existing_samples.scalars().all():
+                    st_type = existing.sample_type
+                    if st_type and st_type.st_sufix is not None:
+                        seen_suffixes.add(st_type.st_sufix)
+                    elif st_type:
+                        seen_suffixes.add(st_type.st_id)
+
+                from app.domains.samples.domain.models import SampleType
+                for st_id in new_sample_types:
+                    sample_type = await db.get(SampleType, st_id)
+                    st_sufix = (sample_type.st_sufix if sample_type and sample_type.st_sufix is not None else st_id)
+                    if st_sufix not in seen_suffixes:
+                        seen_suffixes.add(st_sufix)
                         db.add(SamplesOrder(
                             so_order_id=o_id,
                             so_sample_type_id=st_id,
-                            so_barcode=f"{order.o_number}-{st_id}",
+                            so_barcode=f"{order.o_number}{st_sufix}",
                             so_state=1,
                         ))
 
                 added_studies.append(study_id)
                 existing_study_ids.add(study_id)
+
+        # 4. Crear InvoiceDetail y actualizar totales de la factura para nuevos estudios
+        if added_studies and invoice:
+            effective_tariff = data.get("o_tariff_id") or order.o_tariff_id
+            additional = Decimal(0)
+            for study_id in added_studies:
+                td_value = None
+                if effective_tariff:
+                    td_res = await db.execute(
+                        select(TariffDetail).filter(
+                            TariffDetail.td_tariff_id == effective_tariff,
+                            TariffDetail.td_studie_id == study_id,
+                        )
+                    )
+                    td = td_res.scalars().first()
+                    if td:
+                        td_value = td.td_value
+                inv_det = InvoiceDetail(
+                    invd_invoice_id=invoice.inv_id,
+                    invd_order_detail_id=study_od_map.get(study_id),
+                    invd_study_id=study_id,
+                    invd_value=td_value,
+                    invd_discount=None,
+                    invd_total=td_value,
+                    invd_created_by=data.get("o_AppUser_id"),
+                )
+                db.add(inv_det)
+                if td_value is not None:
+                    additional += Decimal(str(td_value))
+            if additional:
+                invoice.inv_subtotal = (Decimal(str(invoice.inv_subtotal)) if invoice.inv_subtotal else Decimal(0)) + additional
+                invoice.inv_total = (Decimal(str(invoice.inv_total)) if invoice.inv_total else Decimal(0)) + additional
 
         await db.commit()
 
@@ -691,6 +857,7 @@ async def get_grafico_evolutivo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prueba de laboratorio no encontrada.")
 
     # 3. Consultar histórico: Orders → OrdersDetails → Laboratories para este paciente+test
+    #    Solo órdenes con o_order_state in (3,4) y laboratorios con l_state in (2,3,4)
     stmt = (
         select(Laboratory, Order)
         .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
@@ -698,6 +865,8 @@ async def get_grafico_evolutivo(
         .where(
             Order.o_his_id == patient_id,
             Laboratory.l_test_id == test_id,
+            Order.o_order_state.in_([3, 4]),
+            Laboratory.l_state.in_([2, 3, 4]),
         )
         .order_by(Order.o_date.asc(), Order.o_id.asc())
     )

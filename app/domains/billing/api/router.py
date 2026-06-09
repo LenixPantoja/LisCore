@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.billing.api.schemas import (
     InvoiceCreate,
     InvoiceUpdate,
@@ -14,12 +15,14 @@ from app.domains.billing.application.use_cases import invoice_use_cases as use_c
 router = APIRouter()
 
 
-@router.post("/", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED,
+             dependencies=[Depends(require_permission("Billing:Create"))])
 async def create(data: InvoiceCreate, db: AsyncSession = Depends(get_db)):
     return await use_cases.create_invoice(db, data.model_dump())
 
 
-@router.get("/", response_model=InvoicePaginatedResponse)
+@router.get("/", response_model=InvoicePaginatedResponse,
+            dependencies=[Depends(require_permission("Billing:List"))])
 async def list_all(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -29,16 +32,19 @@ async def list_all(
     return await use_cases.list_invoices(db, skip, limit, search)
 
 
-@router.get("/{id}", response_model=InvoiceResponse)
+@router.get("/{id}", response_model=InvoiceResponse,
+            dependencies=[Depends(require_permission("Billing:GetOne"))])
 async def get_one(id: int, db: AsyncSession = Depends(get_db)):
     return await use_cases.get_invoice_by_id(db, id)
 
 
-@router.patch("/{id}", response_model=InvoiceResponse)
+@router.patch("/{id}", response_model=InvoiceResponse,
+              dependencies=[Depends(require_permission("Billing:Update"))])
 async def update(id: int, data: InvoiceUpdate, db: AsyncSession = Depends(get_db)):
     return await use_cases.update_invoice(db, id, data.model_dump(exclude_unset=True))
 
 
-@router.delete("/{id}", status_code=status.HTTP_200_OK)
+@router.delete("/{id}", status_code=status.HTTP_200_OK,
+               dependencies=[Depends(require_permission("Billing:Delete"))])
 async def delete(id: int, db: AsyncSession = Depends(get_db)):
     return await use_cases.delete_invoice(db, id)

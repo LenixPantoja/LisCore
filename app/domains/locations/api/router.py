@@ -3,12 +3,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
+from app.core.dependencies import require_permission
 from app.domains.locations.api.schemas import LocationResponse, LocationPaginatedResponse
 from app.domains.locations.application.use_cases import location_use_cases as use_cases
 
 router = APIRouter()
 
-@router.get("/", response_model=LocationPaginatedResponse)
+@router.get("/", response_model=LocationPaginatedResponse,
+            dependencies=[Depends(require_permission("Locations:List"))])
 async def list_locations(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
@@ -26,7 +28,8 @@ async def list_locations(
     """
     return await use_cases.list_locations(db, skip, limit, search, active)
 
-@router.get("/{loc_id}", response_model=LocationResponse)
+@router.get("/{loc_id}", response_model=LocationResponse,
+            dependencies=[Depends(require_permission("Locations:GetOne"))])
 async def get_location(loc_id: int, db: AsyncSession = Depends(get_db)):
     """
     Get a location by ID.

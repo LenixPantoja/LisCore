@@ -1,12 +1,20 @@
 from pydantic import BaseModel, model_validator
-from typing import Optional, List
+from typing import Optional, List, Any
+from datetime import datetime
+
+
+class PreliminaryInput(BaseModel):
+    """Resultado preliminar individual."""
+    lp_result: Optional[str] = None
+
 
 class LaboratoryBulkUpdateItem(BaseModel):
     l_id: int
     l_result: Optional[str] = None
-    l_result_comp: Optional[str] = None
+    l_result_comp: Optional[Any] = None
     l_nota_validation: Optional[str] = None
     l_user_validation_id: Optional[int] = None
+    preliminaries: Optional[List[PreliminaryInput]] = None
 
 class LaboratoryBulkUpdateResponse(BaseModel):
     success: bool

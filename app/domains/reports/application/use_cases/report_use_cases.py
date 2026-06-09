@@ -8,11 +8,13 @@ from sqlalchemy.orm import selectinload
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA
-from app.domains.studieslab.domain.models import StudiesLab
+from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.enterprises.domain.models import Enterprise
+from app.domains.patients.domain.models import Patient
 from app.domains.reports.infrastructure.pdf_generator import (
     build_laboratory_pdf,
     pdf_to_base64,
+    merge_pdfs,
     _full_name,
 )
 from app.shared.utils.range_evaluator import evaluate_reference_range
@@ -24,7 +26,7 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         select(Order)
         .filter(Order.o_id == order_id)
         .options(
-            selectinload(Order.patient),
+            selectinload(Order.patient).selectinload(Patient.city),
             selectinload(Order.enterprise).selectinload(Enterprise.regimen),
             selectinload(Order.enterprise).selectinload(Enterprise.classification),
             selectinload(Order.enterprise).selectinload(Enterprise.document_type),
@@ -46,14 +48,25 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
     labs_result = await db.execute(
         select(Laboratory)
         .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+        .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+        .outerjoin(
+            StudiesTestDetail,
+            (StudiesTestDetail.studies_id == OrdersDetail.od_study_id)
+            & (StudiesTestDetail.tests_id == Laboratory.l_test_id),
+        )
         .filter(OrdersDetail.od_order_id == order_id)
         .options(
             selectinload(Laboratory.test),
+            selectinload(Laboratory.user_validation),
             selectinload(Laboratory.order_detail)
             .selectinload(OrdersDetail.study)
             .selectinload(StudiesLab.work_group),
         )
-        .order_by(Laboratory.l_id)
+        .order_by(
+            StudiesLab.order_of_print.nulls_last(),
+            StudiesTestDetail.order_print.nulls_last(),
+            Laboratory.l_id,
+        )
     )
     laboratories = labs_result.scalars().all()
 
@@ -110,8 +123,59 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         lab.__dict__["_ref_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["_ref_max"] = float(ref_max) if ref_max is not None else None
 
-    # 6. Generar PDF
-    pdf_bytes = build_laboratory_pdf(order, patient, validated_labs)
+    # 6. Construir mapa de firmas: {(wg_name, study_name): [{user_name, usr_Signature}]}
+    signatures_map: dict[tuple[str, str], list[dict]] = {}
+    _seen_sig: set[tuple[str, str, int]] = set()
+    for lab in validated_labs:
+        if not lab.l_user_validation_id or not lab.user_validation:
+            continue
+        user = lab.user_validation
+        _study_name = "Sin estudio asignado"
+        _wg_name = "Sin grupo"
+        if lab.order_detail and lab.order_detail.study:
+            _study = lab.order_detail.study
+            _study_name = _study.name
+            if _study.work_group:
+                _wg_name = _study.work_group.wg_name
+        _key = (_wg_name, _study_name)
+        _user_key = (_wg_name, _study_name, user.usr_id)
+        if _user_key not in _seen_sig:
+            _seen_sig.add(_user_key)
+            _user_name = " ".join(filter(None, [
+                user.usr_first_name,
+                user.usr_middle_name or None,
+                user.usr_last_name,
+                user.usr_second_last_name or None,
+            ])).upper()
+            signatures_map.setdefault(_key, []).append({
+                "user_name": _user_name,
+                "usr_Signature": user.usr_Signature,
+                "usr_document_number": user.usr_document_number or "",
+            })
+
+    # 7. Cargar PDFs anexos
+    from app.domains.annexes.domain.models import AnnexedResult
+    from utils.minio_client import download_annexed_pdf
+
+    annex_result = await db.execute(
+        select(AnnexedResult)
+        .where(AnnexedResult.ar_order_id == order_id)
+        .order_by(AnnexedResult.ar_created_at.asc())
+    )
+    annexed_records = annex_result.scalars().all()
+
+    annex_pdfs: list[bytes] = []
+    for ann in annexed_records:
+        pdf_data = download_annexed_pdf(ann.ar_file)
+        if pdf_data:
+            annex_pdfs.append(pdf_data)
+
+    # 8. Generar PDF principal
+    pdf_bytes = build_laboratory_pdf(order, patient, validated_labs, signatures_map)
+
+    # 9. Anexar PDFs al final si existen
+    if annex_pdfs:
+        pdf_bytes = merge_pdfs(pdf_bytes, annex_pdfs)
     b64 = pdf_to_base64(pdf_bytes)
 
     # 7. Nombre de archivo sugerido

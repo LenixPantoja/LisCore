@@ -45,8 +45,47 @@ class TestsLab(Base):
     sample_type = relationship("SampleType", foreign_keys=[samples_type_id])
     ranges_references = relationship("RangeReference", back_populates="test", cascade="all, delete-orphan")
 
+    formats = relationship(
+        "TestslabFormatComplete",
+        back_populates="testslab",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self):
         return f"<TestsLab(id={self.id}, name='{self.name}')>"
+
+
+class FormatComplete(Base):
+    __tablename__ = "FormatComplete"
+
+    fc_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    fc_name = Column(String(200), nullable=False)
+    fc_description = Column(Text, nullable=True)
+    fc_active = Column(Boolean, nullable=False, default=True)
+    fc_created_at = Column(DateTime, default=get_bogota_now)
+    fc_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
+
+    testslabs = relationship("TestslabFormatComplete", back_populates="format_complete")
+
+    def __repr__(self):
+        return f"<FormatComplete(id={self.fc_id}, name='{self.fc_name}')>"
+
+
+class TestslabFormatComplete(Base):
+    __tablename__ = "TestslabFormatComplete"
+
+    tfc_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
+    tfc_testslab_id = Column(Integer, ForeignKey("TestsLab.id", ondelete="CASCADE"), nullable=False)
+    tfc_format_complete_id = Column(Integer, ForeignKey("FormatComplete.fc_id", ondelete="CASCADE"), nullable=False)
+    tfc_is_default = Column(Boolean, nullable=False, default=False)
+    tfc_order_index = Column(Integer, nullable=False, default=0)
+    tfc_created_at = Column(DateTime, default=get_bogota_now)
+
+    testslab = relationship("TestsLab", back_populates="formats")
+    format_complete = relationship("FormatComplete", back_populates="testslabs")
+
+    def __repr__(self):
+        return f"<TestslabFormatComplete(testslab={self.tfc_testslab_id}, format={self.tfc_format_complete_id})>"
 
 
 class RangeReference(Base):
