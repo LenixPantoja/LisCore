@@ -65,10 +65,19 @@ class SampleLogPaginatedResponse(BaseModel):
 
 # ── Serotecas ─────────────────────────────────────────────────────────────────
 
+class HeadquarterBasic(BaseModel):
+    id: int
+    name: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+
 class SerotecaCreate(BaseModel):
     s_name: str
     s_description: Optional[str] = None
     s_location_id: Optional[int] = None
+    s_headquarter_id: Optional[int] = None
     s_active: bool = True
 
 
@@ -76,6 +85,7 @@ class SerotecaUpdate(BaseModel):
     s_name: Optional[str] = None
     s_description: Optional[str] = None
     s_location_id: Optional[int] = None
+    s_headquarter_id: Optional[int] = None
     s_active: Optional[bool] = None
 
 
@@ -84,6 +94,9 @@ class SerotecaResponse(BaseModel):
     s_name: str
     s_description: Optional[str]
     s_location_id: Optional[int]
+    s_headquarter_id: Optional[int] = None
+    location: Optional[LocationBasic] = None
+    headquarter: Optional[HeadquarterBasic] = None
     s_active: bool
     s_created_at: Optional[datetime]
     s_updated_at: Optional[datetime]

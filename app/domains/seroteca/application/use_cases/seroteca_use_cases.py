@@ -24,8 +24,11 @@ async def list_serotecas(
     limit: int,
     search: Optional[str],
     active_only: bool,
+    headquarter_id: Optional[int] = None,
 ) -> dict:
-    items, total = await SerotecaRepository.list_paginated(db, skip, limit, search, active_only)
+    items, total = await SerotecaRepository.list_paginated(
+        db, skip, limit, search, active_only, headquarter_id
+    )
     return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 

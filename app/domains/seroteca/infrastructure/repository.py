@@ -51,12 +51,29 @@ class SerotecaRepository:
         item = Seroteca(**data)
         db.add(item)
         await db.commit()
-        await db.refresh(item)
-        return item
+        # Recargar con relaciones eager-loaded para evitar MissingGreenlet
+        result = await db.execute(
+            select(Seroteca)
+            .where(Seroteca.s_id == item.s_id)
+            .options(
+                selectinload(Seroteca.location),
+                selectinload(Seroteca.headquarter),
+            )
+        )
+        return result.scalars().first()
 
     @staticmethod
     async def get_by_id(db: AsyncSession, s_id: int) -> Optional[Seroteca]:
-        return await db.get(Seroteca, s_id)
+        q = (
+            select(Seroteca)
+            .where(Seroteca.s_id == s_id)
+            .options(
+                selectinload(Seroteca.location),
+                selectinload(Seroteca.headquarter),
+            )
+        )
+        result = await db.execute(q)
+        return result.scalars().first()
 
     @staticmethod
     async def list_paginated(
@@ -65,12 +82,18 @@ class SerotecaRepository:
         limit: int = 100,
         search: Optional[str] = None,
         active_only: bool = False,
+        headquarter_id: Optional[int] = None,
     ) -> Tuple[Sequence[Seroteca], int]:
-        q = select(Seroteca)
+        q = select(Seroteca).options(
+            selectinload(Seroteca.location),
+            selectinload(Seroteca.headquarter),
+        )
         if search:
             q = q.where(Seroteca.s_name.ilike(f"%{search}%"))
         if active_only:
             q = q.where(Seroteca.s_active == True)
+        if headquarter_id is not None:
+            q = q.where(Seroteca.s_headquarter_id == headquarter_id)
 
         total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
         rows = (await db.execute(q.offset(skip).limit(limit).order_by(Seroteca.s_name.asc()))).scalars().all()
@@ -85,8 +108,16 @@ class SerotecaRepository:
             setattr(item, k, v)
         item.s_updated_at = get_bogota_now()
         await db.commit()
-        await db.refresh(item)
-        return item
+        # Recargar con relaciones eager-loaded
+        result = await db.execute(
+            select(Seroteca)
+            .where(Seroteca.s_id == s_id)
+            .options(
+                selectinload(Seroteca.location),
+                selectinload(Seroteca.headquarter),
+            )
+        )
+        return result.scalars().first()
 
     @staticmethod
     async def delete(db: AsyncSession, s_id: int) -> bool:

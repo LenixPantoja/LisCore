@@ -85,9 +85,10 @@ async def list_all(
     limit: int = Query(50, ge=1, le=200),
     search: Optional[str] = Query(None),
     active_only: bool = Query(False),
+    headquarter_id: Optional[int] = Query(None, description="Filtrar por ID de sede"),
     db: AsyncSession = Depends(get_db),
 ):
-    return await list_serotecas(db, skip, limit, search, active_only)
+    return await list_serotecas(db, skip, limit, search, active_only, headquarter_id)
 
 
 @router.get(

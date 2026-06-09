@@ -32,11 +32,13 @@ class Seroteca(Base):
     s_name = Column(String(255), nullable=False)
     s_description = Column(Text, nullable=True)
     s_location_id = Column(Integer, ForeignKey("locations.loc_id", ondelete="SET NULL"), nullable=True)
+    s_headquarter_id = Column(Integer, ForeignKey("Headquarters.id", ondelete="SET NULL"), nullable=True)
     s_active = Column(Boolean, default=True, nullable=False)
     s_created_at = Column(DateTime, default=get_bogota_now)
     s_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     location = relationship("Location", foreign_keys=[s_location_id])
+    headquarter = relationship("Headquarter", foreign_keys=[s_headquarter_id])
     racks = relationship("Gradilla", back_populates="seroteca", cascade="all, delete-orphan")
 
 
