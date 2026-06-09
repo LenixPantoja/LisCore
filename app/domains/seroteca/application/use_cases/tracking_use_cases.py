@@ -147,6 +147,14 @@ async def auto_store_in_rack(
     """Auto-assign the sample to the next free position in the rack."""
     sample = await _get_sample_by_barcode(db, barcode)
 
+    # Verificar que el tubo no esté ya almacenado en alguna posición
+    existing = await GradillaPosicionRepository.is_sample_stored(db, sample.so_id)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"La muestra con código de barras '{barcode}' ya está almacenada en la posición {existing.gp_id} (rack {existing.gp_gradilla_id}, fila {existing.gp_row}, col {existing.gp_col}).",
+        )
+
     pos = await GradillaPosicionRepository.get_next_free(db, g_id)
     if not pos:
         raise HTTPException(
@@ -177,6 +185,14 @@ async def manual_store_in_position(
 ) -> dict:
     """Place a sample in a specific rack position."""
     sample = await _get_sample_by_barcode(db, barcode)
+
+    # Verificar que el tubo no esté ya almacenado en alguna posición
+    existing = await GradillaPosicionRepository.is_sample_stored(db, sample.so_id)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"La muestra con código de barras '{barcode}' ya está almacenada en la posición {existing.gp_id} (rack {existing.gp_gradilla_id}, fila {existing.gp_row}, col {existing.gp_col}).",
+        )
 
     pos = await GradillaPosicionRepository.store_sample(db, gp_id, sample.so_id, user_id)
     if not pos:

@@ -145,9 +145,10 @@ async def list_racks_endpoint(
     s_id: int,
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None, description="Buscar por nombre de rack"),
     db: AsyncSession = Depends(get_db),
 ):
-    return await list_racks(db, s_id, skip, limit)
+    return await list_racks(db, s_id, skip, limit, search)
 
 
 @router.get(

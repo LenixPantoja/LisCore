@@ -1,5 +1,5 @@
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, date
 from pydantic import BaseModel, Field, field_serializer, computed_field
 
 
@@ -127,6 +127,29 @@ class GradillaUpdate(BaseModel):
     g_active: Optional[bool] = None
 
 
+class PatientBasic(BaseModel):
+    pt_id: int
+    pt_firts_name: Optional[str]
+    pt_middle_name: Optional[str]
+    pt_last_name: Optional[str]
+    pt_second_last_name: Optional[str]
+
+    @computed_field
+    @property
+    def full_name(self) -> Optional[str]:
+        parts = [
+            self.pt_firts_name or "",
+            self.pt_middle_name or "",
+            self.pt_last_name or "",
+            self.pt_second_last_name or "",
+        ]
+        name = " ".join(p for p in parts if p).strip()
+        return name or None
+
+    class Config:
+        from_attributes = True
+
+
 class SampleTypeBasic(BaseModel):
     st_id: int
     st_sufix: Optional[int]
@@ -138,6 +161,8 @@ class SampleTypeBasic(BaseModel):
 class OrderBasic(BaseModel):
     o_id: int
     o_number: Optional[str]
+    o_date: Optional[date] = None
+    patient: Optional[PatientBasic] = None
 
     class Config:
         from_attributes = True

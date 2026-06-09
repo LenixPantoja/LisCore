@@ -156,7 +156,8 @@ class GradillaRepository:
             .where(Gradilla.g_id == g_id)
             .options(
                 selectinload(Gradilla.positions).options(
-                    sample_loader.selectinload(SamplesOrder.order),
+                    sample_loader.selectinload(SamplesOrder.order)
+                        .selectinload(Order.patient),
                     sample_loader.selectinload(SamplesOrder.sample_type),
                 )
             )
@@ -165,9 +166,11 @@ class GradillaRepository:
 
     @staticmethod
     async def list_by_seroteca(
-        db: AsyncSession, s_id: int, skip: int = 0, limit: int = 100
+        db: AsyncSession, s_id: int, skip: int = 0, limit: int = 100, search: Optional[str] = None
     ) -> Tuple[Sequence[Gradilla], int]:
         q = select(Gradilla).where(Gradilla.g_seroteca_id == s_id)
+        if search:
+            q = q.where(Gradilla.g_name.ilike(f"%{search}%"))
         total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
         rows = (
             await db.execute(q.offset(skip).limit(limit).order_by(Gradilla.g_name.asc()))
@@ -197,6 +200,20 @@ class GradillaRepository:
 
 
 class GradillaPosicionRepository:
+
+    @staticmethod
+    async def is_sample_stored(db: AsyncSession, so_id: int) -> Optional[GradillaPosicion]:
+        """Check if a sample is already stored in any position. Returns the position if found."""
+        q = (
+            select(GradillaPosicion)
+            .where(
+                GradillaPosicion.gp_sample_id == so_id,
+                GradillaPosicion.gp_occupied == True,
+            )
+            .limit(1)
+        )
+        result = await db.execute(q)
+        return result.scalars().first()
 
     @staticmethod
     async def get_next_free(db: AsyncSession, g_id: int) -> Optional[GradillaPosicion]:
@@ -234,7 +251,7 @@ class GradillaPosicionRepository:
             .where(GradillaPosicion.gp_id == gp_id)
             .options(
                 selectinload(GradillaPosicion.sample).options(
-                    selectinload(SamplesOrder.order),
+                    selectinload(SamplesOrder.order).selectinload(Order.patient),
                     selectinload(SamplesOrder.sample_type),
                 )
             )
@@ -259,7 +276,7 @@ class GradillaPosicionRepository:
             .where(GradillaPosicion.gp_id == gp_id)
             .options(
                 selectinload(GradillaPosicion.sample).options(
-                    selectinload(SamplesOrder.order),
+                    selectinload(SamplesOrder.order).selectinload(Order.patient),
                     selectinload(SamplesOrder.sample_type),
                 )
             )

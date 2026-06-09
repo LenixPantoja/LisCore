@@ -59,8 +59,10 @@ async def get_rack(db: AsyncSession, g_id: int) -> dict:
     return rack
 
 
-async def list_racks(db: AsyncSession, s_id: int, skip: int, limit: int) -> dict:
-    items, total = await GradillaRepository.list_by_seroteca(db, s_id, skip, limit)
+async def list_racks(
+    db: AsyncSession, s_id: int, skip: int, limit: int, search: Optional[str] = None
+) -> dict:
+    items, total = await GradillaRepository.list_by_seroteca(db, s_id, skip, limit, search)
     return {"items": items, "total": total, "skip": skip, "limit": limit}
 
 
