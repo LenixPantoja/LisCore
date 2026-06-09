@@ -24,7 +24,7 @@ from app.domains.remissions.domain.constants import (
     ORDER_DETAIL_STATE_REJECTED,
     ORDER_DETAIL_STATE_PENDING_RESAMPLE,
 )
-from app.domains.orders.domain.models import OrdersDetail
+from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.samples.domain.models import SamplesOrder
 from utils.timezone import get_bogota_now
 
@@ -255,7 +255,8 @@ class RemissionRepository:
                 .options(
                     selectinload(Remission.details)
                         .selectinload(RemissionDetail.sample_order)
-                        .selectinload(SamplesOrder.order),
+                        .selectinload(SamplesOrder.order)
+                        .selectinload(Order.patient),
                     selectinload(Remission.details)
                         .selectinload(RemissionDetail.sample_order)
                         .selectinload(SamplesOrder.sample_type),

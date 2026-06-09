@@ -19,6 +19,8 @@ from app.domains.samples.domain.constants import (
 
 async def _get_sample_by_barcode(db: AsyncSession, barcode: str) -> SamplesOrder:
     """Search by barcode. Tries exact match, then reconstructed legacy format {10digits}-{rest}."""
+    from sqlalchemy.orm import selectinload
+
     candidates = [barcode]
 
     # If input is all digits and longer than 10, try legacy format: first 10 + "-" + rest
@@ -28,7 +30,9 @@ async def _get_sample_by_barcode(db: AsyncSession, barcode: str) -> SamplesOrder
 
     for candidate in candidates:
         result = await db.execute(
-            select(SamplesOrder).where(SamplesOrder.so_barcode == candidate)
+            select(SamplesOrder)
+            .where(SamplesOrder.so_barcode == candidate)
+            .options(selectinload(SamplesOrder.order))
         )
         sample = result.scalars().first()
         if sample:
@@ -65,8 +69,40 @@ async def log_sample_event(
         "log_observation": notes,
         "log_user_id": user_id,
     })
+
+    # Obtener los estudios asociados a la orden de la muestra
+    from app.domains.orders.domain.models import OrdersDetail
+    from app.domains.studieslab.domain.models import StudiesLab
+    from sqlalchemy.orm import selectinload
+
+    studies = []
+    if sample.order:
+        stmt = (
+            select(OrdersDetail)
+            .where(OrdersDetail.od_order_id == sample.order.o_id)
+            .options(selectinload(OrdersDetail.study))
+        )
+        result = await db.execute(stmt)
+        order_details = result.scalars().all()
+        for od in order_details:
+            if od.study:
+                studies.append({
+                    "study_id": od.study.id,
+                    "study_name": od.study.name,
+                    "study_code": od.study.code,
+                })
+
     await db.commit()
-    return log
+
+    return {
+        "sl_id": log.sl_id,
+        "log_state": log.log_state,
+        "log_observation": log.log_observation,
+        "log_create_at": log.log_create_at,
+        "so_barcode": sample.so_barcode,
+        "so_id": sample.so_id,
+        "studies": studies,
+    }
 
 
 async def get_sample_history(
@@ -74,7 +110,32 @@ async def get_sample_history(
 ) -> dict:
     sample = await _get_sample_by_barcode(db, barcode)
     logs, total = await SampleLogRepository.get_by_sample(db, sample.so_id, skip, limit)
-    return {"items": logs, "total": total, "skip": skip, "limit": limit}
+
+    # Enriquecer cada log con location_name y headquarter_name
+    enriched = []
+    for log in logs:
+        log_dict = {
+            "sl_id": log.sl_id,
+            "log_sample_order_id": log.log_sample_order_id,
+            "log_state": log.log_state,
+            "log_location_id": log.log_location_id,
+            "location": log.location,
+            "log_observation": log.log_observation,
+            "log_user_id": log.log_user_id,
+            "user": log.user,
+            "log_create_at": log.log_create_at,
+            "location_name": log.location.loc_name if log.location else None,
+            "headquarter_name": None,
+        }
+        # Obtener el nombre de la sede desde sample → order
+        if log.sample and log.sample.order:
+            from app.domains.Headquarters.domain.models import Headquarter
+            hq = await db.get(Headquarter, log.sample.order.o_headquarter_id)
+            log_dict["headquarter_name"] = hq.name if hq else None
+
+        enriched.append(log_dict)
+
+    return {"items": enriched, "total": total, "skip": skip, "limit": limit}
 
 
 async def auto_store_in_rack(

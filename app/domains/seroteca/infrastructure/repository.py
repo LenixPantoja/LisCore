@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.domains.seroteca.domain.models import SampleLog, Seroteca, Gradilla, GradillaPosicion
 from app.domains.samples.domain.models import SamplesOrder
+from app.domains.orders.domain.models import Order
 from utils.timezone import get_bogota_now
 
 
@@ -33,6 +34,7 @@ class SampleLogRepository:
             .options(
                 selectinload(SampleLog.location),
                 selectinload(SampleLog.user),
+                selectinload(SampleLog.sample).selectinload(SamplesOrder.order),
             )
             .order_by(SampleLog.log_create_at.desc())
             .offset(skip)

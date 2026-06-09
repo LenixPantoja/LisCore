@@ -178,10 +178,25 @@ def _enrich_remission(remission, include_details: bool = False) -> dict:
                 order_number = so.order.o_number if so and so.order else None
                 sample_type_name = so.sample_type.st_name if so and so.sample_type else None
                 sample_type_color = so.sample_type.st_color if so and so.sample_type else None
+
+                # Datos del paciente desde la orden
+                patient_first_name = None
+                patient_last_name = None
+                if so and so.order and so.order.patient:
+                    p = so.order.patient
+                    patient_first_name = " ".join(
+                        part for part in [p.pt_firts_name, p.pt_middle_name] if part
+                    ).strip() or None
+                    patient_last_name = " ".join(
+                        part for part in [p.pt_last_name, p.pt_second_last_name] if part
+                    ).strip() or None
+
                 tube_groups[so_id] = {
                     "remd_sample_order_id": so_id,
                     "so_barcode": so.so_barcode if so else None,
                     "order_number": order_number,
+                    "patient_first_name": patient_first_name,
+                    "patient_last_name": patient_last_name,
                     "sample_type_name": sample_type_name,
                     "sample_type_color": sample_type_color,
                     "remd_item_state": d.remd_item_state,
@@ -195,6 +210,7 @@ def _enrich_remission(remission, include_details: bool = False) -> dict:
                 existing_studies = {s["study_id"] for s in tube_groups[so_id]["studies"]}
                 if study_key not in existing_studies:
                     tube_groups[so_id]["studies"].append({
+                        "remd_id": d.remd_id,
                         "study_id": od.study.id,
                         "study_name": od.study.name,
                         "study_code": od.study.code,

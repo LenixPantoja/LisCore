@@ -42,6 +42,9 @@ class SampleLogResponse(BaseModel):
     log_user_id: Optional[int]
     user: Optional[UserBasic] = None
     log_create_at: Optional[datetime]
+    # Campos enriquecidos
+    location_name: Optional[str] = None
+    headquarter_name: Optional[str] = None
 
     @field_serializer("log_create_at")
     def serialize_log_create_at(self, value: Optional[datetime]) -> Optional[str]:
