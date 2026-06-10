@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Almacenamiento de Objetos (MinIO)
   minio:
@@ -12,8 +10,11 @@ services:
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"        # API de MinIO (accesible desde el host)
+      - "9001:9001"        # Consola web de MinIO
     networks:
-      - clinizad_network
+      - liscore_network
 
   # Motor de PDF (Gotenberg)
   gotenberg:
@@ -22,30 +23,32 @@ services:
     restart: always
     environment:
       - CHROMIUM_DISABLE_WEB_SECURITY=true
+    ports:
+      - "3000:3000"        # API de Gotenberg (accesible desde el host)
     networks:
-      - clinizad_network
+      - liscore_network
 
   # API Backend (FastAPI)
   api:
-    build: .
+    image: lis_core_api:prod
+    pull_policy: never
     container_name: lis_core_api
     restart: always
     depends_on:
       - minio
       - gotenberg
+    env_file:
+      - .env
     environment:
-      # Se recomienda pasar la URL completa desde el archivo .env
-      # Ejemplo: postgresql+asyncpg://usuario:password@IP_DEL_SERVIDOR:5432/nombre_db
-      DATABASE_URL: ${DATABASE_URL}
       GOTENBERG_URL: http://gotenberg:3000
       MINIO_ENDPOINT: minio:9000
     ports:
       - "8000:8000"
     networks:
-      - clinizad_network
+      - liscore_network
 
 networks:
-  clinizad_network:
+  liscore_network:
     external: true
 
 volumes:

@@ -1,13 +1,58 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+
+# Entornos virtuales
 .env
 .venv
 env/
 venv/
 ENV/
+
+# Git
 .git/
+.gitignore
+.gitattributes
 .github/
+
+# IDE / Editor
 .vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Documentación y archivos de planificación (no necesarios en runtime)
 *.md
+!README.md
+
+# Herramientas de AI / Asistentes
 .claude/
+.cursor/
+.copilot/
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+docker-compose*.yaml
+
+# S3 local (no se despliega en la imagen de la API)
+s3/
+
+# Logs y temporales
+*.log
+*.tmp
+.cache/
