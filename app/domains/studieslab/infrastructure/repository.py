@@ -27,6 +27,7 @@ class StudiesLabRepository:
                 selectinload(StudiesTestDetail.work_group),
             ),
             selectinload(StudiesLab.work_group),
+            selectinload(StudiesLab.external_lab),
         )
         
         # 2. Filtro de búsqueda (Opcional por nombre o código)
@@ -56,6 +57,7 @@ class StudiesLabRepository:
                     selectinload(StudiesTestDetail.work_group),
                 ),
                 selectinload(StudiesLab.work_group),
+                selectinload(StudiesLab.external_lab),
             )
         )
         return result.scalars().first()
