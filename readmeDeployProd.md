@@ -135,6 +135,7 @@ cd /opt/liscore
 # 2. Cargar la imagen en Docker
 docker load -i lis_core_api_prod.tar
 
+
 # 3. Verificar que se cargó correctamente
 docker images | grep lis_core_api
 
