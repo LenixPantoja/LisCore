@@ -735,9 +735,9 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
                 # (dos SampleTypes con el mismo sufijo comparten el mismo barcode)
                 seen_suffixes: set[int] = set()
                 existing_samples = await db.execute(
-                    select(SamplesOrder).where(
-                        SamplesOrder.so_order_id == o_id,
-                    )
+                    select(SamplesOrder)
+                    .where(SamplesOrder.so_order_id == o_id)
+                    .options(selectinload(SamplesOrder.sample_type))
                 )
                 for existing in existing_samples.scalars().all():
                     st_type = existing.sample_type

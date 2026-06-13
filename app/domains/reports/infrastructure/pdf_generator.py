@@ -27,8 +27,8 @@ from reportlab.lib.utils import ImageReader
 # Constantes de mapeo
 # ─────────────────────────────────────────────
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-WATERMARK_PNG = str(TEMPLATES_DIR / "marca_agua.png")
-LOGO_PNG = str(TEMPLATES_DIR / "marca_agua.png")  # Usamos la misma imagen como logo
+WATERMARK_PNG = str(TEMPLATES_DIR / "LogoRojoPabon.png")
+LOGO_PNG = str(TEMPLATES_DIR / "LogoRojoPabon.png")  # Usamos la misma imagen como logo
 
 
 class _RoundedFrame(Flowable):
@@ -425,21 +425,22 @@ def build_laboratory_pdf(
         # ── Cabecera superior (logo + PANTHOSOFT LAB) ──
         # Logo izquierda
         logo = header_data['logo']
-        logo_width = 2.5 * cm
-        logo_height = 1.5 * cm
-        canvas.drawImage(logo, LEFT, PAGE_H - 2.2 * cm, width=logo_width, height=logo_height, mask="auto")
+        logo_width = 4.7 * cm  # Aumenta o disminuye este valor según necesites
+        logo_height = 2.8 * cm # Aumenta o disminuye este valor según necesites
+        # Si disminuyes el 2.2 (ej. 2.0), el logo sube. Si lo aumentas (ej. 2.4), el logo baja.
+        canvas.drawImage(logo, LEFT, PAGE_H - 3.3 * cm, width=logo_width, height=logo_height, mask="auto")
         
         # Texto derecha (PANTHOSOFT LAB)
         canvas.setFont("Helvetica-Bold", 10)
         canvas.setFillColor(C_NAVY)
-        canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 1.8 * cm, "PANTHOSOFT LAB")
+        canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 1.8 * cm, "")
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(C_GRAY)
         canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 2.3 * cm, "Resultados de Laboratorio")
         
-        # Franja decorativa azul
-        canvas.setFillColor(C_NAVY)
-        canvas.rect(LEFT, PAGE_H - 2.5 * cm, COL_W, 0.15 * cm, fill=1, stroke=0)
+        # # Franja decorativa azul
+        # canvas.setFillColor(C_NAVY)
+        # canvas.rect(LEFT, PAGE_H - 2.5 * cm, COL_W, 0.15 * cm, fill=1, stroke=0)
         
         # ── Información del paciente ──
         # Título
