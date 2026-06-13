@@ -29,6 +29,7 @@ from reportlab.lib.utils import ImageReader
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 WATERMARK_PNG = str(TEMPLATES_DIR / "LogoRojoPabon.png")
 LOGO_PNG = str(TEMPLATES_DIR / "LogoRojoPabon.png")  # Usamos la misma imagen como logo
+LOGO_BLUE_PNG = str(TEMPLATES_DIR / "LogoAzulPabon.png")
 
 
 class _RoundedFrame(Flowable):
@@ -85,6 +86,11 @@ def _get_watermark() -> io.BytesIO:
 def _get_logo() -> ImageReader:
     """Carga el logo para la cabecera."""
     return ImageReader(LOGO_PNG)
+
+
+def _get_logo_blue() -> ImageReader:
+    """Carga el logo azul para la cabecera."""
+    return ImageReader(LOGO_BLUE_PNG)
 
 
 def _fetch_signature_image(object_name: str | None) -> io.BytesIO | None:
@@ -211,6 +217,7 @@ def build_laboratory_pdf(
     # Guardamos los datos del paciente en variables globales para usarlos en el canvas
     header_data = {
         'logo': _get_logo(),
+        'logo_blue': _get_logo_blue(),
         's_ent': s_ent,
         's_ent_s': s_ent_s,
         's_label': s_label,
@@ -429,6 +436,11 @@ def build_laboratory_pdf(
         logo_height = 2.8 * cm # Aumenta o disminuye este valor según necesites
         # Si disminuyes el 2.2 (ej. 2.0), el logo sube. Si lo aumentas (ej. 2.4), el logo baja.
         canvas.drawImage(logo, LEFT, PAGE_H - 3.3 * cm, width=logo_width, height=logo_height, mask="auto")
+
+        # Logo derecha (Azul)
+        logo_blue = header_data['logo_blue']
+        # Calculamos la posición X restando el ancho del logo al borde derecho (PAGE_W - RIGHT)
+        canvas.drawImage(logo_blue, PAGE_W - RIGHT - logo_width, PAGE_H - 3.3 * cm, width=logo_width, height=logo_height, mask="auto")
         
         # Texto derecha (PANTHOSOFT LAB)
         canvas.setFont("Helvetica-Bold", 10)
@@ -436,7 +448,7 @@ def build_laboratory_pdf(
         canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 1.8 * cm, "")
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(C_GRAY)
-        canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 2.3 * cm, "Resultados de Laboratorio")
+        #canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 2.3 * cm, "Resultados de Laboratorio")
         
         # # Franja decorativa azul
         # canvas.setFillColor(C_NAVY)

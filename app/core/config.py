@@ -1,12 +1,14 @@
 from typing import List
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from fastapi.middleware.cors import CORSMiddleware
 
 class Settings(BaseSettings):
     # App Settings
     APP_NAME: str = "CorelisDB"
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:4200", "http://localhost:3000", "http://localhost:8080","*"]
+    CORS_ORIGINS: List[str] = ["http://localhost:4200", "http://localhost:3000", "http://localhost:8080","http://192.168.200.8:8080"]
+        
 
     # Database connection from .env
     DB_HOST: str
