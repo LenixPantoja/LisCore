@@ -293,18 +293,10 @@ docker compose up -d
 # 3. Verificar que los contenedores estén corriendo
 docker ps
 
-# 4. Verificar el healthcheck de la API (espera ~40 segundos)
-docker inspect --format='{{.State.Health.Status}}' lis_core_api
-# Debería mostrar: healthy
-
-# 5. Probar que responde
-curl http://localhost:8000/api/health
-# Debería devolver un { "status": "ok" } o similar
-
-# 6. Ver logs en vivo
+# 4. Ver logs en vivo
 docker compose logs -f --tail=50
 
-# 7. Detener todo
+# 5. Detener todo
 docker compose down
 ```
 

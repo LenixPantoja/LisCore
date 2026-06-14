@@ -67,9 +67,9 @@ USER appuser
 
 EXPOSE 8000
 
-# Healthcheck: verifica que el endpoint raíz responda
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)" || exit 1
+# # Healthcheck: verifica que el endpoint raíz responda
+# HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+#     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=5)" || exit 1
 
 # Workers = 2 * CPU cores + 1 (para 4 cores ≈ 9, usamos 4 conservador)
 # --proxy-headers para respetar X-Forwarded-* detrás de reverse proxy

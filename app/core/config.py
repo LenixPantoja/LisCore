@@ -8,7 +8,11 @@ class Settings(BaseSettings):
 
     # CORS
     CORS_ORIGINS: List[str] = ["http://localhost:4200", "http://localhost:3000", "http://localhost:8080","http://192.168.200.8:8080"]
-        
+    ALLOWED_HOSTS: List[str] = [
+        "localhost", 
+        "127.0.0.1", 
+        "192.168.200.8"
+    ]
 
     # Database connection from .env
     DB_HOST: str
