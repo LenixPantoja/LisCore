@@ -456,6 +456,16 @@ async def get_order_details_paginated_by_number(
 
         enriched_labs.append(lab)
 
+    # Enriquecer tests con formats_complete
+    enriched_tests = []
+    for test in tests:
+        test.__dict__["formats_complete"] = [
+            link.format_complete.fc_name
+            for link in formats_by_test.get(test.id, [])
+            if link.format_complete
+        ]
+        enriched_tests.append(test)
+
     return {
         "order": order,
         "patient": patient,
@@ -469,7 +479,7 @@ async def get_order_details_paginated_by_number(
             "total": total_tests,
             "skip": skip_tests,
             "limit": limit_tests,
-            "items": tests
+            "items": enriched_tests
         },
         "samples": await OrderRepository.get_samples_by_order_id(db, order.o_id),
     }

@@ -68,6 +68,7 @@ class TestsLabResponse(TestsLabBase):
     id: int
     created_at: datetime
     updated_at: datetime
+    formats_complete: List[str] = []
 
     class Config:
         from_attributes = True
