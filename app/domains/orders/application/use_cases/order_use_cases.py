@@ -343,6 +343,17 @@ async def list_orders(
         order_state=order_state,
         search=search
     )
+
+    # Calcular dinámicamente el o_order_state para cada orden según is_required
+    # Solo para órdenes en estados transitorios (Ingresada=1, Pendiente=2, Con Resultados=3)
+    DYNAMIC_STATES = {1, 2, 3}
+    order_ids = [order.o_id for order in items if order.o_order_state in DYNAMIC_STATES]
+    if order_ids:
+        computed_states = await _compute_orders_state(db, order_ids)
+        for order in items:
+            if order.o_id in computed_states:
+                order.o_order_state = computed_states[order.o_id]
+
     return {
         "total": total,
         "skip": skip,
@@ -354,6 +365,12 @@ async def get_order_by_id(db: AsyncSession, o_id: int):
     order = await OrderRepository.get_by_id(db, o_id)
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
+    # Calcular dinámicamente el o_order_state según is_required
+    # Solo si el estado actual es transitorio (Ingresada=1, Pendiente=2, Con Resultados=3)
+    if order.o_order_state in {1, 2, 3}:
+        computed_states = await _compute_orders_state(db, [order.o_id])
+        if order.o_id in computed_states:
+            order.o_order_state = computed_states[order.o_id]
     return order
 
 async def update_order(db: AsyncSession, o_id: int, data: dict):
@@ -935,3 +952,112 @@ async def get_grafico_evolutivo(
         "paciente": nombre_paciente,
         "historico": historico,
     }
+
+
+async def _compute_orders_state(db: AsyncSession, order_ids: list[int]) -> dict[int, int]:
+    """
+    Calcula el o_order_state de una lista de órdenes basándose en la configuración
+    is_required de StudiesTestDetail.
+
+    Para cada orden:
+      - Se consultan los laboratorios (agrupados por estudio y test).
+      - Se carga la configuración de pruebas requeridas (is_required=True) por estudio.
+      - Si un estudio tiene pruebas requeridas, solo esas determinan si el estudio
+        está completado (todas con l_state en {2,3,4}).
+      - Si el estudio no tiene pruebas requeridas definidas, se usa el comportamiento
+        legacy: el estudio está completado si todas sus pruebas tienen resultado.
+      - La orden está "Con Resultados" (3) solo si TODOS sus estudios están completados.
+      - En cualquier otro caso, la orden está "Pendiente" (2).
+
+    Retorna un diccionario {order_id: o_order_state}.
+    """
+    from app.domains.laboratories.domain.constants import (
+        LABORATORY_STATE_CON_RESULTADOS,
+        LABORATORY_STATE_VALIDADA,
+        LABORATORY_STATE_IMPRESO,
+    )
+    from app.domains.orders.domain.constants import ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS
+
+    LAB_STATES_WITH_RESULTS = {
+        LABORATORY_STATE_CON_RESULTADOS,
+        LABORATORY_STATE_VALIDADA,
+        LABORATORY_STATE_IMPRESO,  # 2, 3, 4
+    }
+
+    if not order_ids:
+        return {}
+
+    # 1. Obtener todos los labs de las órdenes consultadas
+    stmt_labs = (
+        select(
+            Laboratory.l_state,
+            OrdersDetail.od_order_id,
+            OrdersDetail.od_study_id,
+            Laboratory.l_test_id,
+        )
+        .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+        .where(OrdersDetail.od_order_id.in_(order_ids))
+    )
+    result_labs = await db.execute(stmt_labs)
+    labs_data = result_labs.all()
+
+    # 2. Obtener todos los study_ids únicos de esas órdenes
+    all_study_ids = list({row.od_study_id for row in labs_data if row.od_study_id})
+
+    # 3. Cargar is_required config para esos estudios
+    required_tests_by_study: dict[int, set[int]] = {}
+    if all_study_ids:
+        std_result = await db.execute(
+            select(StudiesTestDetail).where(
+                StudiesTestDetail.studies_id.in_(all_study_ids),
+                StudiesTestDetail.is_required == True,
+            )
+        )
+        for std in std_result.scalars().all():
+            required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
+
+    # 4. Agrupar labs por orden y estudio:
+    #    {order_id: {study_id: {test_id: l_state}}}
+    order_labs: dict[int, dict[int, dict[int, int]]] = {}
+    for row in labs_data:
+        oid = row.od_order_id
+        sid = row.od_study_id
+        tid = row.l_test_id
+        state = row.l_state
+
+        if oid not in order_labs:
+            order_labs[oid] = {}
+        if sid not in order_labs[oid]:
+            order_labs[oid][sid] = {}
+        if tid is not None:
+            order_labs[oid][sid][tid] = state
+
+    # 5. Evaluar cada orden
+    result: dict[int, int] = {}
+    for oid in order_ids:
+        studies = order_labs.get(oid, {})
+        if not studies:
+            result[oid] = ORDER_STATE_PENDIENTE
+            continue
+
+        all_studies_done = True
+        for study_id, tests_map in studies.items():
+            required_ids = required_tests_by_study.get(study_id, set())
+            if not required_ids:
+                # Sin required: el estudio está completo si todas sus pruebas tienen resultado
+                if not all(state in LAB_STATES_WITH_RESULTS for state in tests_map.values()):
+                    all_studies_done = False
+                    break
+            else:
+                # Solo las requeridas determinan el estado
+                all_required_have_results = all(
+                    tests_map.get(tid, 0) in LAB_STATES_WITH_RESULTS
+                    for tid in required_ids
+                )
+                if not all_required_have_results:
+                    all_studies_done = False
+                    break
+
+        result[oid] = ORDER_STATE_CON_RESULTADOS if all_studies_done else ORDER_STATE_PENDIENTE
+
+    return result
