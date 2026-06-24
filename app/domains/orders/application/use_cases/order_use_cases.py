@@ -494,6 +494,52 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     tests, _ = await OrderRepository.get_tests_paginated(db, order.o_id, 0, 10000)
     samples = await OrderRepository.get_samples_by_order_id(db, order.o_id)
 
+    # Enriquecer laboratorios con rangos de referencia, formatos y gráficos
+    patient = order.patient
+    patient_dob = getattr(patient, "pt_date_of_birth", None) if patient else None
+    patient_sex = getattr(patient, "pt_sex_type", None) if patient else None
+
+    test_ids_with_result = list({
+        lab.l_test_id for lab in labs
+        if lab.l_test_id and (lab.l_result_num is not None or lab.l_result)
+    })
+    ranges_by_test = await bulk_fetch_ranges(db, test_ids_with_result)
+
+    all_test_ids = list({lab.l_test_id for lab in labs if lab.l_test_id})
+    formats_by_test = await TestslabFormatCompleteRepository.get_formats_by_testslab_ids(db, all_test_ids)
+
+    for lab in labs:
+        range_type, ref_min, ref_max = (None, None, None)
+        result_num = None
+        result_text = None
+
+        if lab.l_result_num is not None:
+            result_num = float(lab.l_result_num)
+        elif lab.l_result:
+            try:
+                result_num = float(str(lab.l_result).replace(",", "."))
+            except (ValueError, AttributeError):
+                result_text = lab.l_result
+
+        if lab.l_test_id and (result_num is not None or result_text):
+            test_ranges = ranges_by_test.get(lab.l_test_id, [])
+            range_type, ref_min, ref_max = evaluate_reference_range_sync(
+                test_ranges, result_num, patient_dob, patient_sex, result_text=result_text
+            )
+
+        lab.__dict__["range_type"] = range_type
+        lab.__dict__["value_range_reference_min"] = float(ref_min) if ref_min is not None else None
+        lab.__dict__["value_range_reference_max"] = float(ref_max) if ref_max is not None else None
+
+        if lab.l_result_graphic:
+            lab.l_result_graphic = get_graphic_url(lab.l_result_graphic)
+
+        lab.__dict__["formats_complete"] = [
+            link.format_complete.fc_name
+            for link in formats_by_test.get(lab.l_test_id, [])
+            if link.format_complete
+        ]
+
     # Cargar sede
     headquarter = None
     if order.o_headquarter_id:
