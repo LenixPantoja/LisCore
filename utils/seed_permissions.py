@@ -219,6 +219,14 @@ _PERMISSIONS = [
     {"p_name": "Seroteca:Delete",          "p_description": "Eliminar una seroteca",                                     "p_module": "Seroteca"},
     {"p_name": "Seroteca:ManageRacks",     "p_description": "Crear, editar y eliminar gradillas de una seroteca",        "p_module": "Seroteca"},
     {"p_name": "Seroteca:StoreSample",     "p_description": "Almacenar o retirar muestras en posiciones de gradilla",    "p_module": "Seroteca"},
+
+    # ── CompoundTemplates ───────────────────────────────────────────────────
+    {"p_name": "CompoundTemplates:Create",      "p_description": "Crear plantillas de completado dinámico",          "p_module": "CompoundTemplates"},
+    {"p_name": "CompoundTemplates:List",         "p_description": "Listar y buscar plantillas",                       "p_module": "CompoundTemplates"},
+    {"p_name": "CompoundTemplates:GetOne",       "p_description": "Ver detalle de una plantilla",                     "p_module": "CompoundTemplates"},
+    {"p_name": "CompoundTemplates:Update",       "p_description": "Editar plantillas existentes",                     "p_module": "CompoundTemplates"},
+    {"p_name": "CompoundTemplates:Delete",       "p_description": "Eliminar plantillas",                              "p_module": "CompoundTemplates"},
+    {"p_name": "CompoundTemplates:ManageLinks",  "p_description": "Vincular/desvincular tests a plantillas",         "p_module": "CompoundTemplates"},
 ]
 
 

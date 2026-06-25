@@ -23,6 +23,7 @@ from app.domains.seroteca.api.router import router as seroteca_router
 from app.domains.kpis.api.router import router as kpis_router
 from app.domains.annexes.api.router import router as annexes_router
 from app.domains.remissions.api.router import router as remissions_router, ext_lab_router
+from app.domains.compound_templates.api.router import router as compound_templates_router
 
 api_router = APIRouter()
 
@@ -51,3 +52,4 @@ api_router.include_router(kpis_router, prefix="/kpis", tags=["KPIs"])
 api_router.include_router(annexes_router, prefix="/annexes", tags=["Annexed Results"])
 api_router.include_router(remissions_router, prefix="/remissions", tags=["Remissions"])
 api_router.include_router(ext_lab_router, prefix="/external-laboratories", tags=["External Laboratories"])
+api_router.include_router(compound_templates_router, prefix="/compound-templates", tags=["Compound Templates"])
