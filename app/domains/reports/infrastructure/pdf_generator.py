@@ -355,7 +355,7 @@ def build_laboratory_pdf(
 
                 # ── Firma(s) del validador ────────────────────────────────────────
                 if signatures_map:
-                    study_sigs = signatures_map.get((wg_group["wg_name"], study["name"]), [])
+                    study_sigs = signatures_map.get(study["id"], [])
                     if study_sigs:
                         sig_col_w = COL_W / max(len(study_sigs), 1)
                         sig_row = []
@@ -590,17 +590,18 @@ def _group_by_study(laboratories: list, is_female: bool) -> list[dict]:
 
         wg = wg_groups[wg_name]
         if study_name not in wg["studies"]:
-            wg["studies"][study_name] = []
+            wg["studies"][study_name] = {"id": study.id if lab.order_detail and lab.order_detail.study else None, "labs": []}
             wg["study_order"].append(study_name)
-        wg["studies"][study_name].append(lab)
+        wg["studies"][study_name]["labs"].append(lab)
 
     result = []
     for wg_name in wg_order:
         wg = wg_groups[wg_name]
         studies = []
         for study_name in wg["study_order"]:
-            rows = [_build_row(lab, is_female) for lab in wg["studies"][study_name]]
-            studies.append({"name": study_name, "rows": rows})
+            entry = wg["studies"][study_name]
+            rows = [_build_row(lab, is_female) for lab in entry["labs"]]
+            studies.append({"name": study_name, "id": entry["id"], "rows": rows})
         result.append({"wg_name": wg_name, "studies": studies})
 
     return result
