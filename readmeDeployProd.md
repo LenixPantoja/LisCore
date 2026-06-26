@@ -108,6 +108,7 @@ Esta es la forma **más rápida y directa**. NO necesitas Docker Hub ni internet
 cd d:\Mis Proyectos\CoreLab\Backend\Backend\LisCore
 
 # 2. Construir la imagen (ya la tienes lista)
+docker build --no-cache -t lis_core_api:prod .
 docker build -t lis_core_api:prod .
 
 # 3. Exportar la imagen a un archivo .tar

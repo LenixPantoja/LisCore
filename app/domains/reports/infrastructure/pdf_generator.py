@@ -616,7 +616,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
     state_label, state_class = LAB_STATE_LABELS.get(
         lab.l_state, (str(lab.l_state) if lab.l_state is not None else "—", "pendiente")
     )
-    is_abnormal = _is_abnormal(lab)
+    is_abnormal = _is_abnormal(lab, is_female)
 
     return {
         "test_name": test_name,
@@ -686,17 +686,31 @@ def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
     return "—"
 
 
-def _is_abnormal(lab: Any) -> bool:
+def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
     if lab.l_result_num is None or not lab.test:
         return False
     test = lab.test
     val = float(lab.l_result_num)
-    lo = float(test.male_value_min) if test.male_value_min is not None else None
-    hi = float(test.male_value_max) if test.male_value_max is not None else None
+
+    # 1. Prioridad: rangos evaluados por el sistema de RangesReferences
+    ref_min = lab.__dict__.get("_ref_min")
+    ref_max = lab.__dict__.get("_ref_max")
+    if ref_min is not None or ref_max is not None:
+        lo = float(ref_min) if ref_min is not None else None
+        hi = float(ref_max) if ref_max is not None else None
+    else:
+        # 2. Fallback: rangos legacy del TestsLab según sexo
+        lo = float(test.female_value_min) if is_female and test.female_value_min is not None else (
+            float(test.male_value_min) if not is_female and test.male_value_min is not None else None
+        )
+        hi = float(test.female_value_max) if is_female and test.female_value_max is not None else (
+            float(test.male_value_max) if not is_female and test.male_value_max is not None else None
+        )
+
     if lo is not None and val < lo:
         return True
     if hi is not None and val > hi:
-        return False
+        return True
     return False
 
 
