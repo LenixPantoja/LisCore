@@ -650,13 +650,15 @@ def _full_name(patient: Any) -> str:
 
 def _format_result(lab: Any) -> str:
     test = lab.test
+    # l_result tiene precedencia: si hay texto, mostrarlo tal cual (ej. "Negativo", "Positivo", "+++")
+    if lab.l_result:
+        return lab.l_result
+    # Solo usar l_result_num si l_result está vacío
     if lab.l_result_num is not None:
         decimals = getattr(test, "num_decimal_result", None) if test and getattr(test, "test_type", None) == "N" else None
         if decimals is not None:
             return f"{float(lab.l_result_num):.{decimals}f}"
         return str(lab.l_result_num)
-    if lab.l_result:
-        return lab.l_result
     # l_result_comp se muestra debajo del examen como fila compuesta, no en esta columna
     return "—"
 
@@ -687,7 +689,19 @@ def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
 
 
 def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
-    if lab.l_result_num is None or not lab.test:
+    if not lab.test:
+        return False
+    test = lab.test
+    val = None
+    # Si el resultado es texto, no se puede evaluar como anormal
+    if lab.l_result:
+        try:
+            val = float(str(lab.l_result).replace(",", "."))
+        except (ValueError, AttributeError):
+            return False  # resultado textual como "Negativo", no aplica anormal
+    elif lab.l_result_num is not None:
+        val = float(lab.l_result_num)
+    else:
         return False
     test = lab.test
     val = float(lab.l_result_num)
