@@ -114,6 +114,7 @@ def parse_solicitud(raw_body: bytes) -> DGSolicitudExamenes:
             embarazo_codigo=_text(dp_el, "CODEMBARA"),
             embarazo_nombre=_text(dp_el, "NOMEMBARA"),
             email=_text(dp_el, "EMAILPACI"),
+            municipio_ciudad_codigo=_text(dp_el, "GPACIUDAD"),
         )
 
     # --- DatosOrden ---

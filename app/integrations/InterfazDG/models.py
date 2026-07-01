@@ -44,6 +44,7 @@ class DGDatosPaciente:
     embarazo_codigo: Optional[str] = None    # CODEMBARA
     embarazo_nombre: Optional[str] = None    # NOMEMBARA
     email: Optional[str] = None              # EMAILPACI
+    municipio_ciudad_codigo: Optional[str] = None   # GPACIUDAD - Codigo de ciudad/municipio
 
 
 @dataclass

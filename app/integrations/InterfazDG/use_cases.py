@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.enterprises.domain.models import Enterprise
 from app.domains.interfaces.domain.models import InterfacesRest, InterfacesRestDetail
-from app.domains.masters.domain.models import Diagnosis, DocumentType, Service
+from app.domains.masters.domain.models import Diagnosis, DocumentType, Service, City, Department, Country
 from app.domains.patients.domain.models import Patient
 from app.domains.patients.infrastructure.repository import PatientRepository
 from app.domains.requests.infrastructure.repository import InboundOrderRepository
@@ -180,7 +180,27 @@ async def registrar_solicitud_dg(
             diagnostic_id = diag.diag_id
         print(f"[InterfazDG] diagnostico_codigo='{dp.diagnostico_codigo}' → diagnostic_id={diagnostic_id}")
 
-    # --- 6. Construir datos del InboundOrder ---
+    # --- 6. Resolver municipio (GPACIUDAD -> Cities.postal_code) y pais ---
+    municipality_id: Optional[int] = None
+    country_id: Optional[int] = None
+    codigo_ciudad = dp.municipio_ciudad_codigo if dp else None
+    if codigo_ciudad:
+        res_city = await db.execute(
+            select(City).where(City.postal_code == codigo_ciudad)
+        )
+        city: Optional[City] = res_city.scalars().first()
+        if city:
+            municipality_id = city.id
+            # Obtener el pais a traves del departamento
+            res_dept = await db.execute(
+                select(Department).where(Department.d_id == city.Department_id)
+            )
+            dept: Optional[Department] = res_dept.scalars().first()
+            if dept:
+                country_id = dept.d_country_id
+        print(f"[InterfazDG] GPACIUDAD='{codigo_ciudad}' → municipality_id={municipality_id}, country_id={country_id}")
+
+    # --- 7. Construir datos del InboundOrder ---
     now = datetime.utcnow()
     order_data = {
         "io_number_request": dg.ord_consec if dg else None,
@@ -195,6 +215,8 @@ async def registrar_solicitud_dg(
         "io_income": dg.tipo_ingreso if dg else None,
         "io_service_id": service_id,
         "io_diagnostic_id": diagnostic_id,
+        "io_municipality_id": municipality_id,
+        "io_country_id": country_id,
     }
 
     # --- 7. Crear el InboundOrder con sus detalles ---
