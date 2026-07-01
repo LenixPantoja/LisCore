@@ -171,7 +171,10 @@ class GradillaRepository:
     ) -> Tuple[Sequence[Gradilla], int]:
         q = select(Gradilla).where(Gradilla.g_seroteca_id == s_id)
         if search:
-            q = q.where(Gradilla.g_name.ilike(f"%{search}%"))
+            q = q.where(
+                (Gradilla.g_name.ilike(f"%{search}%")) |
+                (Gradilla.g_number.ilike(f"%{search}%"))
+            )
         total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
         rows = (
             await db.execute(q.offset(skip).limit(limit).order_by(Gradilla.g_name.asc()))
