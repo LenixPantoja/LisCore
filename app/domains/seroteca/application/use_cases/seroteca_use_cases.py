@@ -2,7 +2,7 @@ from typing import Optional
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.seroteca.infrastructure.repository import SerotecaRepository, GradillaRepository
+from app.domains.seroteca.infrastructure.repository import SerotecaRepository, GradillaRepository, TipoGradillaRepository
 
 
 # ── Serotecas ────────────────────────────────────────────────────────────────
@@ -49,6 +49,17 @@ async def delete_seroteca(db: AsyncSession, s_id: int) -> dict:
 # ── Gradillas ────────────────────────────────────────────────────────────────
 
 async def create_rack(db: AsyncSession, data: dict) -> dict:
+    # If g_tipo_gradilla_id is provided, auto-fill rows + cols from the template
+    if data.get("g_tipo_gradilla_id"):
+        tipo = await TipoGradillaRepository.get_by_id(db, data["g_tipo_gradilla_id"])
+        if not tipo:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de gradilla not found")
+        # Only fill if caller didn't explicitly provide dimensions
+        if "g_rows" not in data:
+            data["g_rows"] = tipo.tg_rows
+        if "g_cols" not in data:
+            data["g_cols"] = tipo.tg_cols
+
     return await GradillaRepository.create(db, data)
 
 
@@ -78,3 +89,41 @@ async def delete_rack(db: AsyncSession, g_id: int) -> dict:
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
     return {"detail": "Rack and all its positions deleted"}
+
+
+# ── Tipos de Gradilla ─────────────────────────────────────────────────────────
+
+async def create_tipo_gradilla(db: AsyncSession, data: dict) -> dict:
+    return await TipoGradillaRepository.create(db, data)
+
+
+async def get_tipo_gradilla(db: AsyncSession, tg_id: int) -> dict:
+    item = await TipoGradillaRepository.get_by_id(db, tg_id)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de gradilla not found")
+    return item
+
+
+async def list_tipos_gradilla(
+    db: AsyncSession,
+    skip: int,
+    limit: int,
+    search: Optional[str] = None,
+    active_only: bool = False,
+) -> dict:
+    items, total = await TipoGradillaRepository.list_paginated(db, skip, limit, search, active_only)
+    return {"items": items, "total": total, "skip": skip, "limit": limit}
+
+
+async def update_tipo_gradilla(db: AsyncSession, tg_id: int, data: dict) -> dict:
+    item = await TipoGradillaRepository.update(db, tg_id, data)
+    if not item:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de gradilla not found")
+    return item
+
+
+async def delete_tipo_gradilla(db: AsyncSession, tg_id: int) -> dict:
+    deleted = await TipoGradillaRepository.delete(db, tg_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de gradilla not found")
+    return {"detail": "Tipo de gradilla deleted"}

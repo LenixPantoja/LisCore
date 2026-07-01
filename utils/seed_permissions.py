@@ -218,6 +218,7 @@ _PERMISSIONS = [
     {"p_name": "Seroteca:Update",          "p_description": "Actualizar una seroteca",                                   "p_module": "Seroteca"},
     {"p_name": "Seroteca:Delete",          "p_description": "Eliminar una seroteca",                                     "p_module": "Seroteca"},
     {"p_name": "Seroteca:ManageRacks",     "p_description": "Crear, editar y eliminar gradillas de una seroteca",        "p_module": "Seroteca"},
+    {"p_name": "Seroteca:ManageRackTypes", "p_description": "Crear, editar, listar y eliminar tipos de gradilla",        "p_module": "Seroteca"},
     {"p_name": "Seroteca:StoreSample",     "p_description": "Almacenar o retirar muestras en posiciones de gradilla",    "p_module": "Seroteca"},
 
     # ── CompoundTemplates ───────────────────────────────────────────────────

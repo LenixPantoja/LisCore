@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.domains.seroteca.domain.models import SampleLog, Seroteca, Gradilla, GradillaPosicion
+from app.domains.seroteca.domain.models import SampleLog, Seroteca, Gradilla, GradillaPosicion, TipoGradilla
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.orders.domain.models import Order
 from utils.timezone import get_bogota_now
@@ -284,3 +284,57 @@ class GradillaPosicionRepository:
         pos = result.scalars().first()
         await db.commit()
         return pos
+
+
+class TipoGradillaRepository:
+
+    @staticmethod
+    async def create(db: AsyncSession, data: dict) -> TipoGradilla:
+        item = TipoGradilla(**data)
+        db.add(item)
+        await db.commit()
+        await db.refresh(item)
+        return item
+
+    @staticmethod
+    async def get_by_id(db: AsyncSession, tg_id: int) -> Optional[TipoGradilla]:
+        return await db.get(TipoGradilla, tg_id)
+
+    @staticmethod
+    async def list_paginated(
+        db: AsyncSession,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None,
+        active_only: bool = False,
+    ) -> Tuple[Sequence[TipoGradilla], int]:
+        q = select(TipoGradilla)
+        if search:
+            q = q.where(TipoGradilla.tg_name.ilike(f"%{search}%"))
+        if active_only:
+            q = q.where(TipoGradilla.tg_active == True)
+
+        total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
+        rows = (await db.execute(q.offset(skip).limit(limit).order_by(TipoGradilla.tg_name.asc()))).scalars().all()
+        return rows, total
+
+    @staticmethod
+    async def update(db: AsyncSession, tg_id: int, data: dict) -> Optional[TipoGradilla]:
+        item = await db.get(TipoGradilla, tg_id)
+        if not item:
+            return None
+        for k, v in data.items():
+            setattr(item, k, v)
+        item.tg_updated_at = get_bogota_now()
+        await db.commit()
+        await db.refresh(item)
+        return item
+
+    @staticmethod
+    async def delete(db: AsyncSession, tg_id: int) -> bool:
+        item = await db.get(TipoGradilla, tg_id)
+        if not item:
+            return False
+        await db.delete(item)
+        await db.commit()
+        return True
