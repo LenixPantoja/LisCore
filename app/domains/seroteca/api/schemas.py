@@ -206,9 +206,11 @@ class GradillaPosicionResponse(BaseModel):
 class GradillaResponse(BaseModel):
     g_id: int
     g_name: str
+    g_number: Optional[str] = None
     g_seroteca_id: int
     g_rows: int
     g_cols: int
+    g_discard_date: Optional[datetime] = None
     g_active: bool
     g_created_by: Optional[int]
     g_created_at: Optional[datetime]

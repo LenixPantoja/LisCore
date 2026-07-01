@@ -25,6 +25,7 @@ from app.domains.seroteca.application.use_cases.seroteca_use_cases import (
     create_seroteca, get_seroteca, list_serotecas, update_seroteca, delete_seroteca,
     create_rack, get_rack, list_racks, update_rack, delete_rack,
     create_tipo_gradilla, get_tipo_gradilla, list_tipos_gradilla, update_tipo_gradilla, delete_tipo_gradilla,
+    generate_gradilla_sticker,
 )
 
 router = APIRouter(prefix="/seroteca", tags=["Seroteca & Tracking"])
@@ -278,3 +279,17 @@ async def release(
     current_user: AppUser = Depends(get_current_user),
 ):
     return await release_position(db, gp_id, current_user.usr_id)
+
+
+# ── Gradilla Sticker ──────────────────────────────────────────────────────────
+
+@router.get(
+    "/racks/{g_id}/sticker",
+    dependencies=[Depends(require_permission("Seroteca:ManageRacks"))],
+)
+async def get_gradilla_sticker(
+    g_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a ZPL + PDF sticker for a gradilla rack."""
+    return await generate_gradilla_sticker(db, g_id)

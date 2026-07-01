@@ -1,8 +1,11 @@
 from typing import Optional
+from datetime import timedelta
+
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.seroteca.infrastructure.repository import SerotecaRepository, GradillaRepository, TipoGradillaRepository
+from utils.timezone import get_bogota_now
 
 
 # ── Serotecas ────────────────────────────────────────────────────────────────
@@ -50,15 +53,23 @@ async def delete_seroteca(db: AsyncSession, s_id: int) -> dict:
 
 async def create_rack(db: AsyncSession, data: dict) -> dict:
     # If g_tipo_gradilla_id is provided, auto-fill rows + cols from the template
+    tipo = None
     if data.get("g_tipo_gradilla_id"):
         tipo = await TipoGradillaRepository.get_by_id(db, data["g_tipo_gradilla_id"])
         if not tipo:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de gradilla not found")
-        # Only fill if caller didn't explicitly provide dimensions
-        if "g_rows" not in data:
+        # Fill dimensions from template if not explicitly provided (None or missing)
+        if not data.get("g_rows"):
             data["g_rows"] = tipo.tg_rows
-        if "g_cols" not in data:
+        if not data.get("g_cols"):
             data["g_cols"] = tipo.tg_cols
+        # Calculate discard date based on tipo storage days
+        if tipo.tg_storage_days and not data.get("g_discard_date"):
+            data["g_discard_date"] = get_bogota_now() + timedelta(days=tipo.tg_storage_days)
+
+    # Auto-generate consecutive number: DDMMAA-CONSECUTIVO
+    from utils.Consecutives.consecutive_gradillas import generate_gradilla_number
+    data["g_number"] = await generate_gradilla_number(db)
 
     return await GradillaRepository.create(db, data)
 
@@ -127,3 +138,16 @@ async def delete_tipo_gradilla(db: AsyncSession, tg_id: int) -> dict:
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tipo de gradilla not found")
     return {"detail": "Tipo de gradilla deleted"}
+
+
+# ── Gradilla Sticker Generation ──────────────────────────────────────────────
+
+async def generate_gradilla_sticker(db: AsyncSession, g_id: int) -> dict:
+    """Generate a ZPL + PDF sticker for a gradilla rack."""
+    from app.domains.seroteca.infrastructure.gradilla_sticker import generate_sticker
+
+    rack = await GradillaRepository.get_by_id(db, g_id)
+    if not rack:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gradilla not found")
+
+    return generate_sticker(rack)
