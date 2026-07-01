@@ -117,8 +117,9 @@ class SerotecaPaginatedResponse(BaseModel):
 class GradillaCreate(BaseModel):
     g_name: str
     g_seroteca_id: int
-    g_rows: int = Field(..., ge=1, le=100)
-    g_cols: int = Field(..., ge=1, le=100)
+    g_tipo_gradilla_id: Optional[int] = Field(None, description="ID del tipo de gradilla. Si se provee, rows/cols se heredan del template")
+    g_rows: Optional[int] = Field(None, ge=1, le=100)
+    g_cols: Optional[int] = Field(None, ge=1, le=100)
     g_created_by: Optional[int] = None
 
 
@@ -223,6 +224,44 @@ class GradillaWithPositionsResponse(GradillaResponse):
 
 class GradillaPaginatedResponse(BaseModel):
     items: List[GradillaResponse]
+    total: int
+    skip: int
+    limit: int
+
+
+# ── Tipos de Gradilla ─────────────────────────────────────────────────────────
+
+class TipoGradillaCreate(BaseModel):
+    tg_name: str
+    tg_rows: int = Field(..., ge=1, le=100)
+    tg_cols: int = Field(..., ge=1, le=100)
+    tg_storage_days: int = Field(..., ge=1, le=3650, description="Days samples can be stored")
+
+
+class TipoGradillaUpdate(BaseModel):
+    tg_name: Optional[str] = None
+    tg_rows: Optional[int] = Field(None, ge=1, le=100)
+    tg_cols: Optional[int] = Field(None, ge=1, le=100)
+    tg_storage_days: Optional[int] = Field(None, ge=1, le=3650)
+    tg_active: Optional[bool] = None
+
+
+class TipoGradillaResponse(BaseModel):
+    tg_id: int
+    tg_name: str
+    tg_rows: int
+    tg_cols: int
+    tg_storage_days: int
+    tg_active: bool
+    tg_created_at: Optional[datetime]
+    tg_updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class TipoGradillaPaginatedResponse(BaseModel):
+    items: List[TipoGradillaResponse]
     total: int
     skip: int
     limit: int

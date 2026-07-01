@@ -32,11 +32,13 @@ class StudiesLab(Base):
     order_of_print = Column(Integer)
     referral_location_id = Column(Integer, ForeignKey("Referral_locations.id"), nullable=True)
     work_groups_id = Column(Integer, ForeignKey("Work_groups.wg_id"), nullable=True)
+    external_lab_id = Column(Integer, ForeignKey("ExternalReferenceLaboratories.erl_id"), nullable=True)
     active = Column(Boolean, default=True)
 
     # Relaciones con Masters utilizando los modelos definidos anteriormente
     referral_location = relationship("ReferralLocation", foreign_keys=[referral_location_id])
     work_group = relationship("WorkGroup", foreign_keys=[work_groups_id])
+    external_lab = relationship("ExternalReferenceLaboratory", foreign_keys=[external_lab_id])
 
     # Relación uno a muchos con el detalle de exámenes
     # Orden estable: order_print ASC, luego id ASC como desempate (evita reordenamientos tras UPDATE en PostgreSQL)

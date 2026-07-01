@@ -1,0 +1,467 @@
+# Plantillas Dinámicas de Resultados - Integración Angular
+
+## 1. SQL para crear las tablas (ejecutar en PostgreSQL)
+
+```sql
+-- =============================================================================
+-- CompoundTemplates: Plantillas dinámicas de completado de resultados
+-- =============================================================================
+CREATE TABLE "CompoundTemplates" (
+    ct_id           SERIAL PRIMARY KEY,
+    ct_name         VARCHAR(255) NOT NULL,
+    ct_description  TEXT,
+    ct_template     JSONB NOT NULL DEFAULT '{"template": []}'::jsonb,
+    ct_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    ct_created_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+    ct_updated_at   TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- =============================================================================
+-- TestCompoundTemplates: Pivote N:M entre TestsLab y CompoundTemplates
+-- =============================================================================
+CREATE TABLE "TestCompoundTemplates" (
+    tct_id           SERIAL PRIMARY KEY,
+    tct_test_id      INTEGER NOT NULL REFERENCES "TestsLab"(id) ON DELETE CASCADE,
+    tct_template_id  INTEGER NOT NULL REFERENCES "CompoundTemplates"(ct_id) ON DELETE CASCADE,
+    tct_is_default   BOOLEAN NOT NULL DEFAULT FALSE,
+    tct_order_index  INTEGER NOT NULL DEFAULT 0,
+    tct_created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+-- Índices para búsquedas rápidas
+CREATE INDEX ix_TestCompoundTemplates_test_id     ON "TestCompoundTemplates"(tct_test_id);
+CREATE INDEX ix_TestCompoundTemplates_template_id ON "TestCompoundTemplates"(tct_template_id);
+
+-- Unique: un test no puede estar vinculado 2 veces a la misma plantilla
+CREATE UNIQUE INDEX uq_TestCompoundTemplates_test_template
+    ON "TestCompoundTemplates"(tct_test_id, tct_template_id);
+```
+
+## 2. SQL para insertar permisos (ejecutar en PostgreSQL)
+
+```sql
+INSERT INTO "Permissions" (p_name, p_description, p_module)
+SELECT * FROM (VALUES
+    ('CompoundTemplates:Create',      'Crear plantillas de completado dinámico',          'CompoundTemplates'),
+    ('CompoundTemplates:List',        'Listar y buscar plantillas',                       'CompoundTemplates'),
+    ('CompoundTemplates:GetOne',      'Ver detalle de una plantilla',                     'CompoundTemplates'),
+    ('CompoundTemplates:Update',      'Editar plantillas existentes',                     'CompoundTemplates'),
+    ('CompoundTemplates:Delete',      'Eliminar plantillas',                              'CompoundTemplates'),
+    ('CompoundTemplates:ManageLinks', 'Vincular/desvincular tests a plantillas',          'CompoundTemplates')
+) AS t(p_name, p_description, p_module)
+WHERE NOT EXISTS (SELECT 1 FROM "Permissions" WHERE "Permissions".p_name = t.p_name);
+```
+
+## 3. SQL de ejemplo - Insertar plantilla
+
+```sql
+INSERT INTO "CompoundTemplates" (ct_name, ct_description, ct_template)
+VALUES (
+    'Panel Respiratorio FilmArray',
+    'Plantilla para reporte de panel respiratorio por PCR múltiple',
+    '{
+      "template": [
+        {
+          "id": "extModel980-1",
+          "name": "Adenovirus",
+          "type": "Combo",
+          "typeName": "Lista",
+          "row": 1,
+          "defaultValue": "NO detectado",
+          "options": ["NO detectado", "DETECTADO"],
+          "unit": "",
+          "help": "Seleccione el resultado del análisis",
+          "mask": "",
+          "max": "",
+          "min": "",
+          "loinc": "53197-0"
+        },
+        {
+          "id": "extModel980-2",
+          "name": "VIRUS RESPIRATORIOS",
+          "type": "T",
+          "typeName": "Titulo",
+          "row": 2,
+          "defaultValue": "",
+          "options": [],
+          "unit": "",
+          "help": "",
+          "mask": "",
+          "max": "",
+          "min": "",
+          "loinc": ""
+        }
+      ]
+    }'::jsonb
+);
+```
+
+## 4. SQL de ejemplo - Vincular plantilla a un test
+
+```sql
+INSERT INTO "TestCompoundTemplates" (tct_test_id, tct_template_id, tct_is_default)
+VALUES (5, 1, TRUE);  -- Test ID 5 usa la plantilla ID 1 como predeterminada
+```
+
+## 5. SQL de ejemplo - Consultar plantillas de un test
+
+```sql
+SELECT ct.*
+FROM "CompoundTemplates" ct
+INNER JOIN "TestCompoundTemplates" tct ON tct.tct_template_id = ct.ct_id
+WHERE tct.tct_test_id = 5        -- ID del test
+  AND ct.ct_active = TRUE
+ORDER BY tct.tct_order_index ASC;
+```
+
+---
+
+# Integración con Angular
+
+## 6. Interfaces TypeScript
+
+```typescript
+// src/app/domains/compound-templates/models/compound-template.model.ts
+
+/** Un elemento individual del template (campo dinámico del formulario) */
+export interface TemplateElement {
+  id: string;
+  name: string;
+  type: 'T' | 'Combo' | 'Text' | 'TextArea' | 'Radio';
+  typeName?: string;
+  row: number;
+  defaultValue?: string;
+  options: string[];
+  unit?: string;
+  help?: string;
+  mask?: string;
+  max?: string;
+  min?: string;
+  loinc?: string;
+}
+
+/** Estructura del JSON que se guarda en ct_template */
+export interface CompoundTemplatePayload {
+  template: TemplateElement[];
+}
+
+/** Entidad completa de plantilla (respuesta del backend) */
+export interface CompoundTemplate {
+  ct_id: number;
+  ct_name: string;
+  ct_description?: string;
+  ct_template: CompoundTemplatePayload;
+  ct_active: boolean;
+  ct_created_at?: string;
+  ct_updated_at?: string;
+}
+
+/** DTO para crear/actualizar plantilla */
+export interface CompoundTemplateCreate {
+  ct_name: string;
+  ct_description?: string;
+  ct_template: CompoundTemplatePayload;
+  ct_active?: boolean;
+}
+
+/** Paginación */
+export interface CompoundTemplatePaginated {
+  total: number;
+  skip: number;
+  limit: number;
+  items: CompoundTemplate[];
+}
+
+/** Vínculo N:M */
+export interface TestCompoundTemplateLink {
+  tct_id: number;
+  tct_test_id: number;
+  tct_template_id: number;
+  tct_is_default: boolean;
+  tct_order_index: number;
+  tct_created_at?: string;
+}
+```
+
+## 7. Servicio Angular (HTTP Client)
+
+```typescript
+// src/app/domains/compound-templates/services/compound-template.service.ts
+
+import { Injectable } from '@angular/core';
+import { HttpClient, HttpParams } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import {
+  CompoundTemplate,
+  CompoundTemplateCreate,
+  CompoundTemplatePaginated,
+  TestCompoundTemplateLink,
+} from '../models/compound-template.model';
+
+@Injectable({ providedIn: 'root' })
+export class CompoundTemplateService {
+  private baseUrl = '/api/compound-templates';
+
+  constructor(private http: HttpClient) {}
+
+  // ── CRUD Plantillas ──────────────────────────────────────────────────
+
+  list(skip = 0, limit = 100, search?: string, activeOnly = false): Observable<CompoundTemplatePaginated> {
+    let params = new HttpParams().set('skip', skip).set('limit', limit);
+    if (search) params = params.set('search', search);
+    if (activeOnly) params = params.set('active_only', 'true');
+    return this.http.get<CompoundTemplatePaginated>(this.baseUrl, { params });
+  }
+
+  getById(ctId: number): Observable<CompoundTemplate> {
+    return this.http.get<CompoundTemplate>(`${this.baseUrl}/${ctId}`);
+  }
+
+  create(data: CompoundTemplateCreate): Observable<CompoundTemplate> {
+    return this.http.post<CompoundTemplate>(this.baseUrl, data);
+  }
+
+  update(ctId: number, data: Partial<CompoundTemplateCreate>): Observable<CompoundTemplate> {
+    return this.http.put<CompoundTemplate>(`${this.baseUrl}/${ctId}`, data);
+  }
+
+  delete(ctId: number): Observable<{ success: boolean; message: string }> {
+    return this.http.delete<{ success: boolean; message: string }>(`${this.baseUrl}/${ctId}`);
+  }
+
+  // ── Vínculos N:M ─────────────────────────────────────────────────────
+
+  getTemplatesForTest(testId: number): Observable<CompoundTemplate[]> {
+    return this.http.get<CompoundTemplate[]>(`${this.baseUrl}/by-test/${testId}`);
+  }
+
+  linkTest(ctId: number, testId: number, isDefault = false): Observable<TestCompoundTemplateLink> {
+    return this.http.post<TestCompoundTemplateLink>(`${this.baseUrl}/${ctId}/tests`, {
+      tct_test_id: testId,
+      tct_is_default: isDefault,
+    });
+  }
+
+  getLinkedTests(ctId: number): Observable<TestCompoundTemplateLink[]> {
+    return this.http.get<TestCompoundTemplateLink[]>(`${this.baseUrl}/${ctId}/tests`);
+  }
+
+  unlinkTest(tctId: number): Observable<{ success: boolean; message: string }> {
+    return this.http.delete<{ success: boolean; message: string }>(`${this.baseUrl}/tests/${tctId}`);
+  }
+}
+```
+
+## 8. Componente Renderizador Dinámico (Reactive Forms)
+
+```typescript
+// src/app/domains/compound-templates/components/compound-template-form/compound-template-form.component.ts
+
+import { Component, Input, OnInit } from '@angular/core';
+import { FormBuilder, FormGroup } from '@angular/forms';
+import { TemplateElement } from '../../models/compound-template.model';
+
+@Component({
+  selector: 'app-compound-template-form',
+  template: `
+    <form [formGroup]="dynamicForm">
+      <ng-container *ngFor="let element of elements; let i = index">
+        <!-- Título -->
+        <ng-container *ngIf="element.type === 'T'">
+          <h5 class="template-title">{{ element.name }}</h5>
+        </ng-container>
+
+        <!-- Combo / Dropdown -->
+        <ng-container *ngIf="element.type === 'Combo'">
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>{{ element.name }}</mat-label>
+            <mat-select [formControlName]="element.id">
+              <mat-option *ngFor="let opt of element.options" [value]="opt">
+                {{ opt }}
+              </mat-option>
+            </mat-select>
+            <mat-hint *ngIf="element.help">{{ element.help }}</mat-hint>
+          </mat-form-field>
+        </ng-container>
+
+        <!-- Texto corto -->
+        <ng-container *ngIf="element.type === 'Text'">
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>{{ element.name }}</mat-label>
+            <input matInput [formControlName]="element.id" />
+            <mat-hint *ngIf="element.help">{{ element.help }}</mat-hint>
+          </mat-form-field>
+        </ng-container>
+
+        <!-- Área de texto -->
+        <ng-container *ngIf="element.type === 'TextArea'">
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>{{ element.name }}</mat-label>
+            <textarea matInput rows="3" [formControlName]="element.id"></textarea>
+            <mat-hint *ngIf="element.help">{{ element.help }}</mat-hint>
+          </mat-form-field>
+        </ng-container>
+
+        <!-- Radio buttons -->
+        <ng-container *ngIf="element.type === 'Radio'">
+          <label class="radio-group-label">{{ element.name }}</label>
+          <mat-radio-group [formControlName]="element.id" class="radio-group">
+            <mat-radio-button *ngFor="let opt of element.options" [value]="opt">
+              {{ opt }}
+            </mat-radio-button>
+          </mat-radio-group>
+        </ng-container>
+      </ng-container>
+    </form>
+  `,
+  styles: [
+    '.full-width { width: 100%; }',
+    '.template-title { margin: 16px 0 8px; color: #1976d2; }',
+    '.radio-group-label { display: block; margin-bottom: 8px; font-weight: 500; }',
+    '.radio-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }',
+  ],
+})
+export class CompoundTemplateFormComponent implements OnInit {
+  @Input() elements: TemplateElement[] = [];
+  @Input() formGroup!: FormGroup;
+
+  constructor(private fb: FormBuilder) {}
+
+  ngOnInit(): void {
+    const controls: Record<string, any> = {};
+    for (const el of this.elements) {
+      controls[el.id] = [el.defaultValue || ''];
+    }
+    this.formGroup = this.fb.group(controls);
+  }
+
+  /** Devuelve los valores actuales del formulario como objeto clave-valor */
+  getValues(): Record<string, string> {
+    return this.formGroup.value;
+  }
+}
+```
+
+## 9. Uso en una página de completado de resultados
+
+```typescript
+// En tu componente de resultados de laboratorio (ej: LaboratoryResultComponent)
+
+import { Component, OnInit } from '@angular/core';
+import { CompoundTemplateService } from '../../services/compound-template.service';
+import { CompoundTemplate, TemplateElement } from '../../models/compound-template.model';
+
+@Component({
+  selector: 'app-laboratory-result',
+  template: `
+    <ng-container *ngIf="template">
+      <h4>{{ template.ct_name }}</h4>
+      <p *ngIf="template.ct_description">{{ template.ct_description }}</p>
+      <app-compound-template-form
+        [elements]="templateElements"
+        [formGroup]="compoundForm"
+      ></app-compound-template-form>
+      <button mat-raised-button color="primary" (click)="saveResult()">
+        Guardar Resultado
+      </button>
+    </ng-container>
+  `,
+})
+export class LaboratoryResultComponent implements OnInit {
+  compoundForm!: FormGroup;
+
+  template: CompoundTemplate | null = null;
+  templateElements: TemplateElement[] = [];
+
+  // Estos vendrían del contexto: orden, estudio, test seleccionados
+  testId = 5;        // ID del TestsLab
+  laboratoryId = 10; // l_id del Laboratory donde guardar el resultado
+
+  constructor(
+    private templateService: CompoundTemplateService,
+    private resultService: ResultService, // tu servicio para guardar resultados
+  ) {}
+
+  ngOnInit(): void {
+    this.loadTemplate();
+  }
+
+  loadTemplate(): void {
+    this.templateService.getTemplatesForTest(this.testId).subscribe({
+      next: (templates) => {
+        if (templates.length > 0) {
+          this.template = templates[0]; // usar la primera/por defecto
+          this.templateElements = this.template.ct_template.template;
+        }
+      },
+      error: (err) => console.error('Error loading template', err),
+    });
+  }
+
+  saveResult(): void {
+    const formValues = this.compoundForm.getValues();
+    // Convertir a formato de resultado compuesto (ej: concatenar, guardar como JSON, etc.)
+    const l_result_comp = JSON.stringify(formValues);
+
+    // Guardar en el laboratorio
+    this.resultService.updateLaboratory(this.laboratoryId, {
+      l_result_comp,
+    }).subscribe({
+      next: () => console.log('Result saved'),
+      error: (err) => console.error('Error saving', err),
+    });
+  }
+}
+```
+
+## 10. Configuración de ruta (Routing)
+
+```typescript
+// En tu module de compound-templates o feature module
+
+const routes: Routes = [
+  {
+    path: 'compound-templates',
+    loadComponent: () => import('./pages/list/list.component').then(m => m.ListComponent),
+    canActivate: [AuthGuard],
+    data: { permission: 'CompoundTemplates:List' },
+  },
+  {
+    path: 'compound-templates/create',
+    loadComponent: () => import('./pages/form/form.component').then(m => m.FormComponent),
+    canActivate: [AuthGuard],
+    data: { permission: 'CompoundTemplates:Create' },
+  },
+  {
+    path: 'compound-templates/:id/edit',
+    loadComponent: () => import('./pages/form/form.component').then(m => m.FormComponent),
+    canActivate: [AuthGuard],
+    data: { permission: 'CompoundTemplates:Update' },
+  },
+  {
+    path: 'compound-templates/:id/view',
+    loadComponent: () => import('./pages/detail/detail.component').then(m => m.DetailComponent),
+    canActivate: [AuthGuard],
+    data: { permission: 'CompoundTemplates:GetOne' },
+  },
+];
+```
+
+## 11. Resumen de permisos RBAC
+
+| Permiso | Uso en frontend |
+|---------|-----------------|
+| `CompoundTemplates:Create` | Botón "Nueva plantilla" |
+| `CompoundTemplates:List` | Página de listado / búsqueda |
+| `CompoundTemplates:GetOne` | Ver detalle de plantilla |
+| `CompoundTemplates:Update` | Editar plantilla existente |
+| `CompoundTemplates:Delete` | Eliminar plantilla |
+| `CompoundTemplates:ManageLinks` | Vincular/desvincular tests en la pantalla de edición |
+
+Para verificar si el usuario tiene permiso en Angular:
+
+```typescript
+// Directiva o helper
+@if (hasPermission('CompoundTemplates:Create')) {
+  <button (click)="createNew()">Nueva Plantilla</button>
+}
