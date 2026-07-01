@@ -11,6 +11,7 @@ from app.domains.seroteca.api.schemas import (
     SerotecaCreate, SerotecaUpdate, SerotecaResponse, SerotecaPaginatedResponse,
     GradillaCreate, GradillaUpdate, GradillaResponse, GradillaWithPositionsResponse,
     GradillaPaginatedResponse, GradillaPosicionResponse,
+    TipoGradillaCreate, TipoGradillaUpdate, TipoGradillaResponse, TipoGradillaPaginatedResponse,
     AutoStoreRequest, ManualStoreRequest,
 )
 from app.domains.seroteca.application.use_cases.tracking_use_cases import (
@@ -23,6 +24,7 @@ from app.domains.seroteca.application.use_cases.tracking_use_cases import (
 from app.domains.seroteca.application.use_cases.seroteca_use_cases import (
     create_seroteca, get_seroteca, list_serotecas, update_seroteca, delete_seroteca,
     create_rack, get_rack, list_racks, update_rack, delete_rack,
+    create_tipo_gradilla, get_tipo_gradilla, list_tipos_gradilla, update_tipo_gradilla, delete_tipo_gradilla,
 )
 
 router = APIRouter(prefix="/seroteca", tags=["Seroteca & Tracking"])
@@ -175,6 +177,65 @@ async def update_rack_endpoint(g_id: int, body: GradillaUpdate, db: AsyncSession
 )
 async def delete_rack_endpoint(g_id: int, db: AsyncSession = Depends(get_db)):
     return await delete_rack(db, g_id)
+
+
+# ── Tipos de Gradilla ─────────────────────────────────────────────────────────
+
+@router.post(
+    "/tipos-gradilla",
+    response_model=TipoGradillaResponse,
+    dependencies=[Depends(require_permission("Seroteca:ManageRackTypes"))],
+)
+async def create_tipo_gradilla_endpoint(
+    body: TipoGradillaCreate,
+    db: AsyncSession = Depends(get_db),
+):
+    return await create_tipo_gradilla(db, body.model_dump())
+
+
+@router.get(
+    "/tipos-gradilla",
+    response_model=TipoGradillaPaginatedResponse,
+    dependencies=[Depends(require_permission("Seroteca:ManageRackTypes"))],
+)
+async def list_tipos_gradilla_endpoint(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None, description="Buscar por nombre de tipo"),
+    active_only: bool = Query(False),
+    db: AsyncSession = Depends(get_db),
+):
+    return await list_tipos_gradilla(db, skip, limit, search, active_only)
+
+
+@router.get(
+    "/tipos-gradilla/{tg_id}",
+    response_model=TipoGradillaResponse,
+    dependencies=[Depends(require_permission("Seroteca:ManageRackTypes"))],
+)
+async def get_tipo_gradilla_endpoint(tg_id: int, db: AsyncSession = Depends(get_db)):
+    return await get_tipo_gradilla(db, tg_id)
+
+
+@router.patch(
+    "/tipos-gradilla/{tg_id}",
+    response_model=TipoGradillaResponse,
+    dependencies=[Depends(require_permission("Seroteca:ManageRackTypes"))],
+)
+async def update_tipo_gradilla_endpoint(
+    tg_id: int,
+    body: TipoGradillaUpdate,
+    db: AsyncSession = Depends(get_db),
+):
+    return await update_tipo_gradilla(db, tg_id, body.model_dump(exclude_unset=True))
+
+
+@router.delete(
+    "/tipos-gradilla/{tg_id}",
+    dependencies=[Depends(require_permission("Seroteca:ManageRackTypes"))],
+)
+async def delete_tipo_gradilla_endpoint(tg_id: int, db: AsyncSession = Depends(get_db)):
+    return await delete_tipo_gradilla(db, tg_id)
 
 
 # ── Storage operations ────────────────────────────────────────────────────────

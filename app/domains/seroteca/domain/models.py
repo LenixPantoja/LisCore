@@ -42,14 +42,32 @@ class Seroteca(Base):
     racks = relationship("Gradilla", back_populates="seroteca", cascade="all, delete-orphan")
 
 
+class TipoGradilla(Base):
+    """Rack type template — predefines rows, cols and storage days for a rack."""
+
+    __tablename__ = "TiposGradilla"
+
+    tg_id = Column(Integer, primary_key=True, index=True)
+    tg_name = Column(String(255), nullable=False)
+    tg_rows = Column(Integer, nullable=False)
+    tg_cols = Column(Integer, nullable=False)
+    tg_storage_days = Column(Integer, nullable=False, default=30)
+    tg_active = Column(Boolean, default=True, nullable=False)
+    tg_created_at = Column(DateTime, default=get_bogota_now)
+    tg_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
+
+    racks = relationship("Gradilla", back_populates="tipo_gradilla")
+
+
 class Gradilla(Base):
-    """Rack (gradilla) inside a seroteca. User defines rows × cols."""
+    """Rack (gradilla) inside a seroteca. User defines rows × cols or picks a TipoGradilla."""
 
     __tablename__ = "Gradillas"
 
     g_id = Column(Integer, primary_key=True, index=True)
     g_name = Column(String(255), nullable=False)
     g_seroteca_id = Column(Integer, ForeignKey("Serotecas.s_id", ondelete="CASCADE"), nullable=False)
+    g_tipo_gradilla_id = Column(Integer, ForeignKey("TiposGradilla.tg_id", ondelete="SET NULL"), nullable=True)
     g_rows = Column(Integer, nullable=False)
     g_cols = Column(Integer, nullable=False)
     g_active = Column(Boolean, default=True, nullable=False)
@@ -58,6 +76,7 @@ class Gradilla(Base):
     g_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
     seroteca = relationship("Seroteca", back_populates="racks")
+    tipo_gradilla = relationship("TipoGradilla", back_populates="racks")
     positions = relationship("GradillaPosicion", back_populates="rack", cascade="all, delete-orphan")
     created_by_user = relationship("AppUser", foreign_keys=[g_created_by])
 

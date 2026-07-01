@@ -27,8 +27,9 @@ from reportlab.lib.utils import ImageReader
 # Constantes de mapeo
 # ─────────────────────────────────────────────
 TEMPLATES_DIR = Path(__file__).parent / "templates"
-WATERMARK_PNG = str(TEMPLATES_DIR / "marca_agua.png")
-LOGO_PNG = str(TEMPLATES_DIR / "marca_agua.png")  # Usamos la misma imagen como logo
+WATERMARK_PNG = str(TEMPLATES_DIR / "LogoRojoPabon.png")
+LOGO_PNG = str(TEMPLATES_DIR / "LogoRojoPabon.png")  # Usamos la misma imagen como logo
+LOGO_BLUE_PNG = str(TEMPLATES_DIR / "LogoAzulPabon.png")
 
 
 class _RoundedFrame(Flowable):
@@ -85,6 +86,11 @@ def _get_watermark() -> io.BytesIO:
 def _get_logo() -> ImageReader:
     """Carga el logo para la cabecera."""
     return ImageReader(LOGO_PNG)
+
+
+def _get_logo_blue() -> ImageReader:
+    """Carga el logo azul para la cabecera."""
+    return ImageReader(LOGO_BLUE_PNG)
 
 
 def _fetch_signature_image(object_name: str | None) -> io.BytesIO | None:
@@ -211,6 +217,7 @@ def build_laboratory_pdf(
     # Guardamos los datos del paciente en variables globales para usarlos en el canvas
     header_data = {
         'logo': _get_logo(),
+        'logo_blue': _get_logo_blue(),
         's_ent': s_ent,
         's_ent_s': s_ent_s,
         's_label': s_label,
@@ -348,7 +355,7 @@ def build_laboratory_pdf(
 
                 # ── Firma(s) del validador ────────────────────────────────────────
                 if signatures_map:
-                    study_sigs = signatures_map.get((wg_group["wg_name"], study["name"]), [])
+                    study_sigs = signatures_map.get(study["id"], [])
                     if study_sigs:
                         sig_col_w = COL_W / max(len(study_sigs), 1)
                         sig_row = []
@@ -425,21 +432,27 @@ def build_laboratory_pdf(
         # ── Cabecera superior (logo + PANTHOSOFT LAB) ──
         # Logo izquierda
         logo = header_data['logo']
-        logo_width = 2.5 * cm
-        logo_height = 1.5 * cm
-        canvas.drawImage(logo, LEFT, PAGE_H - 2.2 * cm, width=logo_width, height=logo_height, mask="auto")
+        logo_width = 4.7 * cm  # Aumenta o disminuye este valor según necesites
+        logo_height = 2.8 * cm # Aumenta o disminuye este valor según necesites
+        # Si disminuyes el 2.2 (ej. 2.0), el logo sube. Si lo aumentas (ej. 2.4), el logo baja.
+        canvas.drawImage(logo, LEFT, PAGE_H - 3.3 * cm, width=logo_width, height=logo_height, mask="auto")
+
+        # Logo derecha (Azul)
+        logo_blue = header_data['logo_blue']
+        # Calculamos la posición X restando el ancho del logo al borde derecho (PAGE_W - RIGHT)
+        canvas.drawImage(logo_blue, PAGE_W - RIGHT - logo_width, PAGE_H - 3.3 * cm, width=logo_width, height=logo_height, mask="auto")
         
         # Texto derecha (PANTHOSOFT LAB)
         canvas.setFont("Helvetica-Bold", 10)
         canvas.setFillColor(C_NAVY)
-        canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 1.8 * cm, "PANTHOSOFT LAB")
+        canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 1.8 * cm, "")
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(C_GRAY)
-        canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 2.3 * cm, "Resultados de Laboratorio")
+        #canvas.drawRightString(PAGE_W - RIGHT, PAGE_H - 2.3 * cm, "Resultados de Laboratorio")
         
-        # Franja decorativa azul
-        canvas.setFillColor(C_NAVY)
-        canvas.rect(LEFT, PAGE_H - 2.5 * cm, COL_W, 0.15 * cm, fill=1, stroke=0)
+        # # Franja decorativa azul
+        # canvas.setFillColor(C_NAVY)
+        # canvas.rect(LEFT, PAGE_H - 2.5 * cm, COL_W, 0.15 * cm, fill=1, stroke=0)
         
         # ── Información del paciente ──
         # Título
@@ -577,17 +590,18 @@ def _group_by_study(laboratories: list, is_female: bool) -> list[dict]:
 
         wg = wg_groups[wg_name]
         if study_name not in wg["studies"]:
-            wg["studies"][study_name] = []
+            wg["studies"][study_name] = {"id": study.id if lab.order_detail and lab.order_detail.study else None, "labs": []}
             wg["study_order"].append(study_name)
-        wg["studies"][study_name].append(lab)
+        wg["studies"][study_name]["labs"].append(lab)
 
     result = []
     for wg_name in wg_order:
         wg = wg_groups[wg_name]
         studies = []
         for study_name in wg["study_order"]:
-            rows = [_build_row(lab, is_female) for lab in wg["studies"][study_name]]
-            studies.append({"name": study_name, "rows": rows})
+            entry = wg["studies"][study_name]
+            rows = [_build_row(lab, is_female) for lab in entry["labs"]]
+            studies.append({"name": study_name, "id": entry["id"], "rows": rows})
         result.append({"wg_name": wg_name, "studies": studies})
 
     return result
@@ -602,7 +616,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
     state_label, state_class = LAB_STATE_LABELS.get(
         lab.l_state, (str(lab.l_state) if lab.l_state is not None else "—", "pendiente")
     )
-    is_abnormal = _is_abnormal(lab)
+    is_abnormal = _is_abnormal(lab, is_female)
 
     return {
         "test_name": test_name,
@@ -636,13 +650,15 @@ def _full_name(patient: Any) -> str:
 
 def _format_result(lab: Any) -> str:
     test = lab.test
+    # l_result tiene precedencia: si hay texto, mostrarlo tal cual (ej. "Negativo", "Positivo", "+++")
+    if lab.l_result:
+        return lab.l_result
+    # Solo usar l_result_num si l_result está vacío
     if lab.l_result_num is not None:
         decimals = getattr(test, "num_decimal_result", None) if test and getattr(test, "test_type", None) == "N" else None
         if decimals is not None:
             return f"{float(lab.l_result_num):.{decimals}f}"
         return str(lab.l_result_num)
-    if lab.l_result:
-        return lab.l_result
     # l_result_comp se muestra debajo del examen como fila compuesta, no en esta columna
     return "—"
 
@@ -672,17 +688,43 @@ def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
     return "—"
 
 
-def _is_abnormal(lab: Any) -> bool:
-    if lab.l_result_num is None or not lab.test:
+def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
+    if not lab.test:
+        return False
+    test = lab.test
+    val = None
+    # Si el resultado es texto, no se puede evaluar como anormal
+    if lab.l_result:
+        try:
+            val = float(str(lab.l_result).replace(",", "."))
+        except (ValueError, AttributeError):
+            return False  # resultado textual como "Negativo", no aplica anormal
+    elif lab.l_result_num is not None:
+        val = float(lab.l_result_num)
+    else:
         return False
     test = lab.test
     val = float(lab.l_result_num)
-    lo = float(test.male_value_min) if test.male_value_min is not None else None
-    hi = float(test.male_value_max) if test.male_value_max is not None else None
+
+    # 1. Prioridad: rangos evaluados por el sistema de RangesReferences
+    ref_min = lab.__dict__.get("_ref_min")
+    ref_max = lab.__dict__.get("_ref_max")
+    if ref_min is not None or ref_max is not None:
+        lo = float(ref_min) if ref_min is not None else None
+        hi = float(ref_max) if ref_max is not None else None
+    else:
+        # 2. Fallback: rangos legacy del TestsLab según sexo
+        lo = float(test.female_value_min) if is_female and test.female_value_min is not None else (
+            float(test.male_value_min) if not is_female and test.male_value_min is not None else None
+        )
+        hi = float(test.female_value_max) if is_female and test.female_value_max is not None else (
+            float(test.male_value_max) if not is_female and test.male_value_max is not None else None
+        )
+
     if lo is not None and val < lo:
         return True
     if hi is not None and val > hi:
-        return False
+        return True
     return False
 
 

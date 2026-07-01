@@ -6,7 +6,11 @@ from app.domains.orders.domain.constants import (
     ORDER_DETAIL_STATES, ORDER_DETAIL_STATE_DESCARTADO,
     ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS,
 )
-from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA
+from app.domains.laboratories.domain.constants import (
+    LABORATORY_STATE_VALIDADA,
+    LABORATORY_STATE_CON_RESULTADOS,
+    LABORATORY_STATE_IMPRESO,
+)
 from app.domains.traces.constants import OPERATION_EDIT_RESULT, OPERATION_VALIDATE_RESULT, OPERATION_INVALIDATE_RESULT
 from utils.trace import register_trace
 from typing import List
@@ -25,6 +29,12 @@ async def bulk_update_laboratories(db: AsyncSession, data_list: List[dict]):
             )
         
         updated_count, details, trace_data_list = await LaboratoryRepository.bulk_update(db, data_list)
+
+        # Extraer l_ids procesados para sincronizar estados de órdenes después
+        processed_l_ids = [
+            item["l_id"] for item in data_list
+            if item.get("l_id") is not None
+        ]
 
         # Registrar trazas para cada resultado editado
         for trace in trace_data_list:
@@ -51,6 +61,10 @@ async def bulk_update_laboratories(db: AsyncSession, data_list: List[dict]):
             )
 
         await db.commit()
+
+        # Sincronizar estados de las órdenes afectadas tras registrar resultados
+        if updated_count > 0 and processed_l_ids:
+            await _sync_order_states_for_labs(db, processed_l_ids)
         
         # Construir mensaje según resultados
         message_parts = [f"Se actualizaron {updated_count} registros de laboratorio exitosamente. Los laboratorios con resultados registrados ahora tienen estado = 1."]
@@ -148,9 +162,11 @@ async def validate_laboratories(db: AsyncSession, items: list):
     - Si el ítem trae l_result o l_result_comp: registra los campos y valida (l_state = 3 / Validada).
     - Si solo trae l_nota_validation: guarda la nota sin cambiar el estado.
     - Si no trae ninguno: omite el ítem.
-    Después de validar, actualiza el o_order_state de las órdenes afectadas:
-      - 3 (Con Resultados) si todos los laboratorios de la orden están validados.
-      - 2 (Pendiente) si al menos uno no está validado.
+    Después de validar, actualiza el o_order_state de las órdenes afectadas
+    respetando is_required de StudiesTestDetail:
+      - 3 (Con Resultados) si para cada estudio de la orden, todas las pruebas
+        con is_required=True tienen resultados (l_state in {2, 3, 4}).
+      - 2 (Pendiente) si al menos un estudio tiene pruebas requeridas sin resultado.
     """
     try:
         if not items:
@@ -225,13 +241,21 @@ async def validate_laboratories(db: AsyncSession, items: list):
 
 async def _sync_order_states_for_labs(db: AsyncSession, l_ids: List[int]):
     """
-    Revisa los estados de todos los laboratorios de cada orden afectada por los l_ids dados
-    y actualiza o_order_state:
-      - ORDER_STATE_CON_RESULTADOS (3) si todos los labs de la orden están en l_state = 3.
-      - ORDER_STATE_PENDIENTE (2) si al menos uno no está validado.
+    Revisa los estados de los laboratorios de cada orden afectada respetando is_required
+    de StudiesTestDetail y actualiza o_order_state:
+      - ORDER_STATE_CON_RESULTADOS (3) si para cada estudio de la orden, todas las pruebas
+        con is_required=True tienen resultados (l_state in {2, 3, 4}).
+      - ORDER_STATE_PENDIENTE (2) si al menos un estudio tiene pruebas requeridas sin resultado.
     """
     from app.domains.laboratories.domain.models import Laboratory
     from app.domains.orders.domain.models import OrdersDetail, Order
+    from app.domains.studieslab.domain.models import StudiesTestDetail
+
+    LAB_STATES_WITH_RESULTS = {
+        LABORATORY_STATE_CON_RESULTADOS,
+        LABORATORY_STATE_VALIDADA,
+        LABORATORY_STATE_IMPRESO,  # 2, 3, 4
+    }
 
     # 1. Obtener order_ids de los labs procesados
     stmt = (
@@ -244,23 +268,68 @@ async def _sync_order_states_for_labs(db: AsyncSession, l_ids: List[int]):
     order_ids = [row[0] for row in result.fetchall()]
 
     for order_id in order_ids:
-        # 2. Obtener todos los labs de la orden
+        # 2. Obtener todos los labs de la orden junto con su estudio y test
         stmt_labs = (
-            select(Laboratory.l_state)
+            select(
+                Laboratory.l_state,
+                OrdersDetail.od_study_id,
+                Laboratory.l_test_id,
+            )
             .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
             .where(OrdersDetail.od_order_id == order_id)
         )
         result_labs = await db.execute(stmt_labs)
-        lab_states = [row[0] for row in result_labs.fetchall()]
+        labs_data = result_labs.all()  # List of (l_state, od_study_id, l_test_id)
 
-        if not lab_states:
+        if not labs_data:
             continue
 
-        # 3. Decidir el nuevo estado de la orden
-        all_validated = all(s == LABORATORY_STATE_VALIDADA for s in lab_states)
-        new_order_state = ORDER_STATE_CON_RESULTADOS if all_validated else ORDER_STATE_PENDIENTE
+        # 3. Obtener configuración is_required por estudio
+        unique_study_ids = list({row.od_study_id for row in labs_data if row.od_study_id})
+        required_tests_by_study: dict[int, set[int]] = {}
+        if unique_study_ids:
+            std_result = await db.execute(
+                select(StudiesTestDetail).where(
+                    StudiesTestDetail.studies_id.in_(unique_study_ids),
+                    StudiesTestDetail.is_required == True,
+                )
+            )
+            for std in std_result.scalars().all():
+                required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
 
-        # 4. Actualizar la orden
+        # 4. Agrupar labs por estudio: {study_id: {test_id: l_state}}
+        study_labs: dict[int, dict[int, int]] = {}
+        for row in labs_data:
+            sid = row.od_study_id
+            if sid not in study_labs:
+                study_labs[sid] = {}
+            if row.l_test_id is not None:
+                study_labs[sid][row.l_test_id] = row.l_state
+
+        # 5. Decidir si cada estudio está "Con Resultados"
+        all_studies_done = True
+        for study_id, tests_map in study_labs.items():
+            required_ids = required_tests_by_study.get(study_id, set())
+            if not required_ids:
+                # Sin pruebas requeridas definidas: el estudio se considera completado
+                # si todas sus pruebas tienen resultados (comportamiento legacy)
+                if all(state in LAB_STATES_WITH_RESULTS for state in tests_map.values()):
+                    continue  # estudio completado
+                else:
+                    all_studies_done = False
+                    break
+            else:
+                # Solo las pruebas requeridas determinan el estado
+                all_required_have_results = all(
+                    tests_map.get(tid, 0) in LAB_STATES_WITH_RESULTS
+                    for tid in required_ids
+                )
+                if not all_required_have_results:
+                    all_studies_done = False
+                    break
+
+        # 6. Actualizar la orden
+        new_order_state = ORDER_STATE_CON_RESULTADOS if all_studies_done else ORDER_STATE_PENDIENTE
         stmt_order = (
             update(Order)
             .where(Order.o_id == order_id)
@@ -273,6 +342,7 @@ async def _sync_order_states_for_labs(db: AsyncSession, l_ids: List[int]):
 async def clear_laboratory_results(db: AsyncSession, laboratory_ids: List[int]):
     """
     Limpia los resultados de laboratorios y establece el estado a 0 (Sin Resultados), solo si l_state < 3.
+    Si al menos un laboratorio es limpiado, actualiza el estado de la orden a Pendiente.
     """
     try:
         if not laboratory_ids:
@@ -282,6 +352,12 @@ async def clear_laboratory_results(db: AsyncSession, laboratory_ids: List[int]):
             )
         
         cleared_count, details = await LaboratoryRepository.clear_laboratory_results(db, laboratory_ids)
+
+        await db.commit()
+
+        # Sincronizar estados de las órdenes afectadas tras limpiar resultados
+        if cleared_count > 0:
+            await _sync_order_states_for_labs(db, laboratory_ids)
         
         # Construir mensaje según resultados
         message_parts = [f"Se limpiaron {cleared_count} laboratorios correctamente y sus estados fueron establecidos a 0."]

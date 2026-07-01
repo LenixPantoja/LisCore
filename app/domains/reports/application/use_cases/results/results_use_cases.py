@@ -13,6 +13,7 @@ from app.domains.patients.domain.models import Patient
 from app.domains.reports.infrastructure.pdf_generator import (
     build_laboratory_pdf,
     pdf_to_base64,
+    merge_pdfs,
     _full_name,
 )
 from app.shared.utils.range_evaluator import evaluate_reference_range
@@ -102,22 +103,19 @@ async def generate_laboratory_report_raw(db: AsyncSession, order_id: int) -> dic
         lab.__dict__["_ref_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["_ref_max"] = float(ref_max) if ref_max is not None else None
 
-    # 4. Construir mapa de firmas: {(wg_name, study_name): [{user_name, usr_Signature}]}
-    signatures_map: dict[tuple[str, str], list[dict]] = {}
-    _seen_sig: set[tuple[str, str, int]] = set()
+    # 4. Construir mapa de firmas: {study_id: [{user_name, usr_Signature}]}
+    signatures_map: dict[int, list[dict]] = {}
+    _seen_sig: set[tuple[int, int]] = set()
     for lab in laboratories:
         if not lab.l_user_validation_id or not lab.user_validation:
             continue
         user = lab.user_validation
-        _study_name = "Sin estudio asignado"
-        _wg_name = "Sin grupo"
+        _study_id = None
         if lab.order_detail and lab.order_detail.study:
-            _study = lab.order_detail.study
-            _study_name = _study.name
-            if _study.work_group:
-                _wg_name = _study.work_group.wg_name
-        _key = (_wg_name, _study_name)
-        _user_key = (_wg_name, _study_name, user.usr_id)
+            _study_id = lab.order_detail.study.id
+        if _study_id is None:
+            continue
+        _user_key = (_study_id, user.usr_id)
         if _user_key not in _seen_sig:
             _seen_sig.add(_user_key)
             _user_name = " ".join(filter(None, [
@@ -126,17 +124,38 @@ async def generate_laboratory_report_raw(db: AsyncSession, order_id: int) -> dic
                 user.usr_last_name,
                 user.usr_second_last_name or None,
             ])).upper()
-            signatures_map.setdefault(_key, []).append({
+            signatures_map.setdefault(_study_id, []).append({
                 "user_name": _user_name,
                 "usr_Signature": user.usr_Signature,
                 "usr_document_number": user.usr_document_number or "",
             })
 
-    # 5. Generar PDF
+    # 5. Cargar PDFs anexos
+    from app.domains.annexes.domain.models import AnnexedResult
+    from utils.minio_client import download_annexed_pdf
+
+    annex_result = await db.execute(
+        select(AnnexedResult)
+        .where(AnnexedResult.ar_order_id == order_id)
+        .order_by(AnnexedResult.ar_created_at.asc())
+    )
+    annexed_records = annex_result.scalars().all()
+
+    annex_pdfs: list[bytes] = []
+    for ann in annexed_records:
+        pdf_data = download_annexed_pdf(ann.ar_file)
+        if pdf_data:
+            annex_pdfs.append(pdf_data)
+
+    # 6. Generar PDF
     pdf_bytes = build_laboratory_pdf(order, patient, laboratories, signatures_map)
+
+    # 7. Anexar PDFs al final si existen
+    if annex_pdfs:
+        pdf_bytes = merge_pdfs(pdf_bytes, annex_pdfs)
     b64 = pdf_to_base64(pdf_bytes)
 
-    # 6. Nombre de archivo sugerido
+    # 8. Nombre de archivo sugerido
     patient_doc = patient.pt_Number_document if patient else "paciente"
     filename = f"resultado_{order.o_number}_{patient_doc}.pdf"
 

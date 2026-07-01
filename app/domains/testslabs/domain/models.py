@@ -51,6 +51,12 @@ class TestsLab(Base):
         cascade="all, delete-orphan",
     )
 
+    compound_template_links = relationship(
+        "TestCompoundTemplate",
+        back_populates="test",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self):
         return f"<TestsLab(id={self.id}, name='{self.name}')>"
 
