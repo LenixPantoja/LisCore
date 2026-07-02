@@ -252,20 +252,37 @@ async def _resolver_tipo_documento(
     db: AsyncSession, codigo_his: Optional[str]
 ) -> Optional[int]:
     """
-    Busca el id del tipo de documento en DocumentsTypes usando dt_id_dinamica,
-    que corresponde al id del tipo de documento enviado por el HIS Dinamica (GPATIPDOC).
+    Busca el id del tipo de documento en DocumentsTypes.
+
+    - Primero busca por dt_code (codigo textual como 'CC', 'CN', 'TI', etc.)
+    - Si no encuentra y el valor es numerico, busca por dt_id_dinamica
+      (ID interno del HIS Dinamica enviado en GPATIPDOC).
+
     Retorna None si no se recibe codigo o no se encuentra coincidencia.
     """
     if not codigo_his:
         return None
+
+    codigo = str(codigo_his).strip().upper()
+
+    # 1. Buscar por dt_code (codigo textual)
+    res = await db.execute(
+        select(DocumentType).where(DocumentType.dt_code == codigo)
+    )
+    doc_type: Optional[DocumentType] = res.scalars().first()
+    if doc_type:
+        return doc_type.dt_id
+
+    # 2. Fallback: si es numerico, buscar por dt_id_dinamica
     try:
         id_dinamica = int(codigo_his)
     except (ValueError, TypeError):
         return None
+
     res = await db.execute(
         select(DocumentType).where(DocumentType.dt_id_dinamica == id_dinamica)
     )
-    doc_type: Optional[DocumentType] = res.scalars().first()
+    doc_type = res.scalars().first()
     return doc_type.dt_id if doc_type else None
 
 
