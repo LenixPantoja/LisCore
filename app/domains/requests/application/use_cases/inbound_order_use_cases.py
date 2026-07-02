@@ -163,7 +163,15 @@ async def create_order_from_inbound(
             detail=f"Los siguientes estudios no tienen pruebas configuradas: {', '.join(names)}",
         )
 
-    # 3. Construir los datos de la orden mapeando campos del InboundOrder
+    # 3. Calcular la edad del paciente en formato "Xa Ym Zd"
+    patient = inbound.patient
+    o_age: Optional[str] = None
+    if patient and patient.pt_date_of_birth:
+        from app.domains.patients.domain.rules import calculate_age
+        age_parts = calculate_age(patient.pt_date_of_birth)
+        o_age = f"{age_parts['years']}a {age_parts['months']}m {age_parts['days']}d"
+
+    # 4. Construir los datos de la orden mapeando campos del InboundOrder
     # El tariff_id del payload tiene prioridad; si no se envía, se usa el del InboundOrder
     effective_tariff_id = payload.tariff_id or inbound.io_tariff_id
     if not effective_tariff_id:
@@ -174,6 +182,7 @@ async def create_order_from_inbound(
 
     order_data = {
         "o_his_id": inbound.io_patient_id,
+        "o_age": o_age,
         "o_tariff_id": effective_tariff_id,
         "o_service_id": inbound.io_service_id,
         "o_diagnoses_id": inbound.io_diagnostic_id,
