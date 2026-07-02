@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.enterprises.domain.models import Enterprise
 from app.domains.interfaces.domain.models import InterfacesRest, InterfacesRestDetail
-from app.domains.masters.domain.models import Diagnosis, DocumentType, Service, City, Department, Country
+from app.domains.masters.domain.models import Diagnosis, DocumentType, Service, City, Department, Country, SexType
 from app.domains.patients.domain.models import Patient
 from app.domains.patients.infrastructure.repository import PatientRepository
 from app.domains.requests.infrastructure.repository import InboundOrderRepository
@@ -150,6 +150,7 @@ async def registrar_solicitud_dg(
                     "iod_study_id": detail_map.itd_study_id,
                     "iod_state": INBOUND_DETAIL_STATE_PENDIENTE,
                     "iod_observation": examen.observacion,
+                    "iod_study_consecutive": examen.oid_solicitud,
                 }
             )
 
@@ -240,7 +241,7 @@ async def _crear_paciente(db: AsyncSession, dp, enterprise_id: Optional[int] = N
         "pt_mail": dp.email,
         "pt_address": dp.direccion,
         "pt_date_of_birth": fecha_parseada,
-        "pt_sex_type": _mapear_sexo(dp.sexo),
+        "pt_sex_type": await _mapear_sexo(db, dp.sexo),
         "pt_Document_Type_id": doc_type_id,
         "pt_enterprise_id": enterprise_id,
     }
@@ -268,17 +269,31 @@ async def _resolver_tipo_documento(
     return doc_type.dt_id if doc_type else None
 
 
-# Homologacion sexo HIS -> id Sex_Types del LIS
-# 1 (Hombre en HIS) -> 1 (Hombre en LIS)
-# 2 (Mujer en HIS)  -> 3 (Mujer en LIS)
-_SEXO_HIS_A_LIS: dict[str, int] = {"1": 1, "2": 3}
+# Homologacion sexo HIS -> code de Sex_Types del LIS
+# XML: F (Femenino) -> Sex_Types.code = 'M' (Mujer)
+# XML: M (Masculino) -> Sex_Types.code = 'H' (Hombre)
+# XML: 1 (Hombre)    -> Sex_Types.code = 'H'
+# XML: 2 (Mujer)     -> Sex_Types.code = 'M'
+_SEXO_HIS_A_CODE: dict[str, str] = {
+    "F": "M",
+    "M": "H",
+    "1": "H",
+    "2": "M",
+}
 
 
-def _mapear_sexo(valor: Optional[str]) -> Optional[int]:
-    """Convierte el codigo de sexo del HIS al id de Sex_Types del LIS."""
+async def _mapear_sexo(db: AsyncSession, valor: Optional[str]) -> Optional[int]:
+    """Busca el id de Sex_Types por code a partir del valor GPASEXPAC del XML."""
     if not valor:
         return None
-    return _SEXO_HIS_A_LIS.get(str(valor).strip())
+    code = _SEXO_HIS_A_CODE.get(str(valor).strip().upper())
+    if not code:
+        return None
+    res = await db.execute(
+        select(SexType).where(SexType.code == code)
+    )
+    sex_type: Optional[SexType] = res.scalars().first()
+    return sex_type.id if sex_type else None
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
