@@ -154,19 +154,35 @@ class InterfacesRestRepository:
         search: Optional[str] = None
     ) -> Tuple[Sequence[InterfacesRestDetail], int]:
         """Get interface REST details with pagination"""
+        from app.domains.studieslab.domain.models import StudiesLab
+
         query = select(InterfacesRestDetail).filter(
             InterfacesRestDetail.itd_interface_rest_id == interface_id
         ).options(selectinload(InterfacesRestDetail.study))
 
         if search:
-            query = query.filter(
+            query = query.join(
+                StudiesLab, InterfacesRestDetail.itd_study_id == StudiesLab.id, isouter=True
+            ).filter(
                 InterfacesRestDetail.itd_send_code.ilike(f"%{search}%") |
-                InterfacesRestDetail.itd_receipt_code.ilike(f"%{search}%")
+                InterfacesRestDetail.itd_receipt_code.ilike(f"%{search}%") |
+                StudiesLab.name.ilike(f"%{search}%") |
+                StudiesLab.code.ilike(f"%{search}%")
             )
 
+        # Count query must replicate the same filters
         count_stmt = select(func.count()).select_from(InterfacesRestDetail).filter(
             InterfacesRestDetail.itd_interface_rest_id == interface_id
         )
+        if search:
+            count_stmt = count_stmt.join(
+                StudiesLab, InterfacesRestDetail.itd_study_id == StudiesLab.id, isouter=True
+            ).filter(
+                InterfacesRestDetail.itd_send_code.ilike(f"%{search}%") |
+                InterfacesRestDetail.itd_receipt_code.ilike(f"%{search}%") |
+                StudiesLab.name.ilike(f"%{search}%") |
+                StudiesLab.code.ilike(f"%{search}%")
+            )
         total = (await db.execute(count_stmt)).scalar() or 0
 
         result = await db.execute(
