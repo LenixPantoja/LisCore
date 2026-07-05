@@ -218,6 +218,7 @@ async def registrar_solicitud_dg(
         "io_diagnostic_id": diagnostic_id,
         "io_municipality_id": municipality_id,
         "io_country_id": country_id,
+        "io_Piso": do.area_nombre if do else None,
     }
 
     # --- 7. Crear el InboundOrder con sus detalles ---

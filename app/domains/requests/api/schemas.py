@@ -124,6 +124,7 @@ class InboundOrderBase(BaseModel):
     io_enterprise_id: Optional[int] = None
     io_municipality_id: Optional[int] = None
     io_scholarity_id: Optional[int] = None
+    io_Piso: Optional[str] = None
 
 
 class InboundOrderCreate(InboundOrderBase):
@@ -148,6 +149,7 @@ class InboundOrderUpdate(BaseModel):
     io_enterprise_id: Optional[int] = None
     io_municipality_id: Optional[int] = None
     io_scholarity_id: Optional[int] = None
+    io_Piso: Optional[str] = None
 
 
 class InboundOrderResponse(InboundOrderBase):
@@ -208,6 +210,7 @@ class InboundOrderResponse(InboundOrderBase):
             io_enterprise_id=order.io_enterprise_id,
             io_municipality_id=order.io_municipality_id,
             io_scholarity_id=order.io_scholarity_id,
+            io_Piso=order.io_Piso,
             io_created_at=order.io_created_at,
             io_updated_at=order.io_updated_at,
             details=details,
