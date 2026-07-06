@@ -6,12 +6,34 @@ from typing import List
 
 from app.domains.annexes.infrastructure.repository import AnnexedResultRepository
 from app.domains.orders.domain.models import Order
+from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_STATE_PENDIENTE
+from app.domains.traces.constants import OPERATION_UPLOAD_ANNEXED, OPERATION_DELETE_ANNEXED
+from app.domains.traces.models import AppTrace
 from utils.minio_client import (
     upload_annexed_pdf,
     build_annexed_object_name,
     download_annexed_pdf,
 )
 from app.domains.annexes.domain.models import AnnexedResult
+
+
+def _register_trace(
+    db: AsyncSession,
+    order_id: int,
+    user_id: int | None,
+    operation_type: int,
+    operation_description: str,
+    notes: str | None = None,
+) -> None:
+    """Registra una entrada en AppTrace."""
+    trace = AppTrace(
+        usr_id=user_id,
+        order_id=order_id,
+        operation_type=operation_type,
+        operation_description=operation_description,
+        notes=notes,
+    )
+    db.add(trace)
 
 
 async def upload_annexed_result(
@@ -28,7 +50,20 @@ async def upload_annexed_result(
             detail=f"Orden con ID {order_id} no encontrada.",
         )
 
-    # 2. Read file content
+    # 2. Validate order state (only Ingresada=1 or Pendiente=2)
+    allowed_states = {ORDER_STATE_INGRESADA, ORDER_STATE_PENDIENTE}
+    if order.o_order_state not in allowed_states:
+        state_name = {1: "Ingresada", 2: "Pendiente"}.get(order.o_order_state, str(order.o_order_state))
+        actual_name = {1: "Ingresada", 2: "Pendiente", 3: "Con Resultados", 4: "Impresa", 5: "Anulada", 6: "Cerrada"}.get(order.o_order_state, str(order.o_order_state))
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"No se pueden cargar anexos a la orden {order.o_number} porque está en estado "
+                f"'{actual_name}'. Solo se permiten órdenes en estado 'Ingresada' o 'Pendiente'."
+            ),
+        )
+
+    # 3. Read file content
     file_data = await file.read()
     if not file_data:
         raise HTTPException(
@@ -36,7 +71,7 @@ async def upload_annexed_result(
             detail="El archivo está vacío.",
         )
 
-    # 3. Validate it's a PDF
+    # 4. Validate it's a PDF
     content_type = file.content_type or "application/pdf"
     if content_type != "application/pdf" and not file.filename.lower().endswith(".pdf"):
         raise HTTPException(
@@ -44,21 +79,32 @@ async def upload_annexed_result(
             detail="Solo se permiten archivos PDF.",
         )
 
-    # 4. Create DB record first to get ar_id
+    # 5. Create DB record first to get ar_id
     ann = await AnnexedResultRepository.create(db, {
         "ar_order_id": order_id,
         "ar_file": "",  # temporary, will update
         "ar_user_record_file": user_id,
     })
 
-    # 5. Build object name and upload to MinIO
+    # 6. Build object name and upload to MinIO
     object_name = build_annexed_object_name(order.o_number, ann.ar_id, file.filename or "documento.pdf")
     upload_annexed_pdf(file_data, object_name, content_type="application/pdf")
 
-    # 6. Update record with the object name
+    # 7. Update record with the object name
     ann.ar_file = object_name
     await db.flush()
     await db.refresh(ann)
+
+    # 8. Register trace
+    _register_trace(
+        db,
+        order_id=order_id,
+        user_id=user_id,
+        operation_type=OPERATION_UPLOAD_ANNEXED,
+        operation_description=f"Carga de anexo PDF a la orden {order.o_number}",
+        notes=f"Archivo: {object_name} | Nombre original: {file.filename}",
+    )
+
     await db.commit()
 
     return {
@@ -78,13 +124,20 @@ async def list_annexed_results(db: AsyncSession, order_id: int) -> dict:
     }
 
 
-async def delete_annexed_result(db: AsyncSession, ar_id: int) -> dict:
+async def delete_annexed_result(db: AsyncSession, ar_id: int, user_id: int | None = None) -> dict:
     ann = await AnnexedResultRepository.get_by_id(db, ar_id)
     if not ann:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Resultado anexo con ID {ar_id} no encontrado.",
         )
+
+    order_id = ann.ar_order_id
+    file_name = ann.ar_file
+
+    # Load order for trace
+    order = await db.get(Order, order_id)
+    order_number = order.o_number if order else f"ID {order_id}"
 
     # Delete from MinIO (best-effort)
     try:
@@ -96,6 +149,17 @@ async def delete_annexed_result(db: AsyncSession, ar_id: int) -> dict:
         pass  # Ignore errors, the DB record is the source of truth
 
     await AnnexedResultRepository.delete(db, ar_id)
+
+    # Register trace with the user who performed the deletion (from JWT)
+    _register_trace(
+        db,
+        order_id=order_id,
+        user_id=user_id,
+        operation_type=OPERATION_DELETE_ANNEXED,
+        operation_description=f"Eliminación de anexo PDF de la orden {order_number}",
+        notes=f"ID anexo: {ar_id} | Archivo: {file_name}",
+    )
+
     await db.commit()
 
     return {

@@ -12,6 +12,8 @@ from app.domains.remissions.domain.constants import (
     DETAIL_ITEM_STATE_RECEIVED_OK,
     DETAIL_ITEM_STATE_REJECTED,
 )
+from app.domains.traces.constants import OPERATION_MANAGE_REMISSION
+from app.domains.traces.models import AppTrace
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -82,6 +84,15 @@ async def create_remission(
     )
     if error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error)
+
+    # Trace
+    db.add(AppTrace(
+        usr_id=user_id,
+        operation_type=OPERATION_MANAGE_REMISSION,
+        operation_description=f"Creación de remisión {remission.rem_consecutive}",
+        notes=f"ID: {remission.rem_id} | Tipo: {rem_type} | Origen: {origin_headquarter_id} | Destino: {dest_headquarter_id or dest_external_lab_id}",
+    ))
+    await db.commit()
 
     return {
         "success": True,
@@ -388,6 +399,27 @@ async def add_items(
     if error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error)
 
+    # Trace: get studies added
+    from app.domains.orders.domain.models import OrdersDetail
+    from app.domains.studieslab.domain.models import StudiesLab
+    od_ids = [it.get("remd_order_detail_id") for it in items if it.get("remd_order_detail_id")]
+    study_names = []
+    if od_ids:
+        od_result = await db.execute(
+            select(StudiesLab.name)
+            .join(OrdersDetail, OrdersDetail.od_study_id == StudiesLab.id)
+            .where(OrdersDetail.od_id.in_(od_ids))
+        )
+        study_names = [r[0] for r in od_result.all()]
+
+    db.add(AppTrace(
+        usr_id=user_id,
+        operation_type=OPERATION_MANAGE_REMISSION,
+        operation_description=f"Adición de ítems a remisión ID {remission_id}",
+        notes=f"Ítems agregados: {len(details)} | Estudios: {', '.join(study_names) if study_names else 'N/A'}",
+    ))
+    await db.commit()
+
     return {
         "success": True,
         "items_count": len(details),
@@ -462,6 +494,15 @@ async def cancel_remission(
     remission, error = await RemissionRepository.cancel_remission(db, remission_id, user_id, notes)
     if error:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=error)
+
+    # Trace
+    db.add(AppTrace(
+        usr_id=user_id,
+        operation_type=OPERATION_MANAGE_REMISSION,
+        operation_description=f"Cancelación de remisión {remission.rem_consecutive}",
+        notes=f"ID: {remission.rem_id} | Motivo: {notes or 'No especificado'}",
+    ))
+    await db.commit()
 
     return {
         "success": True,

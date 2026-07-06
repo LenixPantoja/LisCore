@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
+from app.domains.users.infrastructure.models import AppUser
 from app.domains.orders.api.schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse, 
     NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
@@ -80,11 +81,18 @@ async def update(id: int, data: OrderUpdate, db: AsyncSession = Depends(get_db))
 
 @router.put("/{id}", response_model=OrderEditResponse, status_code=status.HTTP_200_OK,
             dependencies=[Depends(require_permission("Orders:Edit"))])
-async def edit(id: int, data: OrderEditRequest, db: AsyncSession = Depends(get_db)):
+async def edit(
+    id: int,
+    data: OrderEditRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
     """
     Edita campos de una orden y/o agrega nuevos estudios.
     """
-    return await use_cases.edit_order(db, id, data.model_dump(exclude_unset=True))
+    return await use_cases.edit_order(
+        db, id, data.model_dump(exclude_unset=True), current_user.usr_id
+    )
 
 
 @router.post("/{id}/cancel-studies", response_model=CancelStudiesResponse, status_code=status.HTTP_200_OK,

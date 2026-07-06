@@ -3,12 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
 from app.domains.annexes.api.schemas import (
     AnnexedResultUploadResponse,
     AnnexedResultListResponse,
 )
 from app.domains.annexes.application.use_cases import annexed_use_cases
+from app.domains.users.infrastructure.models import AppUser
 
 router = APIRouter(prefix="/annexes", tags=["Annexed Results"])
 
@@ -23,11 +24,13 @@ router = APIRouter(prefix="/annexes", tags=["Annexed Results"])
 )
 async def upload_annexed_result(
     order_id: int = Form(...),
-    user_id: Optional[int] = Form(None),
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
 ):
-    return await annexed_use_cases.upload_annexed_result(db, order_id, file, user_id)
+    return await annexed_use_cases.upload_annexed_result(
+        db, order_id, file, current_user.usr_id
+    )
 
 
 @router.get(
@@ -54,5 +57,6 @@ async def list_annexed_results(
 async def delete_annexed_result(
     ar_id: int,
     db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
 ):
-    return await annexed_use_cases.delete_annexed_result(db, ar_id)
+    return await annexed_use_cases.delete_annexed_result(db, ar_id, current_user.usr_id)

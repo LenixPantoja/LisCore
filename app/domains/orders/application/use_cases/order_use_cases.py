@@ -692,7 +692,7 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     }
 
 
-async def edit_order(db: AsyncSession, o_id: int, data: dict):
+async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | None = None):
     """
     Edita los campos permitidos de una orden y/o agrega nuevos estudios.
 
@@ -710,17 +710,48 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
         if not order:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada.")
 
-        # 2. Actualizar campos editables (solo los enviados)
+        # --- Snapshot BEFORE changes ---
+        from app.domains.traces.constants import OPERATION_EDIT_DEMOGRAPHICS
+        from app.domains.traces.models import AppTrace
+
         editable_fields = [
             "o_enterprise_id", "o_diagnoses_id", "o_service_id", "o_autorizacion",
             "o_pregnated", "o_week_pregnated", "o_priority", "o_scholarity",
             "o_note", "o_tariff_id",
         ]
+
+        field_labels = {
+            "o_enterprise_id": "Empresa",
+            "o_diagnoses_id": "Diagnóstico",
+            "o_service_id": "Servicio",
+            "o_autorizacion": "Autorización",
+            "o_pregnated": "Embarazo",
+            "o_week_pregnated": "Semanas embarazo",
+            "o_priority": "Prioridad",
+            "o_scholarity": "Escolaridad",
+            "o_note": "Nota",
+            "o_tariff_id": "Tarifa",
+        }
+
+        before_snapshot = {
+            field: getattr(order, field, None)
+            for field in editable_fields
+        }
+
+        # 2. Actualizar campos editables (solo los enviados)
         updated_fields: list[str] = []
         for field in editable_fields:
             if field in data and data[field] is not None:
                 setattr(order, field, data[field])
                 updated_fields.append(field)
+
+        # --- Build diff description ---
+        diff_parts: list[str] = []
+        for field in updated_fields:
+            label = field_labels.get(field, field)
+            old_val = before_snapshot.get(field)
+            new_val = data[field]
+            diff_parts.append(f"{label}: {old_val} → {new_val}")
 
         await db.flush()
 
@@ -866,6 +897,34 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
             if additional:
                 invoice.inv_subtotal = (Decimal(str(invoice.inv_subtotal)) if invoice.inv_subtotal else Decimal(0)) + additional
                 invoice.inv_total = (Decimal(str(invoice.inv_total)) if invoice.inv_total else Decimal(0)) + additional
+
+        # 5. Registrar trazas en AppTrace (ANTES del commit)
+        # 5a. Demográficos modificados
+        if diff_parts and user_id:
+            db.add(AppTrace(
+                usr_id=user_id,
+                order_id=o_id,
+                operation_type=OPERATION_EDIT_DEMOGRAPHICS,
+                operation_description=f"Edición de orden {order.o_number}",
+                notes=" | ".join(diff_parts) if diff_parts else None,
+            ))
+
+        # 5b. Estudios agregados
+        if added_studies and user_id:
+            studies_result = await db.execute(
+                select(StudiesLab.id, StudiesLab.code, StudiesLab.name)
+                .where(StudiesLab.id.in_(added_studies))
+            )
+            study_info = {row.id: f"{row.code} - {row.name}" for row in studies_result.all()}
+            for study_id in added_studies:
+                info = study_info.get(study_id, f"ID {study_id}")
+                db.add(AppTrace(
+                    usr_id=user_id,
+                    order_id=o_id,
+                    operation_type=OPERATION_CREATE_ORDER,
+                    operation_description=f"Adición estudio a orden {order.o_number}",
+                    notes=f"Estudio agregado: {info}",
+                ))
 
         await db.commit()
 
