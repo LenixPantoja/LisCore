@@ -287,11 +287,15 @@ def build_laboratory_pdf(
                 pending_compounds: list[dict] = []
 
                 for row in study["rows"]:
+                    ref_text = row["reference"]
+                    alt_ref = (row.get("alternative_range_value") or "").strip()
+                    if alt_ref:
+                        ref_text = f"{ref_text}<br/>{alt_ref}"
                     res_rows.append([
                         Paragraph(row["test_name"], s_test),
                         Paragraph(row["result"], s_res_bad if row["is_abnormal"] else s_res_ok),
                         Paragraph(row["units"], s_unit),
-                        Paragraph(row["reference"], s_ref),
+                        Paragraph(ref_text, s_ref),
                     ])
                     if row.get("result_comp"):
                         pending_compounds.append({
@@ -366,8 +370,8 @@ def build_laboratory_pdf(
                                 cell.append(
                                     RLImage(
                                         sig_buf,
-                                        width=min(sig_col_w * 0.5, 3 * cm),
-                                        height=1.5 * cm,
+                                        width=min(sig_col_w * 0.7, 5 * cm),
+                                        height=2.5 * cm,
                                         kind="proportional",
                                     )
                                 )
@@ -610,7 +614,7 @@ def _group_by_study(laboratories: list, is_female: bool) -> list[dict]:
 def _build_row(lab: Any, is_female: bool) -> dict:
     test = lab.test
     test_name = test.name if test else "—"
-    units = test.units if test and test.units else "—"
+    units = (test.units or "") if test and test.units else ""
     result = _format_result(lab)
     reference = _format_reference(lab, test, is_female)
     state_label, state_class = LAB_STATE_LABELS.get(
@@ -703,8 +707,6 @@ def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
         val = float(lab.l_result_num)
     else:
         return False
-    test = lab.test
-    val = float(lab.l_result_num)
 
     # 1. Prioridad: rangos evaluados por el sistema de RangesReferences
     ref_min = lab.__dict__.get("_ref_min")
