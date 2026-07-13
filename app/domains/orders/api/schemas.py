@@ -195,6 +195,7 @@ class LaboratoryPreliminaryResponse(BaseModel):
     lp_result: Optional[str] = None
     lp_date_preliminary: Optional[str] = None
     analyzer: Optional[str] = None
+    lp_state: int
 
     @field_validator('lp_date_preliminary', mode='before')
     @classmethod

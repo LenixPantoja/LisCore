@@ -196,6 +196,8 @@ _PERMISSIONS = [
     {"p_name": "Laboratories:ClearResults",  "p_description": "Limpiar resultados de laboratorio", "p_module": "Laboratories"},
     {"p_name": "Laboratories:UpdateState",   "p_description": "Cambiar estado de estudios en órdenes", "p_module": "Laboratories"},
     {"p_name": "Laboratories:ManageGraphics","p_description": "Subir y vincular imágenes a resultados", "p_module": "Laboratories"},
+    {"p_name": "Laboratories:ValidatePreliminary",  "p_description": "Validar resultados preliminares de laboratorio", "p_module": "Laboratories"},
+    {"p_name": "Laboratories:InvalidatePreliminary","p_description": "Desvalidar resultados preliminares de laboratorio", "p_module": "Laboratories"},
 
     # ── Interfaces ────────────────────────────────────────────────────────
     {"p_name": "Interfaces:Create",        "p_description": "Crear interfaces REST", "p_module": "Interfaces"},

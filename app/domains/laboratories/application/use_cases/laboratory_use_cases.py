@@ -11,7 +11,13 @@ from app.domains.laboratories.domain.constants import (
     LABORATORY_STATE_CON_RESULTADOS,
     LABORATORY_STATE_IMPRESO,
 )
-from app.domains.traces.constants import OPERATION_EDIT_RESULT, OPERATION_VALIDATE_RESULT, OPERATION_INVALIDATE_RESULT
+from app.domains.traces.constants import (
+    OPERATION_EDIT_RESULT,
+    OPERATION_VALIDATE_RESULT,
+    OPERATION_INVALIDATE_RESULT,
+    OPERATION_VALIDATE_PRELIMINARY,
+    OPERATION_INVALIDATE_PRELIMINARY,
+)
 from utils.trace import register_trace
 from typing import List
 
@@ -508,3 +514,119 @@ async def link_laboratory_graphic(
         "url": get_graphic_url(object_name),
         "message": "Object name vinculado correctamente al laboratorio.",
     }
+
+
+async def bulk_update_preliminaries(db: AsyncSession, items: List[dict], usr_id: int = None):
+    """
+    Valida múltiples resultados preliminares (lp_state = 1 / Validado).
+    Cada item debe contener: l_id (laboratorio), lp_id (preliminar).
+    Solo permite validar si el lp_state actual es 0 (Pendiente).
+    Registra traza en AppTrace por cada preliminar validado.
+    """
+    try:
+        if not items:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La lista de ítems no puede estar vacía."
+            )
+
+        validated_count, details, trace_data_list = await LaboratoryRepository.bulk_update_preliminaries(db, items)
+
+        # Registrar trazas para cada preliminar validado
+        for trace in trace_data_list:
+            desc = f"Preliminar lp_id={trace['lp_id']} del laboratorio l_id={trace['l_id']}"
+            if trace.get("lp_result"):
+                desc += f" | resultado: {trace['lp_result']}"
+
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_VALIDATE_PRELIMINARY,
+                operation_description=desc,
+                usr_id=usr_id,
+                order_id=trace["order_id"],
+                test_id=trace["test_id"],
+            )
+
+        await db.commit()
+
+        message_parts = [f"Se validaron {validated_count} resultados preliminares correctamente."]
+
+        if details.get("not_found"):
+            message_parts.append(f"{len(details['not_found'])} preliminares no fueron encontrados.")
+        if details.get("invalid_state"):
+            message_parts.append(f"{len(details['invalid_state'])} preliminares no estaban en estado Pendiente.")
+
+        return {
+            "success": True,
+            "validated_count": validated_count,
+            "failed_count": len(details.get("not_found", [])) + len(details.get("invalid_state", [])),
+            "message": " ".join(message_parts),
+            "details": details,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al validar los preliminares: {str(e)}"
+        )
+
+
+async def invalidate_preliminaries(db: AsyncSession, items: List[dict], usr_id: int = None, note: str = None):
+    """
+    Desvalida múltiples resultados preliminares (lp_state = 2 / Desvalidado).
+    Cada item debe contener: l_id (laboratorio), lp_id (preliminar).
+    Solo permite desvalidar si el lp_state actual es 1 (Validado).
+    Registra traza en AppTrace por cada preliminar desvalidado.
+    """
+    try:
+        if not items:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La lista de ítems no puede estar vacía."
+            )
+
+        invalidated_count, details, trace_data_list = await LaboratoryRepository.invalidate_preliminaries(db, items)
+
+        # Registrar trazas para cada preliminar desvalidado
+        for trace in trace_data_list:
+            desc = f"Preliminar lp_id={trace['lp_id']} del laboratorio l_id={trace['l_id']}"
+            if trace.get("lp_result"):
+                desc += f" | resultado: {trace['lp_result']}"
+            notes = f"Nota: {note}" if note else None
+
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_INVALIDATE_PRELIMINARY,
+                operation_description=desc,
+                usr_id=usr_id,
+                order_id=trace["order_id"],
+                test_id=trace["test_id"],
+                notes=notes,
+            )
+
+        await db.commit()
+
+        message_parts = [f"Se desvalidaron {invalidated_count} resultados preliminares correctamente."]
+
+        if details.get("not_found"):
+            message_parts.append(f"{len(details['not_found'])} preliminares no fueron encontrados.")
+        if details.get("invalid_state"):
+            message_parts.append(f"{len(details['invalid_state'])} preliminares no estaban en estado Validado.")
+
+        return {
+            "success": True,
+            "invalidated_count": invalidated_count,
+            "failed_count": len(details.get("not_found", [])) + len(details.get("invalid_state", [])),
+            "message": " ".join(message_parts),
+            "details": details,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al desvalidar los preliminares: {str(e)}"
+        )

@@ -38,6 +38,11 @@ class LaboratoryPreliminary(Base):
     Almacena resultados preliminares para un laboratorio (ej. microbiología).
     Cada registro representa un resultado parcial en una secuencia, registrado
     por un analizador en una fecha/hora determinada.
+
+    Estados (lp_state):
+        0 - Pendiente
+        1 - Validado
+        2 - Desvalidado
     """
     __tablename__ = "LaboratoryPreliminaries"
 
@@ -47,9 +52,10 @@ class LaboratoryPreliminary(Base):
     lp_result = Column(Text, nullable=True)
     lp_date_preliminary = Column(DateTime, nullable=True)
     analyzer = Column(String(255), nullable=True)
+    lp_state = Column(Integer, default=0, nullable=False)
 
     # Relaciones
     laboratory = relationship("Laboratory", back_populates="preliminaries")
 
     def __repr__(self):
-        return f"<LaboratoryPreliminary(id={self.lp_id}, lab_id={self.lp_laboratory_id}, seq={self.lp_secuence})>"
+        return f"<LaboratoryPreliminary(id={self.lp_id}, lab_id={self.lp_laboratory_id}, seq={self.lp_secuence}, state={self.lp_state})>"

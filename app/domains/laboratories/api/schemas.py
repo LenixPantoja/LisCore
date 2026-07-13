@@ -116,3 +116,46 @@ class GraphicUploadResponse(BaseModel):
     object_name: str
     url: Optional[str] = None
     message: str
+
+
+class BulkUpdatePreliminaryItem(BaseModel):
+    """Ítem para bulk-update de preliminares: ID del laboratorio + ID del preliminar."""
+    l_id: int
+    lp_id: int
+
+
+class BulkUpdatePreliminaryRequest(BaseModel):
+    """Schema para validar múltiples preliminares (bulk-update)."""
+    items: List[BulkUpdatePreliminaryItem]
+    usr_id: Optional[int] = None
+
+
+class BulkUpdatePreliminaryResponse(BaseModel):
+    """Respuesta de la operación bulk-update de preliminares."""
+    success: bool
+    validated_count: int
+    failed_count: int
+    message: str
+    details: dict = {}
+
+
+class InvalidatePreliminaryItem(BaseModel):
+    """Ítem para invalidar un preliminar: ID del laboratorio + ID del preliminar."""
+    l_id: int
+    lp_id: int
+
+
+class InvalidatePreliminaryRequest(BaseModel):
+    """Schema para desvalidar múltiples preliminares."""
+    items: List[InvalidatePreliminaryItem]
+    usr_id: Optional[int] = None
+    note: Optional[str] = None
+
+
+class InvalidatePreliminaryResponse(BaseModel):
+    """Respuesta de la operación de desvalidación de preliminares."""
+    success: bool
+    invalidated_count: int
+    failed_count: int
+    message: str
+    details: dict = {}
