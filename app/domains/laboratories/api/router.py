@@ -17,6 +17,10 @@ from app.domains.laboratories.api.schemas import (
     UpdateOrderDetailStateResponse,
     GraphicLinkRequest,
     GraphicUploadResponse,
+    BulkUpdatePreliminaryRequest,
+    BulkUpdatePreliminaryResponse,
+    InvalidatePreliminaryRequest,
+    InvalidatePreliminaryResponse,
 )
 from app.domains.laboratories.application.use_cases import laboratory_use_cases as use_cases
 
@@ -159,3 +163,45 @@ async def link_laboratory_graphic(
     - **object_name**: Nombre del objeto en el bucket 'graphics'.
     """
     return await use_cases.link_laboratory_graphic(db, l_id, data.object_name)
+
+
+@router.put(
+    "/preliminaries/bulk-update",
+    response_model=BulkUpdatePreliminaryResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permission("Laboratories:ValidatePreliminary"))],
+)
+async def bulk_update_preliminaries(
+    request: BulkUpdatePreliminaryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Valida múltiples resultados preliminares (lp_state = 1 / Validado).
+    
+    Recibe una lista de items con l_id (ID del laboratorio) y lp_id (ID del preliminar).
+    Solo permite validar si el lp_state actual es 0 (Pendiente).
+    Registra el movimiento en AppTrace.
+    """
+    items = [item.model_dump() for item in request.items]
+    return await use_cases.bulk_update_preliminaries(db, items, request.usr_id)
+
+
+@router.post(
+    "/preliminaries/invalidate",
+    response_model=InvalidatePreliminaryResponse,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(require_permission("Laboratories:InvalidatePreliminary"))],
+)
+async def invalidate_preliminaries(
+    request: InvalidatePreliminaryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Desvalida múltiples resultados preliminares (lp_state = 2 / Desvalidado).
+    
+    Recibe una lista de items con l_id (ID del laboratorio) y lp_id (ID del preliminar).
+    Solo permite desvalidar si el lp_state actual es 1 (Validado).
+    Registra el movimiento en AppTrace.
+    """
+    items = [item.model_dump() for item in request.items]
+    return await use_cases.invalidate_preliminaries(db, items, request.usr_id, request.note)

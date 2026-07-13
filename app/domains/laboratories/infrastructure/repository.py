@@ -556,3 +556,148 @@ class LaboratoryRepository:
         )
         await db.execute(stmt)
         await db.commit()
+
+    @staticmethod
+    async def bulk_update_preliminaries(
+        db: AsyncSession, items: List[Dict[str, Any]]
+    ) -> Tuple[int, Dict[str, List[int]], List[Dict[str, Any]]]:
+        """
+        Valida preliminares (lp_state = 1) de forma masiva.
+        Cada item contiene: l_id (lab), lp_id (preliminary).
+        Solo permite validar si lp_state actual es 0 (Pendiente).
+
+        Retorna:
+            - Cantidad de preliminares validados
+            - Diccionario con detalles de fallos
+            - Lista de datos de traza
+        """
+        from app.domains.laboratories.domain.models import LaboratoryPreliminary
+        from app.domains.laboratories.domain.constants import (
+            PRELIMINARY_STATE_PENDIENTE,
+            PRELIMINARY_STATE_VALIDADO,
+            PRELIMINARY_STATE_DESVALIDADO,
+        )
+
+        validated_count = 0
+        not_found_ids: List[int] = []
+        invalid_state_ids: List[int] = []
+        trace_data_list: List[Dict[str, Any]] = []
+
+        for item in items:
+            l_id = item["l_id"]
+            lp_id = item["lp_id"]
+
+            # Obtener el preliminar y el order_id del laboratorio
+            stmt = (
+                select(LaboratoryPreliminary, OrdersDetail.od_order_id, Laboratory.l_test_id)
+                .join(Laboratory, LaboratoryPreliminary.lp_laboratory_id == Laboratory.l_id)
+                .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+                .where(LaboratoryPreliminary.lp_id == lp_id)
+                .where(LaboratoryPreliminary.lp_laboratory_id == l_id)
+            )
+            result = await db.execute(stmt)
+            row = result.one_or_none()
+
+            if row is None:
+                not_found_ids.append(lp_id)
+                continue
+
+            prelim, order_id, test_id = row
+
+            if prelim.lp_state not in (PRELIMINARY_STATE_PENDIENTE, PRELIMINARY_STATE_DESVALIDADO):
+                invalid_state_ids.append(lp_id)
+                continue
+
+            # Validar el preliminar
+            prelim.lp_state = PRELIMINARY_STATE_VALIDADO
+            validated_count += 1
+
+            trace_data_list.append({
+                "order_id": order_id,
+                "test_id": test_id,
+                "lp_id": lp_id,
+                "l_id": l_id,
+                "lp_result": prelim.lp_result,
+            })
+
+        await db.commit()
+
+        details: Dict[str, List[int]] = {}
+        if not_found_ids:
+            details["not_found"] = not_found_ids
+        if invalid_state_ids:
+            details["invalid_state"] = invalid_state_ids
+
+        return validated_count, details, trace_data_list
+
+    @staticmethod
+    async def invalidate_preliminaries(
+        db: AsyncSession, items: List[Dict[str, Any]]
+    ) -> Tuple[int, Dict[str, List[int]], List[Dict[str, Any]]]:
+        """
+        Desvalida preliminares (lp_state = 2) de forma masiva.
+        Cada item contiene: l_id (lab), lp_id (preliminary).
+        Solo permite desvalidar si lp_state actual es 1 (Validado).
+
+        Retorna:
+            - Cantidad de preliminares desvalidados
+            - Diccionario con detalles de fallos
+            - Lista de datos de traza
+        """
+        from app.domains.laboratories.domain.models import LaboratoryPreliminary
+        from app.domains.laboratories.domain.constants import (
+            PRELIMINARY_STATE_VALIDADO,
+            PRELIMINARY_STATE_DESVALIDADO,
+        )
+
+        invalidated_count = 0
+        not_found_ids: List[int] = []
+        invalid_state_ids: List[int] = []
+        trace_data_list: List[Dict[str, Any]] = []
+
+        for item in items:
+            l_id = item["l_id"]
+            lp_id = item["lp_id"]
+
+            # Obtener el preliminar y el order_id del laboratorio
+            stmt = (
+                select(LaboratoryPreliminary, OrdersDetail.od_order_id, Laboratory.l_test_id)
+                .join(Laboratory, LaboratoryPreliminary.lp_laboratory_id == Laboratory.l_id)
+                .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+                .where(LaboratoryPreliminary.lp_id == lp_id)
+                .where(LaboratoryPreliminary.lp_laboratory_id == l_id)
+            )
+            result = await db.execute(stmt)
+            row = result.one_or_none()
+
+            if row is None:
+                not_found_ids.append(lp_id)
+                continue
+
+            prelim, order_id, test_id = row
+
+            if prelim.lp_state != PRELIMINARY_STATE_VALIDADO:
+                invalid_state_ids.append(lp_id)
+                continue
+
+            # Desvalidar el preliminar
+            prelim.lp_state = PRELIMINARY_STATE_DESVALIDADO
+            invalidated_count += 1
+
+            trace_data_list.append({
+                "order_id": order_id,
+                "test_id": test_id,
+                "lp_id": lp_id,
+                "l_id": l_id,
+                "lp_result": prelim.lp_result,
+            })
+
+        await db.commit()
+
+        details: Dict[str, List[int]] = {}
+        if not_found_ids:
+            details["not_found"] = not_found_ids
+        if invalid_state_ids:
+            details["invalid_state"] = invalid_state_ids
+
+        return invalidated_count, details, trace_data_list
