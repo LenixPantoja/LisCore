@@ -260,7 +260,20 @@ def build_laboratory_pdf(
             ]))
             story.append(wg_hdr)
 
-            for study in wg_group["studies"]:
+            # ── Precompute signature groups ──
+            # Consecutive studies sharing the exact same set of validators
+            # will share a single signature block rendered after the last study.
+            _wg_study_list = wg_group["studies"]
+            def _sig_key(s):
+                sigs = (signatures_map or {}).get(s["id"], [])
+                return frozenset(s["user_name"] for s in sigs) if sigs else None
+            _sig_keys = [_sig_key(s) for s in _wg_study_list]
+            _last_of_group = [
+                (i == len(_sig_keys) - 1) or (_sig_keys[i] != _sig_keys[i + 1])
+                for i in range(len(_sig_keys))
+            ]
+
+            for idx, study in enumerate(wg_group["studies"]):
                 study_hdr = Table(
                     [[Paragraph(study["name"].upper(), s_study)]],
                     colWidths=[COL_W],
@@ -358,7 +371,8 @@ def build_laboratory_pdf(
                     story.append(Spacer(1, 8))
 
                 # ── Firma(s) del validador ────────────────────────────────────────
-                if signatures_map:
+                # Only render signatures at the last study of each same-validator group
+                if signatures_map and _last_of_group[idx]:
                     study_sigs = signatures_map.get(study["id"], [])
                     if study_sigs:
                         sig_col_w = COL_W / max(len(study_sigs), 1)
