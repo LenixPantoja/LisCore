@@ -70,18 +70,7 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
     )
     laboratories = labs_result.scalars().all()
 
-    # 3. Bloquear si algún estudio contiene al menos una prueba confidencial
-    has_confidential = any(
-        lab.test and lab.test.is_confidential
-        for lab in laboratories
-    )
-    if has_confidential:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="La orden contiene pruebas confidenciales. No es posible generar el reporte en PDF.",
-        )
-
-    # 4. Filtrar solo estudios completamente validados
+    # 3. Filtrar solo estudios completamente validados
     labs_by_study: dict[int, list] = defaultdict(list)
     for lab in laboratories:
         study_key = lab.l_order_detail_id
@@ -94,7 +83,7 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         for lab in study_labs
     ]
 
-    # 5. Evaluar rangos de referencia y adjuntarlos a cada lab
+    # 4. Evaluar rangos de referencia y adjuntarlos a cada lab
     patient_dob = getattr(patient, "pt_date_of_birth", None)
     patient_sex = getattr(patient, "pt_sex_type", None)
 
@@ -123,7 +112,7 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         lab.__dict__["_ref_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["_ref_max"] = float(ref_max) if ref_max is not None else None
 
-    # 6. Construir mapa de firmas: {study_id: [{user_name, usr_Signature}]}
+    # 5. Construir mapa de firmas: {study_id: [{user_name, usr_Signature}]}
     signatures_map: dict[int, list[dict]] = {}
     _seen_sig: set[tuple[int, int]] = set()
     for lab in validated_labs:
@@ -150,7 +139,7 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
                 "usr_document_number": user.usr_document_number or "",
             })
 
-    # 7. Cargar PDFs anexos
+    # 6. Cargar PDFs anexos
     from app.domains.annexes.domain.models import AnnexedResult
     from utils.minio_client import download_annexed_pdf
 
@@ -167,15 +156,15 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         if pdf_data:
             annex_pdfs.append(pdf_data)
 
-    # 8. Generar PDF principal
+    # 7. Generar PDF principal
     pdf_bytes = build_laboratory_pdf(order, patient, validated_labs, signatures_map)
 
-    # 9. Anexar PDFs al final si existen
+    # 8. Anexar PDFs al final si existen
     if annex_pdfs:
         pdf_bytes = merge_pdfs(pdf_bytes, annex_pdfs)
     b64 = pdf_to_base64(pdf_bytes)
 
-    # 7. Nombre de archivo sugerido
+    # 9. Nombre de archivo sugerido
     patient_doc = patient.pt_Number_document if patient else "paciente"
     filename = f"resultado_{order.o_number}_{patient_doc}.pdf"
 
