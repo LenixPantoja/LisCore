@@ -498,53 +498,53 @@ def build_laboratory_pdf(
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
         canvas.drawString(LEFT + 0.2 * cm, y, "DOCUMENTO")
-        canvas.drawString(LEFT + 8.5 * cm, y, "N° ORDEN")
+        canvas.drawString(LEFT + 12.5 * cm, y, "N° ORDEN")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
         canvas.drawString(LEFT + 2.5 * cm, y, header_data['patient_doc'])
-        canvas.drawString(LEFT + 10.5 * cm, y, header_data['order_number'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['order_number'])
         
         # Fila 3: EMPRESA, EDAD
         y = y - line_height
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
         canvas.drawString(LEFT + 0.2 * cm, y, "EMPRESA")
-        canvas.drawString(LEFT + 8.5 * cm, y, "EDAD")
+        canvas.drawString(LEFT + 12.5 * cm, y, "EDAD")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
         canvas.drawString(LEFT + 2.5 * cm, y, header_data['enterprise'])
-        canvas.drawString(LEFT + 10.5 * cm, y, header_data['age'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['age'])
         
         # Fila 4: MUNICIPIO, GÉNERO
         y = y - line_height
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
         canvas.drawString(LEFT + 0.2 * cm, y, "MUNICIPIO")
-        canvas.drawString(LEFT + 8.5 * cm, y, "GÉNERO")
+        canvas.drawString(LEFT + 12.5 * cm, y, "GÉNERO")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
         canvas.drawString(LEFT + 2.5 * cm, y, header_data['city_name'])
-        canvas.drawString(LEFT + 10.5 * cm, y, header_data['sex'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['sex'])
         
         # Fila 5: SERVICIO, FECHA INGRESO
         y = y - line_height
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
         canvas.drawString(LEFT + 0.2 * cm, y, "SERVICIO")
-        canvas.drawString(LEFT + 8.5 * cm, y, "FECHA INGRESO")
+        canvas.drawString(LEFT + 12.5 * cm, y, "FECHA INGRESO")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
         canvas.drawString(LEFT + 2.5 * cm, y, header_data['service_name'])
-        canvas.drawString(LEFT + 10.9 * cm, y, header_data['order_date'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['order_date'])
         
         # Fila 6: FECHA IMPRESIÓN
         y = y - line_height
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
-        canvas.drawString(LEFT + 8.5 * cm, y, "FECHA IMPRESIÓN")
+        canvas.drawString(LEFT + 12.5 * cm, y, "FECHA IMPRESIÓN")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
-        canvas.drawString(LEFT + 10.9 * cm, y, header_data['print_date'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['print_date'])
         
         # Línea divisoria
         canvas.setStrokeColor(colors.HexColor("#bfdbfe"))
