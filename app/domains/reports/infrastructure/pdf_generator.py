@@ -204,7 +204,7 @@ def build_laboratory_pdf(
     s_empty    = ParagraphStyle("empty",    fontName="Helvetica-Oblique", fontSize=8, textColor=C_NAVY)
     s_ent      = ParagraphStyle("ent",      fontName="Helvetica-Bold", fontSize=10, textColor=C_NAVY,  alignment=TA_RIGHT)
     s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
-    s_comp     = ParagraphStyle("comp",     fontName="Courier",         fontSize=7.5, textColor=C_DARK, leading=11, leftIndent=8)
+    s_comp     = ParagraphStyle("comp",     fontName="Helvetica",       fontSize=8, textColor=C_DARK, leading=11, leftIndent=8)
     s_alt_ref  = ParagraphStyle("alt_ref",  fontName="Helvetica-Oblique", fontSize=7,   textColor=C_GRAY, leading=10, leftIndent=8)
 
     # ── Página: letter, márgenes ───────────────────────
@@ -559,7 +559,7 @@ def build_laboratory_pdf(
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(C_GRAY)
         canvas.drawString(LEFT, 0.8 * cm, f"Generado por: LisCore · Sistema LIS · {generation_date}")
-        canvas.drawRightString(PAGE_W - RIGHT, 0.8 * cm, f"Página {doc.page}")
+        canvas.drawRightString(PAGE_W - RIGHT, 0.8 * cm, f"Página {canvas.getPageNumber()}")
         canvas.setStrokeColor(C_NAVY)
         canvas.setLineWidth(0.5)
         canvas.line(LEFT, 1.1 * cm, PAGE_W - RIGHT, 1.1 * cm)
@@ -748,8 +748,14 @@ def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
 # PDF Merge
 # ─────────────────────────────────────────────
 def merge_pdfs(main_pdf: bytes, annex_pdfs: list[bytes]) -> bytes:
-    """Merge the main PDF with a list of annexed PDFs into a single PDF."""
+    """Merge the main PDF with a list of annexed PDFs into a single PDF.
+
+    After merging, rewrites the footer on **every** page so that:
+    - The generation date is consistent across all pages.
+    - Page numbers are sequential and correct.
+    """
     from pypdf import PdfReader, PdfWriter
+    from reportlab.pdfgen import canvas as pdf_canvas
 
     writer = PdfWriter()
     reader = PdfReader(io.BytesIO(main_pdf))
@@ -761,8 +767,56 @@ def merge_pdfs(main_pdf: bytes, annex_pdfs: list[bytes]) -> bytes:
         for page in annex_reader.pages:
             writer.add_page(page)
 
+    # Write the merged PDF to a temporary buffer so we can re-read it
+    temp_buf = io.BytesIO()
+    writer.write(temp_buf)
+    temp_buf.seek(0)
+
+    # Re-read and stamp a unified footer on every page
+    merged_reader = PdfReader(temp_buf)
+    final_writer = PdfWriter()
+
+    generation_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+    PAGE_W, PAGE_H = letter
+    LEFT = RIGHT = 1.5 * cm
+    FOOTER_TEXT_Y = 0.8 * cm
+    FOOTER_LINE_Y = 1.1 * cm
+    FOOTER_BOX_HEIGHT = 1.6 * cm  # enough to cover any old footer
+
+    total_pages = len(merged_reader.pages)
+    for page_num, page in enumerate(merged_reader.pages, start=1):
+        # Create a single-page overlay containing only the new footer
+        overlay_buf = io.BytesIO()
+        c = pdf_canvas.Canvas(overlay_buf, pagesize=letter)
+
+        # White rectangle to cover the old footer
+        c.setFillColor(colors.white)
+        c.setStrokeColor(colors.white)
+        c.rect(0, 0, PAGE_W, FOOTER_BOX_HEIGHT, fill=1, stroke=0)
+
+        # Decorative line
+        c.setStrokeColor(C_NAVY)
+        c.setLineWidth(0.5)
+        c.line(LEFT, FOOTER_LINE_Y, PAGE_W - RIGHT, FOOTER_LINE_Y)
+
+        # Footer text
+        c.setFont("Helvetica", 7)
+        c.setFillColor(C_GRAY)
+        c.drawString(LEFT, FOOTER_TEXT_Y,
+                     f"Generado por: LisCore · Sistema LIS · {generation_date}")
+        c.drawRightString(PAGE_W - RIGHT, FOOTER_TEXT_Y,
+                          f"Página {page_num}")
+
+        c.save()
+        overlay_buf.seek(0)
+
+        # Merge the overlay onto the page
+        overlay_reader = PdfReader(overlay_buf)
+        page.merge_page(overlay_reader.pages[0])
+        final_writer.add_page(page)
+
     buf = io.BytesIO()
-    writer.write(buf)
+    final_writer.write(buf)
     return buf.getvalue()
 
 
