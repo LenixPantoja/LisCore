@@ -204,7 +204,7 @@ def build_laboratory_pdf(
     s_empty    = ParagraphStyle("empty",    fontName="Helvetica-Oblique", fontSize=8, textColor=C_NAVY)
     s_ent      = ParagraphStyle("ent",      fontName="Helvetica-Bold", fontSize=10, textColor=C_NAVY,  alignment=TA_RIGHT)
     s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
-    s_comp     = ParagraphStyle("comp",     fontName="Helvetica",       fontSize=8, textColor=C_DARK, leading=11, leftIndent=8)
+    s_comp     = ParagraphStyle("comp",     fontName="Courier",         fontSize=8, textColor=C_DARK, leading=11, leftIndent=8)
     s_alt_ref  = ParagraphStyle("alt_ref",  fontName="Helvetica-Oblique", fontSize=7,   textColor=C_GRAY, leading=10, leftIndent=8)
 
     # ── Página: letter, márgenes ───────────────────────
