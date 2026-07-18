@@ -636,7 +636,7 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     STUDY_STATE_PENDIENTE = "Pendiente"
     STUDY_STATE_CON_RESULTADOS = "Con Resultados"
     STUDY_STATE_SIN_RESULTADOS = "Sin Resultados"
-    STATES_WITH_RESULTS = {2, 3, 4}  # Con Resultados, Validada, Impreso
+    STATES_WITH_RESULTS = { 3, 4}  # Con Resultados, Validada, Impreso
 
     for study_id, entry in study_map.items():
         required_test_ids = required_tests_by_study.get(study_id, set())
@@ -1174,5 +1174,51 @@ async def _compute_orders_state(db: AsyncSession, order_ids: list[int]) -> dict[
                     break
 
         result[oid] = ORDER_STATE_CON_RESULTADOS if all_studies_done else ORDER_STATE_PENDIENTE
+
+    return result
+
+
+async def filter_orders(
+    db: AsyncSession,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    order_states: Optional[list[int]] = None,
+    work_group_ids: Optional[list[int]] = None,
+    study_ids: Optional[list[int]] = None,
+) -> list[dict]:
+    """
+    Filtra órdenes por múltiples criterios y retorna una lista plana
+    con los campos especificados: o_id, o_number, pt_name, pt_number_document.
+    """
+    orders = await OrderRepository.get_filtered_orders(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        order_states=order_states,
+        work_group_ids=work_group_ids,
+        study_ids=study_ids,
+    )
+
+    result = []
+    for order in orders:
+        patient = order.patient
+        pt_name = ""
+        pt_number_document = ""
+        if patient:
+            parts = [
+                patient.pt_firts_name,
+                patient.pt_middle_name,
+                patient.pt_last_name,
+                patient.pt_second_last_name,
+            ]
+            pt_name = " ".join(part for part in parts if part)
+            pt_number_document = patient.pt_Number_document or ""
+
+        result.append({
+            "o_id": order.o_id,
+            "o_number": order.o_number,
+            "pt_name": pt_name,
+            "pt_number_document": pt_number_document,
+        })
 
     return result
