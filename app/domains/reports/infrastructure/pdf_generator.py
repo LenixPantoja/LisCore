@@ -1,5 +1,6 @@
 import base64
 import io
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,6 @@ from reportlab.platypus import (
     Flowable,
     Image as RLImage,
     Paragraph,
-    Preformatted,
     SimpleDocTemplate,
     Spacer,
     Table,
@@ -204,7 +204,7 @@ def build_laboratory_pdf(
     s_empty    = ParagraphStyle("empty",    fontName="Helvetica-Oblique", fontSize=8, textColor=C_NAVY)
     s_ent      = ParagraphStyle("ent",      fontName="Helvetica-Bold", fontSize=10, textColor=C_NAVY,  alignment=TA_RIGHT)
     s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
-    s_comp     = ParagraphStyle("comp",     fontName="Courier",         fontSize=8, textColor=C_DARK, leading=11, leftIndent=8)
+    s_comp     = ParagraphStyle("comp",     fontName="Helvetica",       fontSize=8, textColor=C_DARK, leading=11)
     s_alt_ref  = ParagraphStyle("alt_ref",  fontName="Helvetica-Oblique", fontSize=7,   textColor=C_GRAY, leading=10, leftIndent=8)
 
     # ── Página: letter, márgenes ───────────────────────
@@ -338,7 +338,9 @@ def build_laboratory_pdf(
 
                 # Compound results as standalone flowables so they split across pages
                 for comp in pending_compounds:
-                    story.append(Preformatted(comp["result_comp"], s_comp))
+                    comp_tbl = _build_comp_table(comp["result_comp"], s_comp, COL_W - 8)
+                    if comp_tbl is not None:
+                        story.append(comp_tbl)
                     if comp.get("alternative_range_value"):
                         story.append(Spacer(1, 4))
                         story.append(Paragraph(
@@ -654,6 +656,47 @@ def _build_row(lab: Any, is_female: bool) -> dict:
 # ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
+_COMP_COL_SPLIT = re.compile(r" {2,}")
+
+
+def _build_comp_table(text: str, style: ParagraphStyle, avail_width: float) -> Table | None:
+    """Convierte el texto de l_result_comp (columnas alineadas a punta de
+    espacios, pensadas para una fuente monoespaciada) en una tabla real de
+    reportlab, para que la alineación se conserve usando la misma fuente
+    del resto del documento en vez de depender del ancho de cada carácter."""
+    rows: list[list[str]] = []
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        rows.append(_COMP_COL_SPLIT.split(line.strip()) if line.strip() else [])
+
+    max_cols = max((len(r) for r in rows), default=0)
+    if max_cols == 0:
+        return None
+
+    col_char_widths = [1] * max_cols
+    for row in rows:
+        for i, token in enumerate(row):
+            col_char_widths[i] = max(col_char_widths[i], len(token))
+    total_chars = sum(col_char_widths)
+
+    col_widths = [avail_width * (w / total_chars) for w in col_char_widths]
+    table_data = [
+        [Paragraph(_xml_escape(row[i]) if i < len(row) else "", style) for i in range(max_cols)]
+        for row in rows
+    ]
+
+    tbl = Table(table_data, colWidths=col_widths)
+    tbl.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (0, -1), 8),
+        ("LEFTPADDING", (1, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return tbl
+
+
 def _full_name(patient: Any) -> str:
     if not patient:
         return "—"
@@ -678,7 +721,7 @@ def _format_result(lab: Any) -> str:
             return f"{float(lab.l_result_num):.{decimals}f}"
         return str(lab.l_result_num)
     # l_result_comp se muestra debajo del examen como fila compuesta, no en esta columna
-    return "—"
+    return ""
 
 
 def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
@@ -694,7 +737,7 @@ def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
 
     # 2. Fallback: campos legacy del TestsLab
     if not test:
-        return "—"
+        return ""
     lo = test.female_value_min if is_female else test.male_value_min
     hi = test.female_value_max if is_female else test.male_value_max
     if lo is not None and hi is not None:
@@ -703,7 +746,7 @@ def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
         return f">= {lo}"
     if hi is not None:
         return f"<= {hi}"
-    return "—"
+    return ""
 
 
 def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
