@@ -39,14 +39,19 @@ router.include_router(results_router)
     response_model=LaboratoryReportResponse,
     status_code=status.HTTP_200_OK,
     summary="Generar PDF de resultados de laboratorio",
-    description="Recibe el ID de una orden y retorna el reporte de resultados en formato PDF codificado en Base64.",
+    description=(
+        "Recibe el ID de una orden y retorna el reporte de resultados en formato PDF "
+        "codificado en Base64. Los estudios y resultados de laboratorio solo se incluyen "
+        "si la orden está en estado 'Validada' (4); en cualquier otro estado se retorna "
+        "el PDF sin estudios ni resultados."
+    ),
     dependencies=[Depends(require_permission("Reports:GenerateReport"))],
 )
 async def generate_laboratory_report(
     request: LaboratoryReportRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    return await use_cases.generate_laboratory_report(db, request.order_id)
+    return await use_cases.generate_validated_laboratory_report(db, request.order_id)
 
 
 @router.post(

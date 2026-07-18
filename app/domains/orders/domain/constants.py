@@ -7,17 +7,19 @@ ORDER_STATES: dict[int, str] = {
     1: "Ingresada",
     2: "Pendiente",
     3: "Con Resultados",
-    4: "Impresa",
-    5: "Anulada",
+    4: "Validada",
+    5: "Impresa",
     6: "Cerrada",
+    7: "Anulada",
 }
 
 ORDER_STATE_INGRESADA = 1
 ORDER_STATE_PENDIENTE = 2
 ORDER_STATE_CON_RESULTADOS = 3
-ORDER_STATE_IMPRESA = 4
-ORDER_STATE_ANULADA = 5
+ORDER_STATE_VALIDADA = 4
+ORDER_STATE_IMPRESA = 5
 ORDER_STATE_CERRADA = 6
+ORDER_STATE_ANULADA = 7
 
 # Estados de OrdersDetail (Estudio dentro de una Orden)
 ORDER_DETAIL_STATES: dict[int, str] = {

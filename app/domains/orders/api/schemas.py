@@ -471,7 +471,7 @@ class OrderFilterRequest(BaseModel):
     Esquema para filtrar órdenes por múltiples criterios.
 
     - start_date / end_date: Rango de fechas (o_date)
-    - order_states: Lista de estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Impresa, 5=Anulada, 6=Cerrada)
+    - order_states: Lista de estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
     - work_group_ids: Lista de IDs de grupos de trabajo (Work_groups.wg_id)
     - study_ids: Lista de IDs de estudios (StudiesLab.id)
     """

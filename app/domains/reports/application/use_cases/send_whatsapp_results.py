@@ -34,7 +34,7 @@ async def execute(db: AsyncSession, order_id: int, phone_number: str) -> dict:
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
                 f"No es posible enviar resultados. El estado de la orden es {order.o_order_state}. "
-                "Solo se permite enviar órdenes con estado 'Con Resultados' (3) o 'Impresa' (4)."
+                "Solo se permite enviar órdenes con estado 'Con Resultados' (3), 'Validada' (4) o 'Impresa' (5)."
             ),
         )
 

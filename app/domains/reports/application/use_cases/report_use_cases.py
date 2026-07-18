@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.domains.orders.domain.models import Order, OrdersDetail
+from app.domains.orders.domain.constants import ORDER_STATE_VALIDADA
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
@@ -20,7 +21,7 @@ from app.domains.reports.infrastructure.pdf_generator import (
 from app.shared.utils.range_evaluator import evaluate_reference_range
 
 
-async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
+async def generate_laboratory_report(db: AsyncSession, order_id: int, include_results: bool = True) -> dict:
     # 1. Cargar la orden con paciente y empresa
     result = await db.execute(
         select(Order)
@@ -44,100 +45,103 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
 
     patient = order.patient
 
-    # 2. Cargar laboratorios de la orden con test y estudio
-    labs_result = await db.execute(
-        select(Laboratory)
-        .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
-        .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
-        .outerjoin(
-            StudiesTestDetail,
-            (StudiesTestDetail.studies_id == OrdersDetail.od_study_id)
-            & (StudiesTestDetail.tests_id == Laboratory.l_test_id),
-        )
-        .filter(OrdersDetail.od_order_id == order_id)
-        .options(
-            selectinload(Laboratory.test),
-            selectinload(Laboratory.user_validation),
-            selectinload(Laboratory.order_detail)
-            .selectinload(OrdersDetail.study)
-            .selectinload(StudiesLab.work_group),
-        )
-        .order_by(
-            StudiesLab.order_of_print.nulls_last(),
-            StudiesTestDetail.order_print.nulls_last(),
-            Laboratory.l_id,
-        )
-    )
-    laboratories = labs_result.scalars().all()
-
-    # 3. Filtrar solo estudios completamente validados
-    labs_by_study: dict[int, list] = defaultdict(list)
-    for lab in laboratories:
-        study_key = lab.l_order_detail_id
-        labs_by_study[study_key].append(lab)
-
-    validated_labs = [
-        lab
-        for study_labs in labs_by_study.values()
-        if all(lab.l_state >= LABORATORY_STATE_VALIDADA for lab in study_labs)
-        for lab in study_labs
-    ]
-
-    # 4. Evaluar rangos de referencia y adjuntarlos a cada lab
-    patient_dob = getattr(patient, "pt_date_of_birth", None)
-    patient_sex = getattr(patient, "pt_sex_type", None)
-
-    for lab in validated_labs:
-        result_num = None
-        result_text = None
-        if lab.l_result_num is not None:
-            result_num = float(lab.l_result_num)
-        elif lab.l_result:
-            try:
-                result_num = float(str(lab.l_result).replace(",", "."))
-            except (ValueError, AttributeError):
-                result_text = lab.l_result
-
-        range_type, ref_min, ref_max = (None, None, None)
-        if lab.l_test_id and (result_num is not None or result_text):
-            range_type, ref_min, ref_max = await evaluate_reference_range(
-                db,
-                lab.l_test_id,
-                result_num,
-                patient_dob,
-                patient_sex,
-                result_text=result_text,
-            )
-        lab.__dict__["_ref_type"] = range_type
-        lab.__dict__["_ref_min"] = float(ref_min) if ref_min is not None else None
-        lab.__dict__["_ref_max"] = float(ref_max) if ref_max is not None else None
-
-    # 5. Construir mapa de firmas: {study_id: [{user_name, usr_Signature}]}
+    validated_labs: list = []
     signatures_map: dict[int, list[dict]] = {}
-    _seen_sig: set[tuple[int, int]] = set()
-    for lab in validated_labs:
-        if not lab.l_user_validation_id or not lab.user_validation:
-            continue
-        user = lab.user_validation
-        _study_id = None
-        if lab.order_detail and lab.order_detail.study:
-            _study_id = lab.order_detail.study.id
-        if _study_id is None:
-            continue
-        _user_key = (_study_id, user.usr_id)
-        if _user_key not in _seen_sig:
-            _seen_sig.add(_user_key)
-            _user_name = " ".join(filter(None, [
-                user.usr_first_name,
-                user.usr_middle_name or None,
-                user.usr_last_name,
-                user.usr_second_last_name or None,
-            ])).upper()
-            signatures_map.setdefault(_study_id, []).append({
-                "user_name": _user_name,
-                "usr_Signature": user.usr_Signature,
-                "usr_document_number": user.usr_document_number or "",
-            })
+
+    if include_results:
+        # 2. Cargar laboratorios de la orden con test y estudio
+        labs_result = await db.execute(
+            select(Laboratory)
+            .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+            .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+            .outerjoin(
+                StudiesTestDetail,
+                (StudiesTestDetail.studies_id == OrdersDetail.od_study_id)
+                & (StudiesTestDetail.tests_id == Laboratory.l_test_id),
+            )
+            .filter(OrdersDetail.od_order_id == order_id)
+            .options(
+                selectinload(Laboratory.test),
+                selectinload(Laboratory.user_validation),
+                selectinload(Laboratory.order_detail)
+                .selectinload(OrdersDetail.study)
+                .selectinload(StudiesLab.work_group),
+            )
+            .order_by(
+                StudiesLab.order_of_print.nulls_last(),
+                StudiesTestDetail.order_print.nulls_last(),
+                Laboratory.l_id,
+            )
+        )
+        laboratories = labs_result.scalars().all()
+
+        # 3. Filtrar solo estudios completamente validados
+        labs_by_study: dict[int, list] = defaultdict(list)
+        for lab in laboratories:
+            study_key = lab.l_order_detail_id
+            labs_by_study[study_key].append(lab)
+
+        validated_labs = [
+            lab
+            for study_labs in labs_by_study.values()
+            if all(lab.l_state >= LABORATORY_STATE_VALIDADA for lab in study_labs)
+            for lab in study_labs
+        ]
+
+        # 4. Evaluar rangos de referencia y adjuntarlos a cada lab
+        patient_dob = getattr(patient, "pt_date_of_birth", None)
+        patient_sex = getattr(patient, "pt_sex_type", None)
+
+        for lab in validated_labs:
+            result_num = None
+            result_text = None
+            if lab.l_result_num is not None:
+                result_num = float(lab.l_result_num)
+            elif lab.l_result:
+                try:
+                    result_num = float(str(lab.l_result).replace(",", "."))
+                except (ValueError, AttributeError):
+                    result_text = lab.l_result
+
+            range_type, ref_min, ref_max = (None, None, None)
+            if lab.l_test_id and (result_num is not None or result_text):
+                range_type, ref_min, ref_max = await evaluate_reference_range(
+                    db,
+                    lab.l_test_id,
+                    result_num,
+                    patient_dob,
+                    patient_sex,
+                    result_text=result_text,
+                )
+            lab.__dict__["_ref_type"] = range_type
+            lab.__dict__["_ref_min"] = float(ref_min) if ref_min is not None else None
+            lab.__dict__["_ref_max"] = float(ref_max) if ref_max is not None else None
+
+        # 5. Construir mapa de firmas: {study_id: [{user_name, usr_Signature}]}
+        _seen_sig: set[tuple[int, int]] = set()
+        for lab in validated_labs:
+            if not lab.l_user_validation_id or not lab.user_validation:
+                continue
+            user = lab.user_validation
+            _study_id = None
+            if lab.order_detail and lab.order_detail.study:
+                _study_id = lab.order_detail.study.id
+            if _study_id is None:
+                continue
+            _user_key = (_study_id, user.usr_id)
+            if _user_key not in _seen_sig:
+                _seen_sig.add(_user_key)
+                _user_name = " ".join(filter(None, [
+                    user.usr_first_name,
+                    user.usr_middle_name or None,
+                    user.usr_last_name,
+                    user.usr_second_last_name or None,
+                ])).upper()
+                signatures_map.setdefault(_study_id, []).append({
+                    "user_name": _user_name,
+                    "usr_Signature": user.usr_Signature,
+                    "usr_document_number": user.usr_document_number or "",
+                })
 
     # 6. Cargar PDFs anexos
     from app.domains.annexes.domain.models import AnnexedResult
@@ -176,3 +180,21 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int) -> dict:
         "order_number": order.o_number,
         "patient_name": patient_name,
     }
+
+
+async def generate_validated_laboratory_report(db: AsyncSession, order_id: int) -> dict:
+    """
+    Punto de entrada de /api/reports/laboratory-results: genera siempre el PDF,
+    pero solo incluye los estudios y resultados de laboratorio si la orden está
+    en estado 'Validada' (4). En cualquier otro estado, retorna el PDF sin
+    estudios ni resultados (solo cabecera/datos del paciente).
+    """
+    order = await db.get(Order, order_id)
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Orden con ID {order_id} no encontrada.",
+        )
+
+    include_results = order.o_order_state == ORDER_STATE_VALIDADA
+    return await generate_laboratory_report(db, order_id, include_results=include_results)
