@@ -1,6 +1,6 @@
 from typing import Tuple, Sequence, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, cast, String
 from app.domains.samples.domain.models import SampleType
 
 class SampleRepository:
@@ -15,7 +15,8 @@ class SampleRepository:
         
         if search:
             query = query.filter(
-                SampleType.st_name.ilike(f"%{search}%")
+                (SampleType.st_name.ilike(f"%{search}%"))
+                | (cast(SampleType.st_sufix, String).ilike(f"%{search}%"))
             )
         
         # Conteo total para paginación

@@ -21,9 +21,8 @@ _ZPL_TEMPLATE = """\
 ^XA
 ^LH0,0
 ^FO45,20^AB,20,1^FD{patient_full_name}^FS
-^FO45,45^AB,10,1^FDIDENTIFICACION:{identification}^FS
-^FO45,60^AB,10,1^FDEMPRESA:{enterprise_name}^FS
-^FO260,60^AB,10,1^FDEDAD:{age_str}^FS
+^FO45,45^AB,18,1^FDDOCU:{identification}^FS
+^FO260,45^AB,18,1^FDEDAD:{age_str}^FS
 
 ^BY2,3,150
 ^FO25,80^BCN,80,N,Y,N^FD{barcode_value}^FS

@@ -178,11 +178,22 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
     if patient and getattr(patient, "pt_date_of_birth", None):
         dob = patient.pt_date_of_birth
         today = date.today()
-        years = (
-            today.year - dob.year
-            - ((today.month, today.day) < (dob.month, dob.day))
-        )
-        age_str = f"{years} A"
+        delta_days = (today - dob).days
+
+        if delta_days >= 365:
+            # Adulto: calcular años cumplidos
+            years = (
+                today.year - dob.year
+                - ((today.month, today.day) < (dob.month, dob.day))
+            )
+            age_str = f"{years} A"
+        elif delta_days >= 30:
+            # Meses cumplidos
+            months = delta_days // 30
+            age_str = f"{months} M"
+        else:
+            # Días de nacido
+            age_str = f"{delta_days} D"
 
     # 8. Build sticker data list: one sticker per tube.
     #    If multiple work groups share the same sample type, they are merged into
