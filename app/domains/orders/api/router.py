@@ -11,6 +11,7 @@ from app.domains.orders.api.schemas import (
     NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
     OrderCreatedResponse, OrderEditRequest, OrderEditResponse,
     GraficoEvolutivoResponse, CancelStudiesRequest, CancelStudiesResponse,
+    OrderFilterRequest, OrderFilterItemResponse,
 )
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
@@ -138,3 +139,24 @@ async def get_full_order_by_id(id: int, db: AsyncSession = Depends(get_db)):
     Get full details of an order including all non-paginated children arrays.
     """
     return await use_cases.get_full_order_details_by_id(db, id)
+
+@router.post("/filter", response_model=List[OrderFilterItemResponse],
+             dependencies=[Depends(require_permission("Orders:List"))])
+async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Filtra órdenes por múltiples criterios:
+    - Rango de fechas (start_date, end_date sobre o_date)
+    - Estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Impresa, 5=Anulada, 6=Cerrada)
+    - Grupos de trabajo (lista de IDs de Work_groups)
+    - Estudios (lista de IDs de StudiesLab)
+    
+    Retorna una lista plana con: o_id, o_number, pt_name, pt_number_document.
+    """
+    return await use_cases.filter_orders(
+        db,
+        start_date=data.start_date,
+        end_date=data.end_date,
+        order_states=data.order_states,
+        work_group_ids=data.work_group_ids,
+        study_ids=data.study_ids,
+    )
