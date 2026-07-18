@@ -18,7 +18,7 @@ docker network create clinizad_network
 ^FO25,80^BCN,80,N,Y,N^FD{barcode_value}^FS
 
 ^FO370,40^ADB,25,1^FD{label_number}^FS
-^FO5,80^ABB,15,1^FD{work_}^FS
+^FO5,80^ABB,15,1^FD{work_group_name}^FS
 
 ^FO45,165^AB,18,1^FD{tests_line}^FS
 ^FO45,189^AB,10,1^FD TM-{sample_type_name}^FS
