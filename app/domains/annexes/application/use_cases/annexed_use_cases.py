@@ -6,7 +6,7 @@ from typing import List
 
 from app.domains.annexes.infrastructure.repository import AnnexedResultRepository
 from app.domains.orders.domain.models import Order
-from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_STATE_PENDIENTE
+from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_STATE_PENDIENTE, ORDER_STATES
 from app.domains.traces.constants import OPERATION_UPLOAD_ANNEXED, OPERATION_DELETE_ANNEXED
 from app.domains.traces.models import AppTrace
 from utils.minio_client import (
@@ -53,8 +53,7 @@ async def upload_annexed_result(
     # 2. Validate order state (only Ingresada=1 or Pendiente=2)
     allowed_states = {ORDER_STATE_INGRESADA, ORDER_STATE_PENDIENTE}
     if order.o_order_state not in allowed_states:
-        state_name = {1: "Ingresada", 2: "Pendiente"}.get(order.o_order_state, str(order.o_order_state))
-        actual_name = {1: "Ingresada", 2: "Pendiente", 3: "Con Resultados", 4: "Impresa", 5: "Anulada", 6: "Cerrada"}.get(order.o_order_state, str(order.o_order_state))
+        actual_name = ORDER_STATES.get(order.o_order_state, str(order.o_order_state))
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(

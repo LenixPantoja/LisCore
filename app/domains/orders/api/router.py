@@ -146,7 +146,7 @@ async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get
     """
     Filtra órdenes por múltiples criterios:
     - Rango de fechas (start_date, end_date sobre o_date)
-    - Estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Impresa, 5=Anulada, 6=Cerrada)
+    - Estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
     - Grupos de trabajo (lista de IDs de Work_groups)
     - Estudios (lista de IDs de StudiesLab)
     
