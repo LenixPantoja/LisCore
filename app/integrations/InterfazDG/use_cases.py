@@ -79,7 +79,27 @@ async def registrar_solicitud_dg(
             detail=detalle,
         )
 
-    # --- 2. Buscar o crear paciente por numero de documento ---
+    # --- 2. Resolver municipio (GPACIUDAD -> Cities.id) y pais ---
+    municipality_id: Optional[int] = None
+    country_id: Optional[int] = None
+    codigo_ciudad = dp.municipio_ciudad_codigo if dp else None
+    if codigo_ciudad:
+        res_city = await db.execute(
+            select(City).where(City.postal_code == codigo_ciudad)
+        )
+        city: Optional[City] = res_city.scalars().first()
+        if city:
+            municipality_id = city.id
+            # Obtener el pais a traves del departamento
+            res_dept = await db.execute(
+                select(Department).where(Department.d_id == city.Department_id)
+            )
+            dept: Optional[Department] = res_dept.scalars().first()
+            if dept:
+                country_id = dept.d_country_id
+        print(f"[InterfazDG] GPACIUDAD='{codigo_ciudad}' → municipality_id={municipality_id}, country_id={country_id}")
+
+    # --- 3. Buscar o crear paciente por numero de documento ---
     documento_paciente = dp.codigo if dp else None
     if not documento_paciente:
         raise HTTPException(
@@ -114,14 +134,17 @@ async def registrar_solicitud_dg(
         if patient.pt_enterprise_id is None and enterprise_id is not None:
             patient.pt_enterprise_id = enterprise_id
             updated = True
+        if patient.pt_city_id is None and municipality_id is not None:
+            patient.pt_city_id = municipality_id
+            updated = True
         if updated:
             await db.commit()
             await db.refresh(patient)
     else:
-        # Paciente no existe -> crearlo con enterprise_id
-        patient = await _crear_paciente(db, dp, enterprise_id)
+        # Paciente no existe -> crearlo con enterprise_id y municipio homologado
+        patient = await _crear_paciente(db, dp, enterprise_id, municipality_id)
 
-    # --- 3. Homologar estudios via InterfacesRestDetail ---
+    # --- 4. Homologar estudios via InterfacesRestDetail ---
     detail_data_list: list[dict] = []
     if solicitud.examenes:
         for examen in solicitud.examenes:
@@ -160,17 +183,19 @@ async def registrar_solicitud_dg(
             detail="El XML no contiene examenes validos para registrar.",
         )
 
-    # --- 4. Homologar servicio (ARECODIGO -> Services.code -> Services.id) ---
+    # --- 5. Homologar servicio (GESERCODIGO -> Services.code -> Services.id) ---
     service_id: Optional[int] = None
-    if do and do.area_codigo:
+    servicio_codigo = do.geser_codigo if do else None
+    servicio_nombre = do.geser_nombre if do else None
+    if servicio_codigo:
         res_svc = await db.execute(
-            select(Service).where(Service.code == do.area_codigo)
+            select(Service).where(Service.code == servicio_codigo)
         )
         svc: Optional[Service] = res_svc.scalars().first()
         if svc:
             service_id = svc.id
 
-    # --- 5. Homologar diagnostico (CODICIE10 -> Diagnoses.diag_code -> Diagnoses.diag_id) ---
+    # --- 6. Homologar diagnostico (CODICIE10 -> Diagnoses.diag_code -> Diagnoses.diag_id) ---
     diagnostic_id: Optional[int] = None
     if dp and dp.diagnostico_codigo:
         res_diag = await db.execute(
@@ -180,26 +205,6 @@ async def registrar_solicitud_dg(
         if diag:
             diagnostic_id = diag.diag_id
         print(f"[InterfazDG] diagnostico_codigo='{dp.diagnostico_codigo}' → diagnostic_id={diagnostic_id}")
-
-    # --- 6. Resolver municipio (GPACIUDAD -> Cities.postal_code) y pais ---
-    municipality_id: Optional[int] = None
-    country_id: Optional[int] = None
-    codigo_ciudad = dp.municipio_ciudad_codigo if dp else None
-    if codigo_ciudad:
-        res_city = await db.execute(
-            select(City).where(City.postal_code == codigo_ciudad)
-        )
-        city: Optional[City] = res_city.scalars().first()
-        if city:
-            municipality_id = city.id
-            # Obtener el pais a traves del departamento
-            res_dept = await db.execute(
-                select(Department).where(Department.d_id == city.Department_id)
-            )
-            dept: Optional[Department] = res_dept.scalars().first()
-            if dept:
-                country_id = dept.d_country_id
-        print(f"[InterfazDG] GPACIUDAD='{codigo_ciudad}' → municipality_id={municipality_id}, country_id={country_id}")
 
     # --- 7. Construir datos del InboundOrder ---
     now = datetime.utcnow()
@@ -215,18 +220,25 @@ async def registrar_solicitud_dg(
         "io_tariff_id": tariff_id,
         "io_income": dg.tipo_ingreso if dg else None,
         "io_service_id": service_id,
+        "io_service_code": servicio_codigo,
+        "io_service_name": servicio_nombre,
         "io_diagnostic_id": diagnostic_id,
         "io_municipality_id": municipality_id,
         "io_country_id": country_id,
         "io_Piso": do.area_nombre if do else None,
     }
 
-    # --- 7. Crear el InboundOrder con sus detalles ---
+    # --- 8. Crear el InboundOrder con sus detalles ---
     inbound = await InboundOrderRepository.create(db, order_data, detail_data_list)
     return inbound.io_id
 
 
-async def _crear_paciente(db: AsyncSession, dp, enterprise_id: Optional[int] = None) -> Patient:
+async def _crear_paciente(
+    db: AsyncSession,
+    dp,
+    enterprise_id: Optional[int] = None,
+    city_id: Optional[int] = None,
+) -> Patient:
     """Crea un paciente nuevo con los datos del XML del HIS."""
     doc_type_id = await _resolver_tipo_documento(db, dp.tipo_documento if dp else None)
     fecha_raw = dp.fecha_nacimiento
@@ -245,6 +257,7 @@ async def _crear_paciente(db: AsyncSession, dp, enterprise_id: Optional[int] = N
         "pt_sex_type": await _mapear_sexo(db, dp.sexo),
         "pt_Document_Type_id": doc_type_id,
         "pt_enterprise_id": enterprise_id,
+        "pt_city_id": city_id,
     }
     return await PatientRepository.create(db, patient_data)
 
