@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Optional, List
+from pydantic import BaseModel, model_validator
+from typing import Optional, List, Any
 
 
 # --- External Reference Laboratory ---
@@ -54,6 +54,28 @@ class TestsLabResponse(BaseModel):
     name: str
     active: bool
     units: Optional[str] = None
+    st_sufix: Optional[int] = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def extract_st_sufix(cls, data: Any) -> Any:
+        """
+        Extrae st_sufix desde la relación sample_type del modelo TestsLab.
+        """
+        if isinstance(data, dict):
+            return data
+        # data es un objeto TestsLab (ORM)
+        sample_type = getattr(data, 'sample_type', None)
+        st_sufix = getattr(sample_type, 'st_sufix', None) if sample_type else None
+        # Construir dict con los campos del schema + st_sufix
+        result = {}
+        for field_name in cls.model_fields:
+            try:
+                result[field_name] = getattr(data, field_name)
+            except AttributeError:
+                pass
+        result['st_sufix'] = st_sufix
+        return result
 
     class Config:
         from_attributes = True

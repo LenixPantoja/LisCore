@@ -19,6 +19,7 @@ class PatientBase(BaseModel):
     pt_address: Optional[str] = None
     pt_date_of_birth: Optional[date] = None
     pt_authorize_habeas_data: Optional[bool] = False
+    pt_authorize_send_digital: Optional[bool] = False
     pt_afiliation_type: Optional[int] = None
     pt_enterprise_id: Optional[int] = None
     pt_Document_Type_id: Optional[int] = None
@@ -39,6 +40,7 @@ class PatientUpdate(BaseModel):
     pt_address: Optional[str] = None
     pt_date_of_birth: Optional[date] = None
     pt_authorize_habeas_data: Optional[bool] = None
+    pt_authorize_send_digital: Optional[bool] = None
     pt_afiliation_type: Optional[int] = None
     pt_enterprise_id: Optional[int] = None
     pt_Document_Type_id: Optional[int] = None
