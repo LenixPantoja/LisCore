@@ -58,6 +58,8 @@ class DGDatosOrden:
     area_nombre: Optional[str] = None        # ARENOMBRE
     servicio_codigo: Optional[str] = None    # GEECODIGO
     servicio_nombre: Optional[str] = None    # GEENOMBRE
+    geser_codigo: Optional[str] = None       # GESERCODIGO - Codigo de servicio (homologa con Services.code)
+    geser_nombre: Optional[str] = None       # GESERNOMBRE - Nombre de servicio
 
 
 @dataclass
