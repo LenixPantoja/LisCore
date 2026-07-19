@@ -23,6 +23,8 @@ from reportlab.platypus import (
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
 from reportlab.lib.utils import ImageReader
 
+from app.shared.utils.range_evaluator import SEX_TYPE_IDS_MALE, SEX_TYPE_IDS_FEMALE
+
 # ─────────────────────────────────────────────
 # Constantes de mapeo
 # ─────────────────────────────────────────────
@@ -151,9 +153,26 @@ LAB_STATE_LABELS = {
 }
 
 SEX_LABELS = {
-    1: "Femenino",
-    2: "Masculino",
+    "F": "Femenino",
+    "M": "Masculino",
 }
+
+
+def _resolve_sex(patient: Any) -> tuple[bool, str]:
+    """
+    Resuelve (is_female, etiqueta_genero) a partir de patient.pt_sex_type.
+
+    pt_sex_type es el id (FK) de Sex_Types, no un enum fijo 1/2: los ids
+    reales de Masculino/Femenino se definen en SEX_TYPE_IDS_MALE/FEMALE
+    (app.shared.utils.range_evaluator), que es la misma fuente usada para
+    evaluar los rangos de referencia por género.
+    """
+    sex_type_id = patient.pt_sex_type if patient else None
+    if sex_type_id in SEX_TYPE_IDS_FEMALE:
+        return True, SEX_LABELS["F"]
+    if sex_type_id in SEX_TYPE_IDS_MALE:
+        return False, SEX_LABELS["M"]
+    return False, "—"
 
 
 # ─────────────────────────────────────────────
@@ -170,13 +189,12 @@ def build_laboratory_pdf(
     La cabecera (logo + datos del paciente) se repite en todas las páginas.
     """
     generation_date = datetime.now().strftime("%d/%m/%Y %H:%M")
-    is_female = patient and patient.pt_sex_type == 1
+    is_female, sex = _resolve_sex(patient)
     print_date = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     # ── Datos de contexto ──────────────────────────────
     patient_name  = _full_name(patient)
     patient_doc   = patient.pt_Number_document if patient else "—"
-    sex           = SEX_LABELS.get(patient.pt_sex_type, "—") if patient else "—"
     age           = str(order.o_age or "—")
     enterprise    = order.enterprise.en_name if order.enterprise else "—"
     service_name  = order.service.name if order.service else "—"
