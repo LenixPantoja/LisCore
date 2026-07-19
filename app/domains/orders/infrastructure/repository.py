@@ -342,6 +342,7 @@ class OrderRepository:
         from app.domains.laboratories.domain.models import Laboratory
         from app.domains.orders.domain.models import OrdersDetail
         from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
+        from app.domains.testslabs.domain.models import TestsLab
 
         # Simplified count — no subquery wrapper needed
         count_stmt = (
@@ -365,7 +366,7 @@ class OrderRepository:
             )
             .where(OrdersDetail.od_order_id == o_id)
             .options(
-                joinedload(Laboratory.test),
+                joinedload(Laboratory.test).selectinload(TestsLab.sample_type),
                 joinedload(Laboratory.user_validation),
                 selectinload(Laboratory.preliminaries),
                 contains_eager(Laboratory.order_detail).contains_eager(OrdersDetail.study),
@@ -404,6 +405,7 @@ class OrderRepository:
             .join(OrdersDetail, OrdersDetail.od_study_id == StudiesTestDetail.studies_id)
             .where(OrdersDetail.od_order_id == o_id)
             .group_by(TestsLab.id)
+            .options(selectinload(TestsLab.sample_type))
             .order_by(func.min(StudiesTestDetail.order_print).nulls_last(), TestsLab.id)
             .offset(skip)
             .limit(limit)

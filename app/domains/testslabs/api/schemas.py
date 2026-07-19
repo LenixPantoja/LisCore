@@ -1,5 +1,5 @@
-from pydantic import BaseModel, field_validator
-from typing import Optional, List
+from pydantic import BaseModel, field_validator, model_validator
+from typing import Optional, List, Any
 from datetime import datetime
 from decimal import Decimal
 
@@ -69,6 +69,26 @@ class TestsLabResponse(TestsLabBase):
     created_at: datetime
     updated_at: datetime
     formats_complete: List[str] = []
+    st_sufix: Optional[int] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_st_sufix(cls, data: Any) -> Any:
+        """Extrae st_sufix desde la relación sample_type del modelo TestsLab."""
+        if isinstance(data, dict):
+            return data
+        sample_type = getattr(data, "sample_type", None)
+        st_sufix = getattr(sample_type, "st_sufix", None) if sample_type else None
+        result = {}
+        for field_name in cls.model_fields:
+            if field_name == "st_sufix":
+                continue
+            try:
+                result[field_name] = getattr(data, field_name)
+            except AttributeError:
+                pass
+        result["st_sufix"] = st_sufix
+        return result
 
     class Config:
         from_attributes = True
