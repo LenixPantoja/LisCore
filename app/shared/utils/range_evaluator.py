@@ -26,8 +26,10 @@ GENDER_MALE = "MASCULINO"
 GENDER_FEMALE = "FEMENINO"
 
 # IDs de SexType en el LIS que corresponden a Masculino/Femenino
-_SEX_TYPE_IDS_MALE: set[int] = {1}   # id=1 → Hombre
-_SEX_TYPE_IDS_FEMALE: set[int] = {3}  # id=3 → Mujer
+# (usados también fuera de este módulo, p.ej. en pdf_generator, para
+# resolver el género visible del paciente a partir de pt_sex_type)
+SEX_TYPE_IDS_MALE: set[int] = {1}   # id=1 → Hombre
+SEX_TYPE_IDS_FEMALE: set[int] = {3}  # id=3 → Mujer
 
 
 def _patient_age_in_days(dob: date) -> int:
@@ -76,9 +78,9 @@ def _gender_matches(range_gender: Optional[str], patient_sex_type_id: Optional[i
     if not range_gender or range_gender.upper() == GENDER_BOTH:
         return True
     if range_gender.upper() == GENDER_MALE:
-        return patient_sex_type_id in _SEX_TYPE_IDS_MALE
+        return patient_sex_type_id in SEX_TYPE_IDS_MALE
     if range_gender.upper() == GENDER_FEMALE:
-        return patient_sex_type_id in _SEX_TYPE_IDS_FEMALE
+        return patient_sex_type_id in SEX_TYPE_IDS_FEMALE
     return False
 
 
