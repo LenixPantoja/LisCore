@@ -94,7 +94,7 @@ async def list_tariff_studies_by_enterprise(
     - **tariff_id**: Tariff ID (path parameter)
     - **skip**: Number of records to skip
     - **limit**: Maximum number of records (1-500)
-    - **search**: Filter by study name or code (case-insensitive)
+    - **search**: Filter by study name, code, or CUPS code (case-insensitive)
     - **active**: Filter by study active status
 
     Returns full study information with the tariff detail value.
