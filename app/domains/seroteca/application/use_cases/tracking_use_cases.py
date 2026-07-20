@@ -84,8 +84,10 @@ async def log_sample_event(
         )
         result = await db.execute(stmt)
         order_details = result.scalars().all()
+        seen_study_ids = set()
         for od in order_details:
-            if od.study:
+            if od.study and od.study.id not in seen_study_ids:
+                seen_study_ids.add(od.study.id)
                 studies.append({
                     "study_id": od.study.id,
                     "study_name": od.study.name,
