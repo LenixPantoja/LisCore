@@ -108,7 +108,7 @@ class StudiesLabRepository:
             select(StudiesTestDetail)
             .filter(StudiesTestDetail.id == detail_id)
             .options(
-                selectinload(StudiesTestDetail.test),
+                selectinload(StudiesTestDetail.test).selectinload(TestsLab.sample_type),
                 selectinload(StudiesTestDetail.work_group)
             )
         )
