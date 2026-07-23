@@ -24,6 +24,7 @@ from app.domains.kpis.api.router import router as kpis_router
 from app.domains.annexes.api.router import router as annexes_router
 from app.domains.remissions.api.router import router as remissions_router, ext_lab_router
 from app.domains.compound_templates.api.router import router as compound_templates_router
+from app.domains.app_results_page.api.router import router as app_results_page_router
 
 api_router = APIRouter()
 
@@ -53,3 +54,4 @@ api_router.include_router(annexes_router, prefix="/annexes", tags=["Annexed Resu
 api_router.include_router(remissions_router, prefix="/remissions", tags=["Remissions"])
 api_router.include_router(ext_lab_router, prefix="/external-laboratories", tags=["External Laboratories"])
 api_router.include_router(compound_templates_router, prefix="/compound-templates", tags=["Compound Templates"])
+api_router.include_router(app_results_page_router)

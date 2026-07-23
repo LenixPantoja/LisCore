@@ -4,6 +4,8 @@ from app.domains.patients.domain.rules import calculate_age
 from app.domains.patients.domain.models import Patient
 from app.domains.traces.constants import OPERATION_EDIT_DEMOGRAPHICS
 from app.domains.traces.models import AppTrace
+from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_patient
+from app.core.security import get_password_hash
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 
@@ -17,7 +19,13 @@ async def create_patient(db: AsyncSession, data: dict, user_id: int | None = Non
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El número de documento ya se encuentra registrado."
             )
+
+        # Password por defecto: el número de documento, siempre hasheada
+        raw_password = data.get("pt_password") or data.get("pt_Number_document")
+        data["pt_password"] = get_password_hash(raw_password)
+
         patient = await PatientRepository.create(db, data)
+        await provision_for_patient(db, patient)
 
         if user_id:
             db.add(AppTrace(
@@ -100,6 +108,10 @@ async def update_patient(db: AsyncSession, pt_id: int, data: dict, user_id: int 
             field: getattr(patient, field, None)
             for field in editable_fields
         }
+
+        # Si se envía una nueva contraseña, hashearla antes de guardar
+        if data.get("pt_password"):
+            data["pt_password"] = get_password_hash(data["pt_password"])
 
         # --- Perform update ---
         updated = await PatientRepository.update(db, pt_id, data)

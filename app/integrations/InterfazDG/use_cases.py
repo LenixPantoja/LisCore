@@ -15,6 +15,8 @@ from app.domains.interfaces.domain.models import InterfacesRest, InterfacesRestD
 from app.domains.masters.domain.models import Diagnosis, DocumentType, Service, City, Department, Country, SexType
 from app.domains.patients.domain.models import Patient
 from app.domains.patients.infrastructure.repository import PatientRepository
+from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_patient
+from app.core.security import get_password_hash
 from app.domains.requests.infrastructure.repository import InboundOrderRepository
 from app.integrations.InterfazDG.models import DGSolicitudExamenes
 
@@ -258,8 +260,11 @@ async def _crear_paciente(
         "pt_Document_Type_id": doc_type_id,
         "pt_enterprise_id": enterprise_id,
         "pt_city_id": city_id,
+        "pt_password": get_password_hash(dp.codigo),
     }
-    return await PatientRepository.create(db, patient_data)
+    patient = await PatientRepository.create(db, patient_data)
+    await provision_for_patient(db, patient)
+    return patient
 
 
 async def _resolver_tipo_documento(
