@@ -698,6 +698,19 @@ def _build_comp_table(text: str, style: ParagraphStyle, avail_width: float) -> T
     total_chars = sum(col_char_widths)
 
     col_widths = [avail_width * (w / total_chars) for w in col_char_widths]
+
+    # Una columna corta (p.ej. una sola letra "S"/"R"/"I") puede recibir un
+    # ancho proporcional menor que el padding fijo de la celda (8+4 o 4+4 pt),
+    # lo que hace que reportlab falle con "negative availWidth". Si al aplicar
+    # un mínimo por columna la suma ya no cabe en el ancho disponible, el
+    # texto no es realmente tabular y se colapsa a una sola columna por línea.
+    MIN_COL_WIDTH = 16  # pt, > que el padding máximo de una celda (8+4)
+    col_widths = [max(w, MIN_COL_WIDTH) for w in col_widths]
+    if sum(col_widths) > avail_width:
+        rows = [[" ".join(r)] if r else [] for r in rows]
+        max_cols = 1
+        col_widths = [avail_width]
+
     table_data = [
         [Paragraph(_xml_escape(row[i]) if i < len(row) else "", style) for i in range(max_cols)]
         for row in rows
