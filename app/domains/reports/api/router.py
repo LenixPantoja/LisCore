@@ -41,9 +41,12 @@ router.include_router(results_router)
     summary="Generar PDF de resultados de laboratorio",
     description=(
         "Recibe el ID de una orden y retorna el reporte de resultados en formato PDF "
-        "codificado en Base64. Los estudios y resultados de laboratorio solo se incluyen "
-        "si la orden está en estado 'Validada' (4); en cualquier otro estado se retorna "
-        "el PDF sin estudios ni resultados."
+        "codificado en Base64. Solo se incluyen los estudios cuyos laboratorios estén "
+        "completamente validados (Validada / Laboratorio Impreso), considerando pruebas "
+        "requeridas y no requeridas: si el estudio tiene pruebas requeridas, basta con que "
+        "esas estén validadas; si no tiene ninguna requerida, deben estarlo todas. Los "
+        "estudios que no cumplan esa condición no aparecen en el PDF, sin importar el "
+        "estado general de la orden."
     ),
     dependencies=[Depends(require_permission("Reports:GenerateReport"))],
 )
