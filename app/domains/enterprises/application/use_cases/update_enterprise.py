@@ -1,5 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.enterprises.infrastructure.repository import EnterpriseRepository
+from app.core.security import get_password_hash
 from fastapi import HTTPException, status
 
 async def execute(db: AsyncSession, enterprise_id: int, update_data: dict):
@@ -33,9 +34,9 @@ async def execute(db: AsyncSession, enterprise_id: int, update_data: dict):
                 detail="New email already registered"
             )
 
-    # 3. Hashear password si se está actualizando (opcional, igual que en Users)
-    # if "en_password" in update_data:
-    #     update_data["en_password"] = get_password_hash(update_data["en_password"])
+    # 3. Hashear password si se está actualizando
+    if update_data.get("en_password"):
+        update_data["en_password"] = get_password_hash(update_data["en_password"])
 
     # 4. Realizar la actualización
     return await EnterpriseRepository.update(db, enterprise, update_data)
