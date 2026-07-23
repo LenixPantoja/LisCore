@@ -6,9 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.domains.orders.domain.models import Order, OrdersDetail
-from app.domains.orders.domain.constants import ORDER_STATE_VALIDADA
 from app.domains.laboratories.domain.models import Laboratory
-from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA
+from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.enterprises.domain.models import Enterprise
 from app.domains.patients.domain.models import Patient
@@ -75,18 +74,49 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int, include_re
         )
         laboratories = labs_result.scalars().all()
 
-        # 3. Filtrar solo estudios completamente validados
+        # 3. Filtrar solo estudios completamente validados, agrupando por estudio
+        #    real (od_study_id) y respetando pruebas requeridas/no requeridas:
+        #    misma lógica que get_full_order_details_by_id en
+        #    app/domains/orders/application/use_cases/order_use_cases.py.
         labs_by_study: dict[int, list] = defaultdict(list)
         for lab in laboratories:
-            study_key = lab.l_order_detail_id
-            labs_by_study[study_key].append(lab)
+            study_id = lab.order_detail.od_study_id if lab.order_detail else None
+            if study_id is not None:
+                labs_by_study[study_id].append(lab)
 
-        validated_labs = [
-            lab
-            for study_labs in labs_by_study.values()
-            if all(lab.l_state >= LABORATORY_STATE_VALIDADA for lab in study_labs)
-            for lab in study_labs
-        ]
+        required_tests_by_study: dict[int, set[int]] = {}
+        if labs_by_study:
+            std_result = await db.execute(
+                select(StudiesTestDetail).where(
+                    StudiesTestDetail.studies_id.in_(labs_by_study.keys()),
+                    StudiesTestDetail.is_required == True,
+                )
+            )
+            for std in std_result.scalars().all():
+                required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
+
+        states_with_results = {LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO}
+
+        validated_labs = []
+        for study_id, study_labs in labs_by_study.items():
+            required_test_ids = required_tests_by_study.get(study_id, set())
+            labs_by_test = {
+                lab.l_test_id: lab.l_state for lab in study_labs if lab.l_test_id is not None
+            }
+
+            if required_test_ids:
+                # Solo las pruebas requeridas determinan si el estudio está listo
+                study_ready = all(
+                    labs_by_test.get(tid, 0) in states_with_results for tid in required_test_ids
+                )
+            else:
+                # Sin pruebas requeridas definidas: todas deben estar validadas
+                study_ready = bool(study_labs) and all(
+                    lab.l_state in states_with_results for lab in study_labs
+                )
+
+            if study_ready:
+                validated_labs.extend(study_labs)
 
         # 4. Evaluar rangos de referencia y adjuntarlos a cada lab
         patient_dob = getattr(patient, "pt_date_of_birth", None)
@@ -185,9 +215,10 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int, include_re
 async def generate_validated_laboratory_report(db: AsyncSession, order_id: int) -> dict:
     """
     Punto de entrada de /api/reports/laboratory-results: genera siempre el PDF,
-    pero solo incluye los estudios y resultados de laboratorio si la orden está
-    en estado 'Validada' (4). En cualquier otro estado, retorna el PDF sin
-    estudios ni resultados (solo cabecera/datos del paciente).
+    incluyendo únicamente los estudios cuyos laboratorios estén completamente
+    validados (considerando pruebas requeridas y no requeridas, ver paso 3 de
+    generate_laboratory_report). Los estudios que aún no cumplen esa condición
+    no aparecen en el PDF, sin importar el estado general de la orden.
     """
     order = await db.get(Order, order_id)
     if not order:
@@ -196,5 +227,4 @@ async def generate_validated_laboratory_report(db: AsyncSession, order_id: int) 
             detail=f"Orden con ID {order_id} no encontrada.",
         )
 
-    include_results = order.o_order_state == ORDER_STATE_VALIDADA
-    return await generate_laboratory_report(db, order_id, include_results=include_results)
+    return await generate_laboratory_report(db, order_id, include_results=True)
