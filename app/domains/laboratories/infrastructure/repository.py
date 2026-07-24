@@ -256,25 +256,43 @@ class LaboratoryRepository:
     async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int]) -> Tuple[int, Dict[str, List[int]], List[Dict[str, Any]]]:
         """
         Desvalida laboratorios (cambia estado a 2/Con Resultados) solo si su estado actual es >= 3 (Validada).
-        
+
+        Además:
+          - Limpia el validador (l_user_validation_id) y la fecha de validación (l_date_validatie).
+          - Marca l_transmitted=0 (y limpia l_date_transmited) en el laboratorio.
+          - Marca lp_transmited=0 en los preliminares asociados, si el laboratorio tiene.
+          - Si la orden proviene de una solicitud del HIS, revierte a
+            "Ejecutada" (1) el iod_state del InboundOrdersDetails
+            correspondiente. La búsqueda se hace por estudio/orden
+            (Order.o_autorizacion == InboundOrder.io_number_request +
+            iod_study_id/iod_order_id), NUNCA por iod_laboratory_id. Si la
+            orden no tiene InboundOrders/InboundOrdersDetails asociados, solo
+            se aplican los cambios de transmisión de arriba.
+
         Retorna:
             - Cantidad de laboratorios desvalidados exitosamente
             - Diccionario con detalles de laboratorios que no se pudieron desvalidar
             - Lista de datos de traza por cada laboratorio desvalidado exitosamente
         """
+        from app.domains.laboratories.domain.models import LaboratoryPreliminary
+        from app.domains.orders.domain.models import Order
+        from app.domains.requests.domain.models import InboundOrder, InboundOrderDetail
+        from app.domains.requests.domain.constants import INBOUND_ORDER_DETAIL_STATE_EJECUTADA
+
         if not laboratory_ids:
             return 0, {"not_found": [], "invalid_state": []}, []
-        
+
         invalidated_count = 0
         invalid_state_ids = []
         not_found_ids = []
         trace_data_list: List[Dict[str, Any]] = []
-        
+
         for l_id in laboratory_ids:
-            # Obtener el laboratorio junto con el order_id desde OrdersDetail
+            # Obtener el laboratorio junto con order/study desde OrdersDetail y la orden
             stmt = (
-                select(Laboratory, OrdersDetail.od_order_id)
+                select(Laboratory, OrdersDetail.od_order_id, OrdersDetail.od_study_id, Order.o_autorizacion)
                 .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
+                .join(Order, Order.o_id == OrdersDetail.od_order_id)
                 .where(Laboratory.l_id == l_id)
             )
             result = await db.execute(stmt)
@@ -284,8 +302,8 @@ class LaboratoryRepository:
                 not_found_ids.append(l_id)
                 continue
 
-            lab, order_id = row
-            
+            lab, order_id, study_id, o_autorizacion = row
+
             # Validar que el estado sea >= 3 (Validada o Impreso)
             if lab.l_state < LABORATORY_STATE_VALIDADA:
                 invalid_state_ids.append(l_id)
@@ -298,24 +316,56 @@ class LaboratoryRepository:
                 "current_result": lab.l_result,
                 "current_result_comp": lab.l_result_comp,
             })
-            
-            # Actualizar el estado a 2 (Con Resultados — desvalidado)
+
+            # Actualizar el estado a 2 (Con Resultados — desvalidado), limpiar
+            # validador/fecha de validación y marcar como no transmitido.
             update_stmt = (
                 update(Laboratory)
                 .where(Laboratory.l_id == l_id)
-                .values(l_state=LABORATORY_STATE_CON_RESULTADOS)
+                .values(
+                    l_state=LABORATORY_STATE_CON_RESULTADOS,
+                    l_user_validation_id=None,
+                    l_date_validatie=None,
+                    l_transmitted=0,
+                    l_date_transmited=None,
+                )
             )
             await db.execute(update_stmt)
             invalidated_count += 1
-        
+
+            # Marcar como no transmitidos los preliminares asociados, si existen
+            await db.execute(
+                update(LaboratoryPreliminary)
+                .where(LaboratoryPreliminary.lp_laboratory_id == l_id)
+                .values(lp_transmited=0)
+            )
+
+            # Si la orden proviene del HIS, revertir el iod_state del estudio
+            # correspondiente en InboundOrdersDetails (por estudio/orden, no
+            # por iod_laboratory_id).
+            if o_autorizacion:
+                iod_stmt = (
+                    select(InboundOrderDetail)
+                    .join(InboundOrder, InboundOrderDetail.iod_inboundOrder_id == InboundOrder.io_id)
+                    .where(
+                        InboundOrder.io_number_request == o_autorizacion,
+                        InboundOrderDetail.iod_study_id == study_id,
+                        InboundOrderDetail.iod_order_id == order_id,
+                    )
+                )
+                iod_result = await db.execute(iod_stmt)
+                iod_detail = iod_result.scalars().first()
+                if iod_detail:
+                    iod_detail.iod_state = INBOUND_ORDER_DETAIL_STATE_EJECUTADA
+
         await db.commit()
-        
+
         details = {}
         if invalid_state_ids:
             details["invalid_state"] = invalid_state_ids
         if not_found_ids:
             details["not_found"] = not_found_ids
-        
+
         return invalidated_count, details, trace_data_list
 
     @staticmethod
@@ -682,6 +732,7 @@ class LaboratoryRepository:
 
             # Desvalidar el preliminar
             prelim.lp_state = PRELIMINARY_STATE_DESVALIDADO
+            prelim.lp_transmited = 0
             invalidated_count += 1
 
             trace_data_list.append({
