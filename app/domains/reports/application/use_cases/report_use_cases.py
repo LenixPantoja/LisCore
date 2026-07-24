@@ -1,4 +1,5 @@
 from collections import defaultdict
+from typing import Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,7 +21,12 @@ from app.domains.reports.infrastructure.pdf_generator import (
 from app.shared.utils.range_evaluator import evaluate_reference_range
 
 
-async def generate_laboratory_report(db: AsyncSession, order_id: int, include_results: bool = True) -> dict:
+async def generate_laboratory_report(
+    db: AsyncSession,
+    order_id: int,
+    include_results: bool = True,
+    study_ids: Optional[list[int]] = None,
+) -> dict:
     # 1. Cargar la orden con paciente y empresa
     result = await db.execute(
         select(Order)
@@ -83,6 +89,16 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int, include_re
             study_id = lab.order_detail.od_study_id if lab.order_detail else None
             if study_id is not None:
                 labs_by_study[study_id].append(lab)
+
+        if study_ids:
+            requested = set(study_ids)
+            missing = requested - labs_by_study.keys()
+            if missing:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Los estudios {sorted(missing)} no pertenecen a la orden {order_id}.",
+                )
+            labs_by_study = {sid: labs for sid, labs in labs_by_study.items() if sid in requested}
 
         required_tests_by_study: dict[int, set[int]] = {}
         if labs_by_study:
@@ -212,13 +228,19 @@ async def generate_laboratory_report(db: AsyncSession, order_id: int, include_re
     }
 
 
-async def generate_validated_laboratory_report(db: AsyncSession, order_id: int) -> dict:
+async def generate_validated_laboratory_report(
+    db: AsyncSession, order_id: int, study_ids: Optional[list[int]] = None
+) -> dict:
     """
     Punto de entrada de /api/reports/laboratory-results: genera siempre el PDF,
     incluyendo únicamente los estudios cuyos laboratorios estén completamente
     validados (considerando pruebas requeridas y no requeridas, ver paso 3 de
     generate_laboratory_report). Los estudios que aún no cumplen esa condición
     no aparecen en el PDF, sin importar el estado general de la orden.
+
+    Si se envía `study_ids`, se evalúa esa misma condición pero restringida a
+    esos estudios: solo aparecen en el PDF los que, dentro del subconjunto
+    solicitado, ya están completamente validados.
     """
     order = await db.get(Order, order_id)
     if not order:
@@ -227,4 +249,4 @@ async def generate_validated_laboratory_report(db: AsyncSession, order_id: int) 
             detail=f"Orden con ID {order_id} no encontrada.",
         )
 
-    return await generate_laboratory_report(db, order_id, include_results=True)
+    return await generate_laboratory_report(db, order_id, include_results=True, study_ids=study_ids)

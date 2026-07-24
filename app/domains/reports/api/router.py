@@ -46,7 +46,8 @@ router.include_router(results_router)
         "requeridas y no requeridas: si el estudio tiene pruebas requeridas, basta con que "
         "esas estén validadas; si no tiene ninguna requerida, deben estarlo todas. Los "
         "estudios que no cumplan esa condición no aparecen en el PDF, sin importar el "
-        "estado general de la orden."
+        "estado general de la orden. Si se envía `study_ids` (opcional), la misma "
+        "validación se aplica solo sobre ese subconjunto de estudios de la orden."
     ),
     dependencies=[Depends(require_permission("Reports:GenerateReport"))],
 )
@@ -54,7 +55,7 @@ async def generate_laboratory_report(
     request: LaboratoryReportRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    return await use_cases.generate_validated_laboratory_report(db, request.order_id)
+    return await use_cases.generate_validated_laboratory_report(db, request.order_id, request.study_ids)
 
 
 @router.post(

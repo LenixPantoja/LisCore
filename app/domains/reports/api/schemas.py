@@ -5,6 +5,7 @@ from datetime import date
 
 class LaboratoryReportRequest(BaseModel):
     order_id: int
+    study_ids: Optional[List[int]] = None
 
 
 class SendWhatsAppResultsRequest(BaseModel):

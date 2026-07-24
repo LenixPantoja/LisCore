@@ -18,7 +18,7 @@ Logic:
 """
 from collections import defaultdict
 from datetime import date
-from typing import List
+from typing import List, Optional
 import asyncio
 
 from fastapi import HTTPException, status
@@ -36,7 +36,9 @@ from app.domains.reports.infrastructure.printer_barcodes.barcode_generator impor
 )
 
 
-async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
+async def generate_barcode_stickers(
+    db: AsyncSession, order_id: int, study_ids: Optional[List[int]] = None
+) -> dict:
     # 1. Load order with patient and enterprise
     order_result = await db.execute(
         select(Order)
@@ -73,18 +75,26 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
         .filter(OrdersDetail.od_order_id == order_id)
         .distinct()
     )
-    study_ids: List[int] = od_result.scalars().all()
+    order_study_ids: List[int] = od_result.scalars().all()
 
-    if not study_ids:
+    if not order_study_ids:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"La orden {order_id} no tiene estudios registrados.",
         )
 
+    if study_ids:
+        missing = set(study_ids) - set(order_study_ids)
+        if missing:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Los estudios {sorted(missing)} no pertenecen a la orden {order_id}.",
+            )
+
     # 4. Load StudiesLab with test_details → TestsLab (for sample type lookup)
     studies_result = await db.execute(
         select(StudiesLab)
-        .filter(StudiesLab.id.in_(study_ids))
+        .filter(StudiesLab.id.in_(order_study_ids))
         .options(
             selectinload(StudiesLab.test_details).selectinload(StudiesTestDetail.test),
             selectinload(StudiesLab.work_group),
@@ -133,6 +143,12 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
         lambda: defaultdict(list)
     )
 
+    # Sample type IDs covered by the requested study_ids (if any), used in step 8
+    # to restrict which tubes get a sticker without losing the other tests that
+    # share that same physical tube.
+    requested_study_ids = set(study_ids) if study_ids else None
+    study_target_st_ids: set[int] = set()
+
     for study in studies:
         wg_id = study.work_groups_id
         if not wg_id:
@@ -151,9 +167,18 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
         if not covered_st_ids:
             continue
 
+        if requested_study_ids is not None and study.id in requested_study_ids:
+            study_target_st_ids |= covered_st_ids
+
         for st_id in covered_st_ids:
             if code not in sample_wg_studies[st_id][wg_id]:
                 sample_wg_studies[st_id][wg_id].append(code)
+
+    if requested_study_ids is not None and not study_target_st_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Los estudios seleccionados no tienen pruebas con impresión de código de barras habilitada.",
+        )
 
     # 7. Build patient header data
     patient = order.patient
@@ -212,6 +237,11 @@ async def generate_barcode_stickers(db: AsyncSession, order_id: int) -> dict:
         # Find ALL st_ids that share this suffix, so we can aggregate studies
         # from all sample types that map to the same physical tube
         related_st_ids = st_suffix_map.get(sufix, [st.st_id])
+
+        # If specific studies were requested, skip tubes that don't carry any of them —
+        # but keep the full sticker content (all tests on that tube) for the ones that do.
+        if requested_study_ids is not None and not (set(related_st_ids) & study_target_st_ids):
+            continue
 
         # Collect work-group studies from ALL sample type IDs with this suffix
         combined_wg_studies: dict[int, list[str]] = defaultdict(list)
