@@ -3,3 +3,5 @@ s3/data/
 ./.env
 /env
 ./env
+*.tar
+lis_core_api_prod.tar

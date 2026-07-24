@@ -97,6 +97,10 @@ async def create_order(db: AsyncSession, data: dict):
         seen_test_ids: set[int] = set()
 
         for study_id in studies_ids:
+            # Si el estudio viene repetido en la solicitud, no duplicar su OrdersDetail
+            if study_id in study_od_map:
+                continue
+
             # 2. Consultar StudiesTestDetail para obtener las pruebas y tipos de muestra
             stmt = (
                 select(StudiesTestDetail)
@@ -112,21 +116,22 @@ async def create_order(db: AsyncSession, data: dict):
                     detail=f"El estudio con ID {study_id} no tiene exámenes configurados en StudiesTestDetail."
                 )
 
-            # 3. Crear un OrdersDetail por estudio y un Laboratory por prueba única
+            # 3. Crear un único OrdersDetail por estudio (representa "esta orden
+            #    incluye este estudio"); las pruebas del estudio se registran
+            #    como uno o más Laboratory apuntando a ese mismo od_id.
+            order_detail = OrdersDetail(
+                od_order_id=order.o_id,
+                od_study_id=study_id,
+                od_state=ORDER_DETAIL_STATE_INGRESADO,
+                od_cancelled=0
+            )
+            db.add(order_detail)
+            await db.flush()  # Para obtener od_id
+
+            # Registrar el od_id de este estudio para la factura
+            study_od_map[study_id] = order_detail.od_id
+
             for link in test_links:
-                order_detail = OrdersDetail(
-                    od_order_id=order.o_id,
-                    od_study_id=study_id,
-                    od_state=ORDER_DETAIL_STATE_INGRESADO,
-                    od_cancelled=0
-                )
-                db.add(order_detail)
-                await db.flush()  # Para obtener od_id
-
-                # Registrar el primer od_id de este estudio para la factura
-                if study_id not in study_od_map:
-                    study_od_map[study_id] = order_detail.od_id
-
                 # Crear el registro de laboratorio solo si la prueba no existe ya en esta orden
                 if link.tests_id not in seen_test_ids:
                     blank_result = Laboratory(
@@ -303,11 +308,6 @@ async def create_order(db: AsyncSession, data: dict):
         
         if "so_barcode" in error_msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Conflicto de duplicidad en el código de barras de la muestra. El consecutivo falló.")
-
-        # Manejo del error específico que probablemente te está pasando:
-        if "Laboratories_l_order_detail_id_key" in error_msg or "l_order_detail_id" in error_msg:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, 
-                                detail="Error: La tabla Laboratories tiene una restricción UNIQUE en l_order_detail_id que impide múltiples resultados por estudio.")
 
         if "o_scholarity" in error_msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El nivel de escolaridad especificado no es válido.")
@@ -817,20 +817,21 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | Non
                     invalid_studies.append(study_id)
                     continue
 
+                # Un único OrdersDetail por estudio; las pruebas del estudio se
+                # registran como uno o más Laboratory apuntando a ese mismo od_id.
+                order_detail = OrdersDetail(
+                    od_order_id=o_id,
+                    od_study_id=study_id,
+                    od_state=ORDER_DETAIL_STATE_INGRESADO,
+                )
+                db.add(order_detail)
+                await db.flush()
+
+                # Registrar el od_id de este estudio para InvoiceDetail
+                study_od_map[study_id] = order_detail.od_id
+
                 new_sample_types: set[int] = set()
                 for link in test_links:
-                    order_detail = OrdersDetail(
-                        od_order_id=o_id,
-                        od_study_id=study_id,
-                        od_state=ORDER_DETAIL_STATE_INGRESADO,
-                    )
-                    db.add(order_detail)
-                    await db.flush()
-
-                    # Registrar el primer od_id de este estudio para InvoiceDetail
-                    if study_id not in study_od_map:
-                        study_od_map[study_id] = order_detail.od_id
-
                     blank_result = Laboratory(
                         l_order_detail_id=order_detail.od_id,
                         l_test_id=link.tests_id,
