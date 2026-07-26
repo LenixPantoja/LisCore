@@ -260,7 +260,7 @@ class LaboratoryRepository:
         Además:
           - Limpia el validador (l_user_validation_id) y la fecha de validación (l_date_validatie).
           - Marca l_transmitted=0 (y limpia l_date_transmited) en el laboratorio.
-          - Marca lp_transmited=0 en los preliminares asociados, si el laboratorio tiene.
+          - Marca lp_transmitted=0 en los preliminares asociados, si el laboratorio tiene.
           - Si la orden proviene de una solicitud del HIS, revierte a
             "Ejecutada" (1) el iod_state del InboundOrdersDetails
             correspondiente. La búsqueda se hace por estudio/orden
@@ -337,7 +337,7 @@ class LaboratoryRepository:
             await db.execute(
                 update(LaboratoryPreliminary)
                 .where(LaboratoryPreliminary.lp_laboratory_id == l_id)
-                .values(lp_transmited=0)
+                .values(lp_transmitted=0)
             )
 
             # Si la orden proviene del HIS, revertir el iod_state del estudio
@@ -732,7 +732,7 @@ class LaboratoryRepository:
 
             # Desvalidar el preliminar
             prelim.lp_state = PRELIMINARY_STATE_DESVALIDADO
-            prelim.lp_transmited = 0
+            prelim.lp_transmitted = 0
             invalidated_count += 1
 
             trace_data_list.append({

@@ -54,7 +54,7 @@ class LaboratoryPreliminary(Base):
     lp_date_preliminary = Column(DateTime, nullable=True)
     analyzer = Column(String(255), nullable=True)
     lp_state = Column(Integer, default=0, nullable=False)
-    lp_transmited = Column(Integer, default=1, nullable=False)
+    lp_transmitted = Column(Integer, default=1, nullable=False)
 
     # Relaciones
     laboratory = relationship("Laboratory", back_populates="preliminaries")

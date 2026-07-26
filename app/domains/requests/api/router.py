@@ -47,8 +47,8 @@ async def list_orders(
     ),
     enterprise_id: int = Query(..., description="ID de empresa (requerido)"),
     date_from: Optional[datetime] = Query(None, description="Fecha/hora inicio (io_date_request)"),
-    date_to: Optional[datetime] = Query(None, description="Fecha/hora fin (io_date_request)"),
-    search: Optional[str] = Query(None, description="Buscar por documento de paciente o número de ingreso"),
+    date_to: Optional[datetime] = Query(None, description="Fecha/hora fin (io_date_request). Si se envía sin hora, incluye todo ese día."),
+    search: Optional[str] = Query(None, description="Buscar por documento de paciente, número de ingreso o número de solicitud (io_number_request)"),
     db: AsyncSession = Depends(get_db),
 ):
     return await list_inbound_orders(

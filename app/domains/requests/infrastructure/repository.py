@@ -1,5 +1,5 @@
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, func, exists, or_
@@ -99,7 +99,15 @@ class InboundOrderRepository:
             base = base.filter(InboundOrder.io_date_request >= date_from)
 
         if date_to is not None:
-            base = base.filter(InboundOrder.io_date_request <= date_to)
+            # Si viene sin componente de hora (p.ej. "2026-07-25" -> medianoche),
+            # se interpreta como "hasta el final de ese día" en vez de excluir
+            # todo lo que no caiga exactamente a las 00:00:00.
+            effective_date_to = date_to
+            if date_to.time() == datetime.min.time():
+                effective_date_to = date_to + timedelta(days=1)
+                base = base.filter(InboundOrder.io_date_request < effective_date_to)
+            else:
+                base = base.filter(InboundOrder.io_date_request <= date_to)
 
         if search:
             pattern = f"%{search}%"
@@ -107,6 +115,7 @@ class InboundOrderRepository:
                 or_(
                     Patient.pt_Number_document.ilike(pattern),
                     InboundOrder.io_income.ilike(pattern),
+                    InboundOrder.io_number_request.ilike(pattern),
                 )
             )
 
