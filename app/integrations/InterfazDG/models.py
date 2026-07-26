@@ -44,6 +44,7 @@ class DGDatosPaciente:
     embarazo_codigo: Optional[str] = None    # CODEMBARA
     embarazo_nombre: Optional[str] = None    # NOMEMBARA
     email: Optional[str] = None              # EMAILPACI
+    municipio_ciudad_codigo: Optional[str] = None   # GPACIUDAD - Codigo de ciudad/municipio
 
 
 @dataclass
@@ -57,6 +58,8 @@ class DGDatosOrden:
     area_nombre: Optional[str] = None        # ARENOMBRE
     servicio_codigo: Optional[str] = None    # GEECODIGO
     servicio_nombre: Optional[str] = None    # GEENOMBRE
+    geser_codigo: Optional[str] = None       # GESERCODIGO - Codigo de servicio (homologa con Services.code)
+    geser_nombre: Optional[str] = None       # GESERNOMBRE - Nombre de servicio
 
 
 @dataclass

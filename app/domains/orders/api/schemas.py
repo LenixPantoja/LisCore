@@ -195,6 +195,7 @@ class LaboratoryPreliminaryResponse(BaseModel):
     lp_result: Optional[str] = None
     lp_date_preliminary: Optional[str] = None
     analyzer: Optional[str] = None
+    lp_state: int
 
     @field_validator('lp_date_preliminary', mode='before')
     @classmethod
@@ -461,3 +462,34 @@ class CancelStudiesResponse(BaseModel):
     cancelled_detail_ids: List[int]
     order_cancelled: bool
     message: str
+
+
+# ── Filtros de órdenes ───────────────────────────────────────────────────────
+
+class OrderFilterRequest(BaseModel):
+    """
+    Esquema para filtrar órdenes por múltiples criterios.
+
+    - start_date / end_date: Rango de fechas (o_date)
+    - order_states: Lista de estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
+    - work_group_ids: Lista de IDs de grupos de trabajo (Work_groups.wg_id)
+    - study_ids: Lista de IDs de estudios (StudiesLab.id)
+    """
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    order_states: Optional[List[int]] = None
+    work_group_ids: Optional[List[int]] = None
+    study_ids: Optional[List[int]] = None
+
+
+class OrderFilterItemResponse(BaseModel):
+    """
+    Respuesta individual de una orden filtrada.
+    """
+    o_id: int
+    o_number: str
+    pt_name: str = Field(..., description="Nombre completo del paciente: Nombre1 Nombre2 Apellido1 Apellido2")
+    pt_number_document: str
+
+    class Config:
+        from_attributes = True

@@ -1,5 +1,5 @@
 from typing import Optional, Sequence, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +9,7 @@ from app.domains.seroteca.domain.models import SampleLog, Seroteca, Gradilla, Gr
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.orders.domain.models import Order
 from utils.timezone import get_bogota_now
+from utils.Consecutives.consecutive_gradillas import generate_gradilla_number
 
 
 class SampleLogRepository:
@@ -170,7 +171,10 @@ class GradillaRepository:
     ) -> Tuple[Sequence[Gradilla], int]:
         q = select(Gradilla).where(Gradilla.g_seroteca_id == s_id)
         if search:
-            q = q.where(Gradilla.g_name.ilike(f"%{search}%"))
+            q = q.where(
+                (Gradilla.g_name.ilike(f"%{search}%")) |
+                (Gradilla.g_number.ilike(f"%{search}%"))
+            )
         total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
         rows = (
             await db.execute(q.offset(skip).limit(limit).order_by(Gradilla.g_name.asc()))

@@ -19,6 +19,7 @@ class Patient(Base):
     pt_address = Column(String(255), nullable=True)
     pt_date_of_birth = Column(Date, nullable=True)
     pt_authorize_habeas_data = Column(Boolean, default=False)
+    pt_authorize_send_digital = Column(Boolean, default=False)
     pt_afiliation_type = Column(Integer, ForeignKey("Afiliation_type.id"), nullable=True)
     pt_enterprise_id = Column(Integer, ForeignKey("Enterprises.en_id"), nullable=True)
     pt_Document_Type_id = Column(Integer, ForeignKey("DocumentsTypes.dt_id"), nullable=True)

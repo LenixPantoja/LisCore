@@ -12,9 +12,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.enterprises.domain.models import Enterprise
 from app.domains.interfaces.domain.models import InterfacesRest, InterfacesRestDetail
-from app.domains.masters.domain.models import Diagnosis, DocumentType, Service
+from app.domains.masters.domain.models import Diagnosis, DocumentType, Service, City, Department, Country, SexType
 from app.domains.patients.domain.models import Patient
 from app.domains.patients.infrastructure.repository import PatientRepository
+from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_patient
+from app.core.security import get_password_hash
 from app.domains.requests.infrastructure.repository import InboundOrderRepository
 from app.integrations.InterfazDG.models import DGSolicitudExamenes
 
@@ -79,7 +81,27 @@ async def registrar_solicitud_dg(
             detail=detalle,
         )
 
-    # --- 2. Buscar o crear paciente por numero de documento ---
+    # --- 2. Resolver municipio (GPACIUDAD -> Cities.id) y pais ---
+    municipality_id: Optional[int] = None
+    country_id: Optional[int] = None
+    codigo_ciudad = dp.municipio_ciudad_codigo if dp else None
+    if codigo_ciudad:
+        res_city = await db.execute(
+            select(City).where(City.postal_code == codigo_ciudad)
+        )
+        city: Optional[City] = res_city.scalars().first()
+        if city:
+            municipality_id = city.id
+            # Obtener el pais a traves del departamento
+            res_dept = await db.execute(
+                select(Department).where(Department.d_id == city.Department_id)
+            )
+            dept: Optional[Department] = res_dept.scalars().first()
+            if dept:
+                country_id = dept.d_country_id
+        print(f"[InterfazDG] GPACIUDAD='{codigo_ciudad}' → municipality_id={municipality_id}, country_id={country_id}")
+
+    # --- 3. Buscar o crear paciente por numero de documento ---
     documento_paciente = dp.codigo if dp else None
     if not documento_paciente:
         raise HTTPException(
@@ -114,14 +136,17 @@ async def registrar_solicitud_dg(
         if patient.pt_enterprise_id is None and enterprise_id is not None:
             patient.pt_enterprise_id = enterprise_id
             updated = True
+        if patient.pt_city_id is None and municipality_id is not None:
+            patient.pt_city_id = municipality_id
+            updated = True
         if updated:
             await db.commit()
             await db.refresh(patient)
     else:
-        # Paciente no existe -> crearlo con enterprise_id
-        patient = await _crear_paciente(db, dp, enterprise_id)
+        # Paciente no existe -> crearlo con enterprise_id y municipio homologado
+        patient = await _crear_paciente(db, dp, enterprise_id, municipality_id)
 
-    # --- 3. Homologar estudios via InterfacesRestDetail ---
+    # --- 4. Homologar estudios via InterfacesRestDetail ---
     detail_data_list: list[dict] = []
     if solicitud.examenes:
         for examen in solicitud.examenes:
@@ -150,6 +175,7 @@ async def registrar_solicitud_dg(
                     "iod_study_id": detail_map.itd_study_id,
                     "iod_state": INBOUND_DETAIL_STATE_PENDIENTE,
                     "iod_observation": examen.observacion,
+                    "iod_study_consecutive": examen.oid_solicitud,
                 }
             )
 
@@ -159,17 +185,19 @@ async def registrar_solicitud_dg(
             detail="El XML no contiene examenes validos para registrar.",
         )
 
-    # --- 4. Homologar servicio (ARECODIGO -> Services.code -> Services.id) ---
+    # --- 5. Homologar servicio (GESERCODIGO -> Services.code -> Services.id) ---
     service_id: Optional[int] = None
-    if do and do.area_codigo:
+    servicio_codigo = do.geser_codigo if do else None
+    servicio_nombre = do.geser_nombre if do else None
+    if servicio_codigo:
         res_svc = await db.execute(
-            select(Service).where(Service.code == do.area_codigo)
+            select(Service).where(Service.code == servicio_codigo)
         )
         svc: Optional[Service] = res_svc.scalars().first()
         if svc:
             service_id = svc.id
 
-    # --- 5. Homologar diagnostico (CODICIE10 -> Diagnoses.diag_code -> Diagnoses.diag_id) ---
+    # --- 6. Homologar diagnostico (CODICIE10 -> Diagnoses.diag_code -> Diagnoses.diag_id) ---
     diagnostic_id: Optional[int] = None
     if dp and dp.diagnostico_codigo:
         res_diag = await db.execute(
@@ -180,7 +208,7 @@ async def registrar_solicitud_dg(
             diagnostic_id = diag.diag_id
         print(f"[InterfazDG] diagnostico_codigo='{dp.diagnostico_codigo}' → diagnostic_id={diagnostic_id}")
 
-    # --- 6. Construir datos del InboundOrder ---
+    # --- 7. Construir datos del InboundOrder ---
     now = datetime.utcnow()
     order_data = {
         "io_number_request": dg.ord_consec if dg else None,
@@ -194,15 +222,25 @@ async def registrar_solicitud_dg(
         "io_tariff_id": tariff_id,
         "io_income": dg.tipo_ingreso if dg else None,
         "io_service_id": service_id,
+        "io_service_code": servicio_codigo,
+        "io_service_name": servicio_nombre,
         "io_diagnostic_id": diagnostic_id,
+        "io_municipality_id": municipality_id,
+        "io_country_id": country_id,
+        "io_Piso": do.area_nombre if do else None,
     }
 
-    # --- 7. Crear el InboundOrder con sus detalles ---
+    # --- 8. Crear el InboundOrder con sus detalles ---
     inbound = await InboundOrderRepository.create(db, order_data, detail_data_list)
     return inbound.io_id
 
 
-async def _crear_paciente(db: AsyncSession, dp, enterprise_id: Optional[int] = None) -> Patient:
+async def _crear_paciente(
+    db: AsyncSession,
+    dp,
+    enterprise_id: Optional[int] = None,
+    city_id: Optional[int] = None,
+) -> Patient:
     """Crea un paciente nuevo con los datos del XML del HIS."""
     doc_type_id = await _resolver_tipo_documento(db, dp.tipo_documento if dp else None)
     fecha_raw = dp.fecha_nacimiento
@@ -218,45 +256,80 @@ async def _crear_paciente(db: AsyncSession, dp, enterprise_id: Optional[int] = N
         "pt_mail": dp.email,
         "pt_address": dp.direccion,
         "pt_date_of_birth": fecha_parseada,
-        "pt_sex_type": _mapear_sexo(dp.sexo),
+        "pt_sex_type": await _mapear_sexo(db, dp.sexo),
         "pt_Document_Type_id": doc_type_id,
         "pt_enterprise_id": enterprise_id,
+        "pt_city_id": city_id,
+        "pt_password": get_password_hash(dp.codigo),
     }
-    return await PatientRepository.create(db, patient_data)
+    patient = await PatientRepository.create(db, patient_data)
+    await provision_for_patient(db, patient)
+    return patient
 
 
 async def _resolver_tipo_documento(
     db: AsyncSession, codigo_his: Optional[str]
 ) -> Optional[int]:
     """
-    Busca el id del tipo de documento en DocumentsTypes usando dt_id_dinamica,
-    que corresponde al id del tipo de documento enviado por el HIS Dinamica (GPATIPDOC).
+    Busca el id del tipo de documento en DocumentsTypes.
+
+    - Primero busca por dt_code (codigo textual como 'CC', 'CN', 'TI', etc.)
+    - Si no encuentra y el valor es numerico, busca por dt_id_dinamica
+      (ID interno del HIS Dinamica enviado en GPATIPDOC).
+
     Retorna None si no se recibe codigo o no se encuentra coincidencia.
     """
     if not codigo_his:
         return None
+
+    codigo = str(codigo_his).strip().upper()
+
+    # 1. Buscar por dt_code (codigo textual)
+    res = await db.execute(
+        select(DocumentType).where(DocumentType.dt_code == codigo)
+    )
+    doc_type: Optional[DocumentType] = res.scalars().first()
+    if doc_type:
+        return doc_type.dt_id
+
+    # 2. Fallback: si es numerico, buscar por dt_id_dinamica
     try:
         id_dinamica = int(codigo_his)
     except (ValueError, TypeError):
         return None
+
     res = await db.execute(
         select(DocumentType).where(DocumentType.dt_id_dinamica == id_dinamica)
     )
-    doc_type: Optional[DocumentType] = res.scalars().first()
+    doc_type = res.scalars().first()
     return doc_type.dt_id if doc_type else None
 
 
-# Homologacion sexo HIS -> id Sex_Types del LIS
-# 1 (Hombre en HIS) -> 1 (Hombre en LIS)
-# 2 (Mujer en HIS)  -> 3 (Mujer en LIS)
-_SEXO_HIS_A_LIS: dict[str, int] = {"1": 1, "2": 3}
+# Homologacion sexo HIS -> code de Sex_Types del LIS
+# XML: F (Femenino) -> Sex_Types.code = 'M' (Mujer)
+# XML: M (Masculino) -> Sex_Types.code = 'H' (Hombre)
+# XML: 1 (Hombre)    -> Sex_Types.code = 'H'
+# XML: 2 (Mujer)     -> Sex_Types.code = 'M'
+_SEXO_HIS_A_CODE: dict[str, str] = {
+    "F": "M",
+    "M": "H",
+    "1": "H",
+    "2": "M",
+}
 
 
-def _mapear_sexo(valor: Optional[str]) -> Optional[int]:
-    """Convierte el codigo de sexo del HIS al id de Sex_Types del LIS."""
+async def _mapear_sexo(db: AsyncSession, valor: Optional[str]) -> Optional[int]:
+    """Busca el id de Sex_Types por code a partir del valor GPASEXPAC del XML."""
     if not valor:
         return None
-    return _SEXO_HIS_A_LIS.get(str(valor).strip())
+    code = _SEXO_HIS_A_CODE.get(str(valor).strip().upper())
+    if not code:
+        return None
+    res = await db.execute(
+        select(SexType).where(SexType.code == code)
+    )
+    sex_type: Optional[SexType] = res.scalars().first()
+    return sex_type.id if sex_type else None
 
 
 def _parse_datetime(value: Optional[str]) -> Optional[datetime]:

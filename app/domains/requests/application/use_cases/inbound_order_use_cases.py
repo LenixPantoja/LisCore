@@ -163,7 +163,15 @@ async def create_order_from_inbound(
             detail=f"Los siguientes estudios no tienen pruebas configuradas: {', '.join(names)}",
         )
 
-    # 3. Construir los datos de la orden mapeando campos del InboundOrder
+    # 3. Calcular la edad del paciente en formato "Xa Ym Zd"
+    patient = inbound.patient
+    o_age: Optional[str] = None
+    if patient and patient.pt_date_of_birth:
+        from app.domains.patients.domain.rules import calculate_age
+        age_parts = calculate_age(patient.pt_date_of_birth)
+        o_age = f"{age_parts['years']}a {age_parts['months']}m {age_parts['days']}d"
+
+    # 4. Construir los datos de la orden mapeando campos del InboundOrder
     # El tariff_id del payload tiene prioridad; si no se envía, se usa el del InboundOrder
     effective_tariff_id = payload.tariff_id or inbound.io_tariff_id
     if not effective_tariff_id:
@@ -174,6 +182,7 @@ async def create_order_from_inbound(
 
     order_data = {
         "o_his_id": inbound.io_patient_id,
+        "o_age": o_age,
         "o_tariff_id": effective_tariff_id,
         "o_service_id": inbound.io_service_id,
         "o_diagnoses_id": inbound.io_diagnostic_id,
@@ -189,11 +198,39 @@ async def create_order_from_inbound(
     # 4. Crear la orden (genera número, detalles, laboratorios, muestras, factura)
     order = await create_order(db, order_data)
 
-    # 5. Actualizar los InboundOrderDetail: estado Ejecutada + guardar o_id
+    # 5. Mapear Laboratories creados a cada InboundOrderDetail
+    #    Un InboundOrderDetail → un estudio (iod_study_id)
+    #    Para cada estudio se crea al menos un OrdersDetail y sus Laboratories
+    from sqlalchemy.orm import selectinload as _selectinload
+    from app.domains.laboratories.domain.models import Laboratory as LabModel
+    from app.domains.orders.domain.models import OrdersDetail as ODModel
+
+    labs_result = await db.execute(
+        select(LabModel)
+        .join(ODModel, LabModel.l_order_detail_id == ODModel.od_id)
+        .where(ODModel.od_order_id == order.o_id)
+        .options(_selectinload(LabModel.order_detail))
+    )
+    all_labs: list = labs_result.scalars().all()
+
+    # Agrupar laboratories por study_id: {study_id: [LabModel, ...]}
+    labs_by_study: dict[int, list] = {}
+    for lab in all_labs:
+        study_id = lab.order_detail.od_study_id if lab.order_detail else None
+        if study_id is not None:
+            labs_by_study.setdefault(study_id, []).append(lab)
+
+    # 6. Actualizar los InboundOrderDetail: estado Ejecutada + guardar o_id + iod_laboratory_id
     updated_ids: list[int] = []
     for detail in selected_details:
         detail.iod_state = INBOUND_ORDER_DETAIL_STATE_EJECUTADA
         detail.iod_order_id = order.o_id
+
+        # Asignar el primer laboratory del estudio correspondiente
+        study_labs = labs_by_study.get(detail.iod_study_id, [])
+        if study_labs:
+            detail.iod_laboratory_id = study_labs[0].l_id
+
         db.add(detail)
         updated_ids.append(detail.iod_id)
 

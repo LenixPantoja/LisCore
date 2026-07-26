@@ -66,10 +66,12 @@ class Gradilla(Base):
 
     g_id = Column(Integer, primary_key=True, index=True)
     g_name = Column(String(255), nullable=False)
+    g_number = Column(String(50), nullable=True)  # DDMMAA-CONSECUTIVO e.g. 300626-1
     g_seroteca_id = Column(Integer, ForeignKey("Serotecas.s_id", ondelete="CASCADE"), nullable=False)
     g_tipo_gradilla_id = Column(Integer, ForeignKey("TiposGradilla.tg_id", ondelete="SET NULL"), nullable=True)
     g_rows = Column(Integer, nullable=False)
     g_cols = Column(Integer, nullable=False)
+    g_discard_date = Column(DateTime, nullable=True)  # Calculated from tipo_gradilla.storage_days
     g_active = Column(Boolean, default=True, nullable=False)
     g_created_by = Column(Integer, ForeignKey("AppUsers.usr_id", ondelete="SET NULL"), nullable=True)
     g_created_at = Column(DateTime, default=get_bogota_now)

@@ -114,6 +114,9 @@ docker build -t lis_core_api:prod .
 # 3. Exportar la imagen a un archivo .tar
 docker save lis_core_api:prod -o lis_core_api_prod.tar
 
+scp -r lis_core_api_prod.tar admon@192.168.200.8:/home/admon/Back/
+
+scp -r dist admon@192.168.200.8:/home/admon/front/deploy/
 # 4. Verificar el tamaño del archivo
 dir lis_core_api_prod.tar
 ```

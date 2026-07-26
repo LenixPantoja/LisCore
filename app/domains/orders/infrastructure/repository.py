@@ -1,6 +1,6 @@
 from typing import List, Optional, Tuple, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
 from app.domains.orders.domain.models import Order, OrdersDetail
 from datetime import date
@@ -104,6 +104,62 @@ class OrderRepository:
             await db.commit()
             await db.refresh(order)
         return order
+
+    @staticmethod
+    async def get_filtered_orders(
+        db: AsyncSession,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        order_states: Optional[list[int]] = None,
+        work_group_ids: Optional[list[int]] = None,
+        study_ids: Optional[list[int]] = None,
+    ) -> list[Order]:
+        """
+        Filtra órdenes por fecha, estado, grupo de trabajo y estudios.
+        Retorna una lista plana de Order con patient cargado.
+        La relación con OrdersDetail → StudiesLab se usa para filtrar por
+        work_group_ids y study_ids.
+        """
+        from app.domains.patients.domain.models import Patient
+        from app.domains.studieslab.domain.models import StudiesLab
+
+        query = select(Order).options(
+            selectinload(Order.patient)
+        )
+
+        # Join con Patient siempre (para devolver pt_name)
+        query = query.join(Patient, Order.o_his_id == Patient.pt_id)
+
+        # Filtros de fecha
+        if start_date:
+            query = query.filter(Order.o_date >= start_date)
+        if end_date:
+            query = query.filter(Order.o_date <= end_date)
+
+        # Filtro de estados
+        if order_states:
+            query = query.filter(Order.o_order_state.in_(order_states))
+
+        # Filtros de grupo de trabajo y/o estudio requieren JOIN con OrdersDetails → StudiesLab
+        needs_detail_join = bool(work_group_ids or study_ids)
+        if needs_detail_join:
+            query = query.join(OrdersDetail, OrdersDetail.od_order_id == Order.o_id)
+            query = query.join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+
+            if work_group_ids:
+                query = query.filter(StudiesLab.work_groups_id.in_(work_group_ids))
+
+            if study_ids:
+                query = query.filter(StudiesLab.id.in_(study_ids))
+
+            # Evitar duplicados cuando una orden tiene múltiples OrdersDetails
+            query = query.distinct()
+
+        # Ordenar por o_id descendente
+        query = query.order_by(Order.o_id.desc())
+
+        result = await db.execute(query)
+        return list(result.scalars().all())
 
     @staticmethod
     async def cancel_studies(
@@ -286,6 +342,7 @@ class OrderRepository:
         from app.domains.laboratories.domain.models import Laboratory
         from app.domains.orders.domain.models import OrdersDetail
         from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
+        from app.domains.testslabs.domain.models import TestsLab
 
         # Simplified count — no subquery wrapper needed
         count_stmt = (
@@ -309,7 +366,7 @@ class OrderRepository:
             )
             .where(OrdersDetail.od_order_id == o_id)
             .options(
-                joinedload(Laboratory.test),
+                joinedload(Laboratory.test).selectinload(TestsLab.sample_type),
                 joinedload(Laboratory.user_validation),
                 selectinload(Laboratory.preliminaries),
                 contains_eager(Laboratory.order_detail).contains_eager(OrdersDetail.study),
@@ -348,6 +405,7 @@ class OrderRepository:
             .join(OrdersDetail, OrdersDetail.od_study_id == StudiesTestDetail.studies_id)
             .where(OrdersDetail.od_order_id == o_id)
             .group_by(TestsLab.id)
+            .options(selectinload(TestsLab.sample_type))
             .order_by(func.min(StudiesTestDetail.order_print).nulls_last(), TestsLab.id)
             .offset(skip)
             .limit(limit)

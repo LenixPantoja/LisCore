@@ -9,9 +9,10 @@ class TestsLabRepository:
     async def create(db: AsyncSession, data: dict) -> TestsLab:
         new_test = TestsLab(**data)
         db.add(new_test)
+        await db.flush()
+        test_id = new_test.id
         await db.commit()
-        await db.refresh(new_test)
-        return new_test
+        return await TestsLabRepository.get_by_id(db, test_id)
 
     @staticmethod
     async def get_all(db: AsyncSession) -> List[TestsLab]:
@@ -67,12 +68,12 @@ class TestsLabRepository:
     @staticmethod
     async def update(db: AsyncSession, test_id: int, update_data: dict) -> Optional[TestsLab]:
         test = await db.get(TestsLab, test_id)
-        if test:
-            for key, value in update_data.items():
-                setattr(test, key, value)
-            await db.commit()
-            await db.refresh(test)
-        return test
+        if not test:
+            return None
+        for key, value in update_data.items():
+            setattr(test, key, value)
+        await db.commit()
+        return await TestsLabRepository.get_by_id(db, test_id)
 
     @staticmethod
     async def delete(db: AsyncSession, test_id: int) -> bool:

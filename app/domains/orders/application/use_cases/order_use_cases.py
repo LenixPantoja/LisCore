@@ -19,7 +19,13 @@ from app.domains.testslabs.infrastructure.testslab_format_complete_repository im
 )
 
 from app.domains.orders.domain.models import Order, OrdersDetail
-from app.domains.orders.domain.constants import ORDER_STATE_INGRESADA, ORDER_DETAIL_STATE_INGRESADO
+from app.domains.orders.domain.constants import (
+    ORDER_STATE_INGRESADA,
+    ORDER_STATE_CON_RESULTADOS,
+    ORDER_STATE_VALIDADA,
+    ORDER_STATE_IMPRESA,
+    ORDER_DETAIL_STATE_INGRESADO,
+)
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.samples.domain.constants import SAMPLE_ORDER_STATE_NO_INGRESADA
@@ -345,8 +351,8 @@ async def list_orders(
     )
 
     # Calcular dinámicamente el o_order_state para cada orden según is_required
-    # Solo para órdenes en estados transitorios (Ingresada=1, Pendiente=2, Con Resultados=3)
-    DYNAMIC_STATES = {1, 2, 3}
+    # Solo para órdenes en estados transitorios (Ingresada=1, Pendiente=2, Con Resultados=3, Validada=4)
+    DYNAMIC_STATES = {1, 2, 3, 4}
     order_ids = [order.o_id for order in items if order.o_order_state in DYNAMIC_STATES]
     if order_ids:
         computed_states = await _compute_orders_state(db, order_ids)
@@ -366,8 +372,8 @@ async def get_order_by_id(db: AsyncSession, o_id: int):
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
     # Calcular dinámicamente el o_order_state según is_required
-    # Solo si el estado actual es transitorio (Ingresada=1, Pendiente=2, Con Resultados=3)
-    if order.o_order_state in {1, 2, 3}:
+    # Solo si el estado actual es transitorio (Ingresada=1, Pendiente=2, Con Resultados=3, Validada=4)
+    if order.o_order_state in {1, 2, 3, 4}:
         computed_states = await _compute_orders_state(db, [order.o_id])
         if order.o_id in computed_states:
             order.o_order_state = computed_states[order.o_id]
@@ -636,7 +642,7 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     STUDY_STATE_PENDIENTE = "Pendiente"
     STUDY_STATE_CON_RESULTADOS = "Con Resultados"
     STUDY_STATE_SIN_RESULTADOS = "Sin Resultados"
-    STATES_WITH_RESULTS = {2, 3, 4}  # Con Resultados, Validada, Impreso
+    STATES_WITH_RESULTS = { 3, 4}  # Con Resultados, Validada, Impreso
 
     for study_id, entry in study_map.items():
         required_test_ids = required_tests_by_study.get(study_id, set())
@@ -692,7 +698,7 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     }
 
 
-async def edit_order(db: AsyncSession, o_id: int, data: dict):
+async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | None = None):
     """
     Edita los campos permitidos de una orden y/o agrega nuevos estudios.
 
@@ -710,17 +716,48 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
         if not order:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada.")
 
-        # 2. Actualizar campos editables (solo los enviados)
+        # --- Snapshot BEFORE changes ---
+        from app.domains.traces.constants import OPERATION_EDIT_DEMOGRAPHICS
+        from app.domains.traces.models import AppTrace
+
         editable_fields = [
             "o_enterprise_id", "o_diagnoses_id", "o_service_id", "o_autorizacion",
             "o_pregnated", "o_week_pregnated", "o_priority", "o_scholarity",
             "o_note", "o_tariff_id",
         ]
+
+        field_labels = {
+            "o_enterprise_id": "Empresa",
+            "o_diagnoses_id": "Diagnóstico",
+            "o_service_id": "Servicio",
+            "o_autorizacion": "Autorización",
+            "o_pregnated": "Embarazo",
+            "o_week_pregnated": "Semanas embarazo",
+            "o_priority": "Prioridad",
+            "o_scholarity": "Escolaridad",
+            "o_note": "Nota",
+            "o_tariff_id": "Tarifa",
+        }
+
+        before_snapshot = {
+            field: getattr(order, field, None)
+            for field in editable_fields
+        }
+
+        # 2. Actualizar campos editables (solo los enviados)
         updated_fields: list[str] = []
         for field in editable_fields:
             if field in data and data[field] is not None:
                 setattr(order, field, data[field])
                 updated_fields.append(field)
+
+        # --- Build diff description ---
+        diff_parts: list[str] = []
+        for field in updated_fields:
+            label = field_labels.get(field, field)
+            old_val = before_snapshot.get(field)
+            new_val = data[field]
+            diff_parts.append(f"{label}: {old_val} → {new_val}")
 
         await db.flush()
 
@@ -867,6 +904,34 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict):
                 invoice.inv_subtotal = (Decimal(str(invoice.inv_subtotal)) if invoice.inv_subtotal else Decimal(0)) + additional
                 invoice.inv_total = (Decimal(str(invoice.inv_total)) if invoice.inv_total else Decimal(0)) + additional
 
+        # 5. Registrar trazas en AppTrace (ANTES del commit)
+        # 5a. Demográficos modificados
+        if diff_parts and user_id:
+            db.add(AppTrace(
+                usr_id=user_id,
+                order_id=o_id,
+                operation_type=OPERATION_EDIT_DEMOGRAPHICS,
+                operation_description=f"Edición de orden {order.o_number}",
+                notes=" | ".join(diff_parts) if diff_parts else None,
+            ))
+
+        # 5b. Estudios agregados
+        if added_studies and user_id:
+            studies_result = await db.execute(
+                select(StudiesLab.id, StudiesLab.code, StudiesLab.name)
+                .where(StudiesLab.id.in_(added_studies))
+            )
+            study_info = {row.id: f"{row.code} - {row.name}" for row in studies_result.all()}
+            for study_id in added_studies:
+                info = study_info.get(study_id, f"ID {study_id}")
+                db.add(AppTrace(
+                    usr_id=user_id,
+                    order_id=o_id,
+                    operation_type=OPERATION_CREATE_ORDER,
+                    operation_description=f"Adición estudio a orden {order.o_number}",
+                    notes=f"Estudio agregado: {info}",
+                ))
+
         await db.commit()
 
         # Construir mensaje
@@ -930,7 +995,8 @@ async def get_grafico_evolutivo(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Prueba de laboratorio no encontrada.")
 
     # 3. Consultar histórico: Orders → OrdersDetails → Laboratories para este paciente+test
-    #    Solo órdenes con o_order_state in (3,4) y laboratorios con l_state in (2,3,4)
+    #    Solo órdenes con o_order_state in (Con Resultados=3, Validada=4, Impresa=5)
+    #    y laboratorios con l_state in (Con Resultados=2, Validada=3, Impreso=4)
     stmt = (
         select(Laboratory, Order)
         .join(OrdersDetail, Laboratory.l_order_detail_id == OrdersDetail.od_id)
@@ -938,7 +1004,9 @@ async def get_grafico_evolutivo(
         .where(
             Order.o_his_id == patient_id,
             Laboratory.l_test_id == test_id,
-            Order.o_order_state.in_([3, 4]),
+            Order.o_order_state.in_([
+                ORDER_STATE_CON_RESULTADOS, ORDER_STATE_VALIDADA, ORDER_STATE_IMPRESA,
+            ]),
             Laboratory.l_state.in_([2, 3, 4]),
         )
         .order_by(Order.o_date.asc(), Order.o_id.asc())
@@ -1018,27 +1086,19 @@ async def _compute_orders_state(db: AsyncSession, order_ids: list[int]) -> dict[
     Para cada orden:
       - Se consultan los laboratorios (agrupados por estudio y test).
       - Se carga la configuración de pruebas requeridas (is_required=True) por estudio.
-      - Si un estudio tiene pruebas requeridas, solo esas determinan si el estudio
-        está completado (todas con l_state en {2,3,4}).
+      - Si un estudio tiene pruebas requeridas, solo esas determinan su estado.
       - Si el estudio no tiene pruebas requeridas definidas, se usa el comportamiento
-        legacy: el estudio está completado si todas sus pruebas tienen resultado.
-      - La orden está "Con Resultados" (3) solo si TODOS sus estudios están completados.
+        legacy: todas sus pruebas determinan su estado.
+      - La orden está "Validada" (4) si TODOS sus estudios tienen sus pruebas
+        relevantes en estado Validada o Impreso.
+      - La orden está "Con Resultados" (3) si TODOS sus estudios tienen sus
+        pruebas relevantes con resultado (pero no todas validadas).
       - En cualquier otro caso, la orden está "Pendiente" (2).
 
     Retorna un diccionario {order_id: o_order_state}.
     """
-    from app.domains.laboratories.domain.constants import (
-        LABORATORY_STATE_CON_RESULTADOS,
-        LABORATORY_STATE_VALIDADA,
-        LABORATORY_STATE_IMPRESO,
-    )
-    from app.domains.orders.domain.constants import ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS
-
-    LAB_STATES_WITH_RESULTS = {
-        LABORATORY_STATE_CON_RESULTADOS,
-        LABORATORY_STATE_VALIDADA,
-        LABORATORY_STATE_IMPRESO,  # 2, 3, 4
-    }
+    from app.domains.orders.domain.constants import ORDER_STATE_PENDIENTE
+    from app.domains.orders.domain.order_state_logic import compute_order_state_from_studies
 
     if not order_ids:
         return {}
@@ -1096,24 +1156,52 @@ async def _compute_orders_state(db: AsyncSession, order_ids: list[int]) -> dict[
             result[oid] = ORDER_STATE_PENDIENTE
             continue
 
-        all_studies_done = True
-        for study_id, tests_map in studies.items():
-            required_ids = required_tests_by_study.get(study_id, set())
-            if not required_ids:
-                # Sin required: el estudio está completo si todas sus pruebas tienen resultado
-                if not all(state in LAB_STATES_WITH_RESULTS for state in tests_map.values()):
-                    all_studies_done = False
-                    break
-            else:
-                # Solo las requeridas determinan el estado
-                all_required_have_results = all(
-                    tests_map.get(tid, 0) in LAB_STATES_WITH_RESULTS
-                    for tid in required_ids
-                )
-                if not all_required_have_results:
-                    all_studies_done = False
-                    break
+        result[oid] = compute_order_state_from_studies(studies, required_tests_by_study)
 
-        result[oid] = ORDER_STATE_CON_RESULTADOS if all_studies_done else ORDER_STATE_PENDIENTE
+    return result
+
+
+async def filter_orders(
+    db: AsyncSession,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    order_states: Optional[list[int]] = None,
+    work_group_ids: Optional[list[int]] = None,
+    study_ids: Optional[list[int]] = None,
+) -> list[dict]:
+    """
+    Filtra órdenes por múltiples criterios y retorna una lista plana
+    con los campos especificados: o_id, o_number, pt_name, pt_number_document.
+    """
+    orders = await OrderRepository.get_filtered_orders(
+        db,
+        start_date=start_date,
+        end_date=end_date,
+        order_states=order_states,
+        work_group_ids=work_group_ids,
+        study_ids=study_ids,
+    )
+
+    result = []
+    for order in orders:
+        patient = order.patient
+        pt_name = ""
+        pt_number_document = ""
+        if patient:
+            parts = [
+                patient.pt_firts_name,
+                patient.pt_middle_name,
+                patient.pt_last_name,
+                patient.pt_second_last_name,
+            ]
+            pt_name = " ".join(part for part in parts if part)
+            pt_number_document = patient.pt_Number_document or ""
+
+        result.append({
+            "o_id": order.o_id,
+            "o_number": order.o_number,
+            "pt_name": pt_name,
+            "pt_number_document": pt_number_document,
+        })
 
     return result

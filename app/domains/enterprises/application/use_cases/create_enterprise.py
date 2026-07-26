@@ -1,5 +1,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.enterprises.infrastructure.repository import EnterpriseRepository
+from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_enterprise
+from app.core.security import get_password_hash
 from fastapi import HTTPException, status
 
 async def execute(db: AsyncSession, enterprise_data: dict):
@@ -32,5 +34,11 @@ async def execute(db: AsyncSession, enterprise_data: dict):
                 detail="Enterprise with this email already registered"
             )
 
+    # Password por defecto: el NIT, siempre hasheada
+    raw_password = enterprise_data.get("en_password") or enterprise_data.get("en_nit")
+    enterprise_data["en_password"] = get_password_hash(raw_password)
+
     # Create the new enterprise
-    return await EnterpriseRepository.create(db, enterprise_data)
+    new_enterprise = await EnterpriseRepository.create(db, enterprise_data)
+    await provision_for_enterprise(db, new_enterprise)
+    return new_enterprise

@@ -1,5 +1,6 @@
 import base64
 import io
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,6 @@ from reportlab.platypus import (
     Flowable,
     Image as RLImage,
     Paragraph,
-    Preformatted,
     SimpleDocTemplate,
     Spacer,
     Table,
@@ -22,6 +22,8 @@ from reportlab.platypus import (
 )
 from reportlab.lib.enums import TA_LEFT, TA_RIGHT, TA_CENTER
 from reportlab.lib.utils import ImageReader
+
+from app.shared.utils.range_evaluator import SEX_TYPE_IDS_MALE, SEX_TYPE_IDS_FEMALE
 
 # ─────────────────────────────────────────────
 # Constantes de mapeo
@@ -151,9 +153,26 @@ LAB_STATE_LABELS = {
 }
 
 SEX_LABELS = {
-    1: "Femenino",
-    2: "Masculino",
+    "F": "Femenino",
+    "M": "Masculino",
 }
+
+
+def _resolve_sex(patient: Any) -> tuple[bool, str]:
+    """
+    Resuelve (is_female, etiqueta_genero) a partir de patient.pt_sex_type.
+
+    pt_sex_type es el id (FK) de Sex_Types, no un enum fijo 1/2: los ids
+    reales de Masculino/Femenino se definen en SEX_TYPE_IDS_MALE/FEMALE
+    (app.shared.utils.range_evaluator), que es la misma fuente usada para
+    evaluar los rangos de referencia por género.
+    """
+    sex_type_id = patient.pt_sex_type if patient else None
+    if sex_type_id in SEX_TYPE_IDS_FEMALE:
+        return True, SEX_LABELS["F"]
+    if sex_type_id in SEX_TYPE_IDS_MALE:
+        return False, SEX_LABELS["M"]
+    return False, "—"
 
 
 # ─────────────────────────────────────────────
@@ -170,13 +189,12 @@ def build_laboratory_pdf(
     La cabecera (logo + datos del paciente) se repite en todas las páginas.
     """
     generation_date = datetime.now().strftime("%d/%m/%Y %H:%M")
-    is_female = patient and patient.pt_sex_type == 1
+    is_female, sex = _resolve_sex(patient)
     print_date = datetime.now().strftime("%d/%m/%Y %H:%M")
 
     # ── Datos de contexto ──────────────────────────────
     patient_name  = _full_name(patient)
     patient_doc   = patient.pt_Number_document if patient else "—"
-    sex           = SEX_LABELS.get(patient.pt_sex_type, "—") if patient else "—"
     age           = str(order.o_age or "—")
     enterprise    = order.enterprise.en_name if order.enterprise else "—"
     service_name  = order.service.name if order.service else "—"
@@ -204,7 +222,7 @@ def build_laboratory_pdf(
     s_empty    = ParagraphStyle("empty",    fontName="Helvetica-Oblique", fontSize=8, textColor=C_NAVY)
     s_ent      = ParagraphStyle("ent",      fontName="Helvetica-Bold", fontSize=10, textColor=C_NAVY,  alignment=TA_RIGHT)
     s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
-    s_comp     = ParagraphStyle("comp",     fontName="Courier",         fontSize=7.5, textColor=C_DARK, leading=11, leftIndent=8)
+    s_comp     = ParagraphStyle("comp",     fontName="Helvetica",       fontSize=8, textColor=C_DARK, leading=11)
     s_alt_ref  = ParagraphStyle("alt_ref",  fontName="Helvetica-Oblique", fontSize=7,   textColor=C_GRAY, leading=10, leftIndent=8)
 
     # ── Página: letter, márgenes ───────────────────────
@@ -260,7 +278,20 @@ def build_laboratory_pdf(
             ]))
             story.append(wg_hdr)
 
-            for study in wg_group["studies"]:
+            # ── Precompute signature groups ──
+            # Consecutive studies sharing the exact same set of validators
+            # will share a single signature block rendered after the last study.
+            _wg_study_list = wg_group["studies"]
+            def _sig_key(s):
+                sigs = (signatures_map or {}).get(s["id"], [])
+                return frozenset(s["user_name"] for s in sigs) if sigs else None
+            _sig_keys = [_sig_key(s) for s in _wg_study_list]
+            _last_of_group = [
+                (i == len(_sig_keys) - 1) or (_sig_keys[i] != _sig_keys[i + 1])
+                for i in range(len(_sig_keys))
+            ]
+
+            for idx, study in enumerate(wg_group["studies"]):
                 study_hdr = Table(
                     [[Paragraph(study["name"].upper(), s_study)]],
                     colWidths=[COL_W],
@@ -287,11 +318,15 @@ def build_laboratory_pdf(
                 pending_compounds: list[dict] = []
 
                 for row in study["rows"]:
+                    ref_text = row["reference"]
+                    alt_ref = (row.get("alternative_range_value") or "").strip()
+                    if alt_ref:
+                        ref_text = f"{ref_text}<br/>{alt_ref}"
                     res_rows.append([
                         Paragraph(row["test_name"], s_test),
                         Paragraph(row["result"], s_res_bad if row["is_abnormal"] else s_res_ok),
                         Paragraph(row["units"], s_unit),
-                        Paragraph(row["reference"], s_ref),
+                        Paragraph(ref_text, s_ref),
                     ])
                     if row.get("result_comp"):
                         pending_compounds.append({
@@ -321,7 +356,9 @@ def build_laboratory_pdf(
 
                 # Compound results as standalone flowables so they split across pages
                 for comp in pending_compounds:
-                    story.append(Preformatted(comp["result_comp"], s_comp))
+                    comp_tbl = _build_comp_table(comp["result_comp"], s_comp, COL_W - 8)
+                    if comp_tbl is not None:
+                        story.append(comp_tbl)
                     if comp.get("alternative_range_value"):
                         story.append(Spacer(1, 4))
                         story.append(Paragraph(
@@ -354,7 +391,8 @@ def build_laboratory_pdf(
                     story.append(Spacer(1, 8))
 
                 # ── Firma(s) del validador ────────────────────────────────────────
-                if signatures_map:
+                # Only render signatures at the last study of each same-validator group
+                if signatures_map and _last_of_group[idx]:
                     study_sigs = signatures_map.get(study["id"], [])
                     if study_sigs:
                         sig_col_w = COL_W / max(len(study_sigs), 1)
@@ -366,8 +404,8 @@ def build_laboratory_pdf(
                                 cell.append(
                                     RLImage(
                                         sig_buf,
-                                        width=min(sig_col_w * 0.5, 3 * cm),
-                                        height=1.5 * cm,
+                                        width=min(sig_col_w * 0.7, 5 * cm),
+                                        height=2.5 * cm,
                                         kind="proportional",
                                     )
                                 )
@@ -480,53 +518,53 @@ def build_laboratory_pdf(
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
         canvas.drawString(LEFT + 0.2 * cm, y, "DOCUMENTO")
-        canvas.drawString(LEFT + 8.5 * cm, y, "N° ORDEN")
+        canvas.drawString(LEFT + 12.5 * cm, y, "N° ORDEN")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
         canvas.drawString(LEFT + 2.5 * cm, y, header_data['patient_doc'])
-        canvas.drawString(LEFT + 10.5 * cm, y, header_data['order_number'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['order_number'])
         
         # Fila 3: EMPRESA, EDAD
         y = y - line_height
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
         canvas.drawString(LEFT + 0.2 * cm, y, "EMPRESA")
-        canvas.drawString(LEFT + 8.5 * cm, y, "EDAD")
+        canvas.drawString(LEFT + 12.5 * cm, y, "EDAD")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
         canvas.drawString(LEFT + 2.5 * cm, y, header_data['enterprise'])
-        canvas.drawString(LEFT + 10.5 * cm, y, header_data['age'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['age'])
         
         # Fila 4: MUNICIPIO, GÉNERO
         y = y - line_height
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
         canvas.drawString(LEFT + 0.2 * cm, y, "MUNICIPIO")
-        canvas.drawString(LEFT + 8.5 * cm, y, "GÉNERO")
+        canvas.drawString(LEFT + 12.5 * cm, y, "GÉNERO")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
         canvas.drawString(LEFT + 2.5 * cm, y, header_data['city_name'])
-        canvas.drawString(LEFT + 10.5 * cm, y, header_data['sex'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['sex'])
         
         # Fila 5: SERVICIO, FECHA INGRESO
         y = y - line_height
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
         canvas.drawString(LEFT + 0.2 * cm, y, "SERVICIO")
-        canvas.drawString(LEFT + 8.5 * cm, y, "FECHA INGRESO")
+        canvas.drawString(LEFT + 12.5 * cm, y, "FECHA INGRESO")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
         canvas.drawString(LEFT + 2.5 * cm, y, header_data['service_name'])
-        canvas.drawString(LEFT + 10.9 * cm, y, header_data['order_date'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['order_date'])
         
         # Fila 6: FECHA IMPRESIÓN
         y = y - line_height
         canvas.setFont("Helvetica-Bold", 7)
         canvas.setFillColor(C_NAVY)
-        canvas.drawString(LEFT + 8.5 * cm, y, "FECHA IMPRESIÓN")
+        canvas.drawString(LEFT + 12.5 * cm, y, "FECHA IMPRESIÓN")
         canvas.setFont("Helvetica", 8)
         canvas.setFillColor(C_DARK)
-        canvas.drawString(LEFT + 10.9 * cm, y, header_data['print_date'])
+        canvas.drawString(LEFT + 15.5 * cm, y, header_data['print_date'])
         
         # Línea divisoria
         canvas.setStrokeColor(colors.HexColor("#bfdbfe"))
@@ -541,7 +579,7 @@ def build_laboratory_pdf(
         canvas.setFont("Helvetica", 7)
         canvas.setFillColor(C_GRAY)
         canvas.drawString(LEFT, 0.8 * cm, f"Generado por: LisCore · Sistema LIS · {generation_date}")
-        canvas.drawRightString(PAGE_W - RIGHT, 0.8 * cm, f"Página {doc.page}")
+        canvas.drawRightString(PAGE_W - RIGHT, 0.8 * cm, f"Página {canvas.getPageNumber()}")
         canvas.setStrokeColor(C_NAVY)
         canvas.setLineWidth(0.5)
         canvas.line(LEFT, 1.1 * cm, PAGE_W - RIGHT, 1.1 * cm)
@@ -610,7 +648,7 @@ def _group_by_study(laboratories: list, is_female: bool) -> list[dict]:
 def _build_row(lab: Any, is_female: bool) -> dict:
     test = lab.test
     test_name = test.name if test else "—"
-    units = test.units if test and test.units else "—"
+    units = (test.units or "") if test and test.units else ""
     result = _format_result(lab)
     reference = _format_reference(lab, test, is_female)
     state_label, state_class = LAB_STATE_LABELS.get(
@@ -636,6 +674,60 @@ def _build_row(lab: Any, is_female: bool) -> dict:
 # ─────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────
+_COMP_COL_SPLIT = re.compile(r" {2,}")
+
+
+def _build_comp_table(text: str, style: ParagraphStyle, avail_width: float) -> Table | None:
+    """Convierte el texto de l_result_comp (columnas alineadas a punta de
+    espacios, pensadas para una fuente monoespaciada) en una tabla real de
+    reportlab, para que la alineación se conserve usando la misma fuente
+    del resto del documento en vez de depender del ancho de cada carácter."""
+    rows: list[list[str]] = []
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        rows.append(_COMP_COL_SPLIT.split(line.strip()) if line.strip() else [])
+
+    max_cols = max((len(r) for r in rows), default=0)
+    if max_cols == 0:
+        return None
+
+    col_char_widths = [1] * max_cols
+    for row in rows:
+        for i, token in enumerate(row):
+            col_char_widths[i] = max(col_char_widths[i], len(token))
+    total_chars = sum(col_char_widths)
+
+    col_widths = [avail_width * (w / total_chars) for w in col_char_widths]
+
+    # Una columna corta (p.ej. una sola letra "S"/"R"/"I") puede recibir un
+    # ancho proporcional menor que el padding fijo de la celda (8+4 o 4+4 pt),
+    # lo que hace que reportlab falle con "negative availWidth". Si al aplicar
+    # un mínimo por columna la suma ya no cabe en el ancho disponible, el
+    # texto no es realmente tabular y se colapsa a una sola columna por línea.
+    MIN_COL_WIDTH = 16  # pt, > que el padding máximo de una celda (8+4)
+    col_widths = [max(w, MIN_COL_WIDTH) for w in col_widths]
+    if sum(col_widths) > avail_width:
+        rows = [[" ".join(r)] if r else [] for r in rows]
+        max_cols = 1
+        col_widths = [avail_width]
+
+    table_data = [
+        [Paragraph(_xml_escape(row[i]) if i < len(row) else "", style) for i in range(max_cols)]
+        for row in rows
+    ]
+
+    tbl = Table(table_data, colWidths=col_widths)
+    tbl.setStyle(TableStyle([
+        ("LEFTPADDING", (0, 0), (0, -1), 8),
+        ("LEFTPADDING", (1, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    ]))
+    return tbl
+
+
 def _full_name(patient: Any) -> str:
     if not patient:
         return "—"
@@ -660,7 +752,7 @@ def _format_result(lab: Any) -> str:
             return f"{float(lab.l_result_num):.{decimals}f}"
         return str(lab.l_result_num)
     # l_result_comp se muestra debajo del examen como fila compuesta, no en esta columna
-    return "—"
+    return ""
 
 
 def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
@@ -676,7 +768,7 @@ def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
 
     # 2. Fallback: campos legacy del TestsLab
     if not test:
-        return "—"
+        return ""
     lo = test.female_value_min if is_female else test.male_value_min
     hi = test.female_value_max if is_female else test.male_value_max
     if lo is not None and hi is not None:
@@ -685,7 +777,7 @@ def _format_reference(lab: Any, test: Any, is_female: bool) -> str:
         return f">= {lo}"
     if hi is not None:
         return f"<= {hi}"
-    return "—"
+    return ""
 
 
 def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
@@ -703,8 +795,6 @@ def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
         val = float(lab.l_result_num)
     else:
         return False
-    test = lab.test
-    val = float(lab.l_result_num)
 
     # 1. Prioridad: rangos evaluados por el sistema de RangesReferences
     ref_min = lab.__dict__.get("_ref_min")
@@ -732,8 +822,14 @@ def _is_abnormal(lab: Any, is_female: bool = False) -> bool:
 # PDF Merge
 # ─────────────────────────────────────────────
 def merge_pdfs(main_pdf: bytes, annex_pdfs: list[bytes]) -> bytes:
-    """Merge the main PDF with a list of annexed PDFs into a single PDF."""
+    """Merge the main PDF with a list of annexed PDFs into a single PDF.
+
+    After merging, rewrites the footer on **every** page so that:
+    - The generation date is consistent across all pages.
+    - Page numbers are sequential and correct.
+    """
     from pypdf import PdfReader, PdfWriter
+    from reportlab.pdfgen import canvas as pdf_canvas
 
     writer = PdfWriter()
     reader = PdfReader(io.BytesIO(main_pdf))
@@ -745,8 +841,56 @@ def merge_pdfs(main_pdf: bytes, annex_pdfs: list[bytes]) -> bytes:
         for page in annex_reader.pages:
             writer.add_page(page)
 
+    # Write the merged PDF to a temporary buffer so we can re-read it
+    temp_buf = io.BytesIO()
+    writer.write(temp_buf)
+    temp_buf.seek(0)
+
+    # Re-read and stamp a unified footer on every page
+    merged_reader = PdfReader(temp_buf)
+    final_writer = PdfWriter()
+
+    generation_date = datetime.now().strftime("%d/%m/%Y %H:%M")
+    PAGE_W, PAGE_H = letter
+    LEFT = RIGHT = 1.5 * cm
+    FOOTER_TEXT_Y = 0.8 * cm
+    FOOTER_LINE_Y = 1.1 * cm
+    FOOTER_BOX_HEIGHT = 1.6 * cm  # enough to cover any old footer
+
+    total_pages = len(merged_reader.pages)
+    for page_num, page in enumerate(merged_reader.pages, start=1):
+        # Create a single-page overlay containing only the new footer
+        overlay_buf = io.BytesIO()
+        c = pdf_canvas.Canvas(overlay_buf, pagesize=letter)
+
+        # White rectangle to cover the old footer
+        c.setFillColor(colors.white)
+        c.setStrokeColor(colors.white)
+        c.rect(0, 0, PAGE_W, FOOTER_BOX_HEIGHT, fill=1, stroke=0)
+
+        # Decorative line
+        c.setStrokeColor(C_NAVY)
+        c.setLineWidth(0.5)
+        c.line(LEFT, FOOTER_LINE_Y, PAGE_W - RIGHT, FOOTER_LINE_Y)
+
+        # Footer text
+        c.setFont("Helvetica", 7)
+        c.setFillColor(C_GRAY)
+        c.drawString(LEFT, FOOTER_TEXT_Y,
+                     f"Generado por: LisCore · Sistema LIS · {generation_date}")
+        c.drawRightString(PAGE_W - RIGHT, FOOTER_TEXT_Y,
+                          f"Página {page_num}")
+
+        c.save()
+        overlay_buf.seek(0)
+
+        # Merge the overlay onto the page
+        overlay_reader = PdfReader(overlay_buf)
+        page.merge_page(overlay_reader.pages[0])
+        final_writer.add_page(page)
+
     buf = io.BytesIO()
-    writer.write(buf)
+    final_writer.write(buf)
     return buf.getvalue()
 
 

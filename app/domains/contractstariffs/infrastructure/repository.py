@@ -209,15 +209,15 @@ class ContractTariffRepository:
 
         if search:
             query = query.filter(
-                StudiesLab.name.ilike(f"%{search}%") | StudiesLab.code.ilike(f"%{search}%")
+                StudiesLab.name.ilike(f"%{search}%")
+                | StudiesLab.code.ilike(f"%{search}%")
+                | StudiesLab.cups_code.ilike(f"%{search}%")
             )
         if active is not None:
             query = query.filter(StudiesLab.active == active)
 
-        # Count
-        count_query = select(func.count()).select_from(TariffDetail).filter(
-            TariffDetail.td_tariff_id == tariff_id
-        )
+        # Count (debe reflejar los mismos filtros que la query principal)
+        count_query = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_query)).scalar() or 0
 
         result = await db.execute(

@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
+from app.domains.users.infrastructure.models import AppUser
 from app.domains.patients.api.schemas import PatientCreate, PatientUpdate, PatientResponse, PatientWithAgeResponse, PatientPaginatedResponse
 from app.domains.orders.api.schemas import PatientOrdersPaginatedResponse
 from app.domains.patients.application.use_cases import patient_use_cases as use_cases
@@ -12,8 +13,12 @@ router = APIRouter()
 
 @router.post("/", response_model=PatientResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_permission("Patients:Create"))])
-async def create(data: PatientCreate, db: AsyncSession = Depends(get_db)):
-    return await use_cases.create_patient(db, data.model_dump())
+async def create(
+    data: PatientCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
+    return await use_cases.create_patient(db, data.model_dump(), current_user.usr_id)
 
 @router.get("/", response_model=PatientPaginatedResponse,
             dependencies=[Depends(require_permission("Patients:List"))])
@@ -57,5 +62,12 @@ async def get_one(id: int, db: AsyncSession = Depends(get_db)):
 
 @router.patch("/{id}", response_model=PatientResponse,
               dependencies=[Depends(require_permission("Patients:Update"))])
-async def update(id: int, data: PatientUpdate, usr_id: Optional[int] = Query(None), db: AsyncSession = Depends(get_db)):
-    return await use_cases.update_patient(db, id, data.model_dump(exclude_unset=True), usr_id=usr_id)
+async def update(
+    id: int,
+    data: PatientUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
+    return await use_cases.update_patient(
+        db, id, data.model_dump(exclude_unset=True), user_id=current_user.usr_id
+    )

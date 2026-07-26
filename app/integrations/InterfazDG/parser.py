@@ -63,6 +63,7 @@ def parse_solicitud(raw_body: bytes) -> DGSolicitudExamenes:
           <DatosOrden>
             <LBHNITENT /><LBHNOMENT /><GMECODIGO /><GMENOMBRE />
             <ARECODIGO /><ARENOMBRE /><GEECODIGO /><GEENOMBRE />
+            <GESERCODIGO /><GESERNOMBRE />
           </DatosOrden>
           <Examenes>
             <Examen>
@@ -114,6 +115,7 @@ def parse_solicitud(raw_body: bytes) -> DGSolicitudExamenes:
             embarazo_codigo=_text(dp_el, "CODEMBARA"),
             embarazo_nombre=_text(dp_el, "NOMEMBARA"),
             email=_text(dp_el, "EMAILPACI"),
+            municipio_ciudad_codigo=_text(dp_el, "GPACIUDAD"),
         )
 
     # --- DatosOrden ---
@@ -128,6 +130,8 @@ def parse_solicitud(raw_body: bytes) -> DGSolicitudExamenes:
             area_nombre=_text(do_el, "ARENOMBRE"),
             servicio_codigo=_text(do_el, "GEECODIGO"),
             servicio_nombre=_text(do_el, "GEENOMBRE"),
+            geser_codigo=_text(do_el, "GESERCODIGO"),
+            geser_nombre=_text(do_el, "GESERNOMBRE"),
         )
 
     # --- Exámenes ---

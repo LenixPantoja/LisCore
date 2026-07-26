@@ -207,22 +207,42 @@ class AnalyzerRepository:
         active: Optional[bool] = None
     ) -> Tuple[Sequence[AnalyzerDetail], int]:
         """Get analyzer details with pagination"""
+        from app.domains.testslabs.domain.models import TestsLab
+
         query = select(AnalyzerDetail).filter(
             AnalyzerDetail.ad_analyzer_id == analyzer_id
         ).options(selectinload(AnalyzerDetail.test))
 
         if search:
-            query = query.filter(
+            query = query.join(
+                TestsLab, AnalyzerDetail.ad_test_id == TestsLab.id, isouter=True
+            ).filter(
                 AnalyzerDetail.ad_transmission_code.ilike(f"%{search}%") |
-                AnalyzerDetail.ad_sufix.ilike(f"%{search}%")
+                AnalyzerDetail.ad_sufix.ilike(f"%{search}%") |
+                TestsLab.name.ilike(f"%{search}%") |
+                TestsLab.code.ilike(f"%{search}%")
             )
+
         if active is not None:
             query = query.filter(AnalyzerDetail.ad_active == active)
 
-        count_stmt = select(func.count()).select_from(AnalyzerDetail).filter(
+        # Count query must replicate the same filters
+        count_query = select(func.count()).select_from(AnalyzerDetail).filter(
             AnalyzerDetail.ad_analyzer_id == analyzer_id
         )
-        total = (await db.execute(count_stmt)).scalar() or 0
+        if search:
+            count_query = count_query.join(
+                TestsLab, AnalyzerDetail.ad_test_id == TestsLab.id, isouter=True
+            ).filter(
+                AnalyzerDetail.ad_transmission_code.ilike(f"%{search}%") |
+                AnalyzerDetail.ad_sufix.ilike(f"%{search}%") |
+                TestsLab.name.ilike(f"%{search}%") |
+                TestsLab.code.ilike(f"%{search}%")
+            )
+        if active is not None:
+            count_query = count_query.filter(AnalyzerDetail.ad_active == active)
+
+        total = (await db.execute(count_query)).scalar() or 0
 
         result = await db.execute(
             query.offset(skip).limit(limit).order_by(AnalyzerDetail.ad_id.asc())

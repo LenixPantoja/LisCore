@@ -4,14 +4,15 @@ from fastapi import HTTPException, status
 from app.domains.laboratories.infrastructure.repository import LaboratoryRepository
 from app.domains.orders.domain.constants import (
     ORDER_DETAIL_STATES, ORDER_DETAIL_STATE_DESCARTADO,
-    ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS,
 )
-from app.domains.laboratories.domain.constants import (
-    LABORATORY_STATE_VALIDADA,
-    LABORATORY_STATE_CON_RESULTADOS,
-    LABORATORY_STATE_IMPRESO,
+from app.domains.orders.domain.order_state_logic import compute_order_state_from_studies
+from app.domains.traces.constants import (
+    OPERATION_EDIT_RESULT,
+    OPERATION_VALIDATE_RESULT,
+    OPERATION_INVALIDATE_RESULT,
+    OPERATION_VALIDATE_PRELIMINARY,
+    OPERATION_INVALIDATE_PRELIMINARY,
 )
-from app.domains.traces.constants import OPERATION_EDIT_RESULT, OPERATION_VALIDATE_RESULT, OPERATION_INVALIDATE_RESULT
 from utils.trace import register_trace
 from typing import List
 
@@ -164,8 +165,10 @@ async def validate_laboratories(db: AsyncSession, items: list):
     - Si no trae ninguno: omite el ítem.
     Después de validar, actualiza el o_order_state de las órdenes afectadas
     respetando is_required de StudiesTestDetail:
-      - 3 (Con Resultados) si para cada estudio de la orden, todas las pruebas
-        con is_required=True tienen resultados (l_state in {2, 3, 4}).
+      - 4 (Validada) si para cada estudio de la orden, todas las pruebas
+        con is_required=True están validadas (l_state in {3, 4}).
+      - 3 (Con Resultados) si todas las pruebas requeridas tienen resultados
+        (l_state in {2, 3, 4}) pero no todas están validadas.
       - 2 (Pendiente) si al menos un estudio tiene pruebas requeridas sin resultado.
     """
     try:
@@ -243,19 +246,15 @@ async def _sync_order_states_for_labs(db: AsyncSession, l_ids: List[int]):
     """
     Revisa los estados de los laboratorios de cada orden afectada respetando is_required
     de StudiesTestDetail y actualiza o_order_state:
-      - ORDER_STATE_CON_RESULTADOS (3) si para cada estudio de la orden, todas las pruebas
-        con is_required=True tienen resultados (l_state in {2, 3, 4}).
+      - ORDER_STATE_VALIDADA (4) si para cada estudio de la orden, todas las pruebas
+        con is_required=True están validadas (l_state in {3, 4}).
+      - ORDER_STATE_CON_RESULTADOS (3) si todas las pruebas requeridas tienen
+        resultados (l_state in {2, 3, 4}) pero no todas están validadas.
       - ORDER_STATE_PENDIENTE (2) si al menos un estudio tiene pruebas requeridas sin resultado.
     """
     from app.domains.laboratories.domain.models import Laboratory
     from app.domains.orders.domain.models import OrdersDetail, Order
     from app.domains.studieslab.domain.models import StudiesTestDetail
-
-    LAB_STATES_WITH_RESULTS = {
-        LABORATORY_STATE_CON_RESULTADOS,
-        LABORATORY_STATE_VALIDADA,
-        LABORATORY_STATE_IMPRESO,  # 2, 3, 4
-    }
 
     # 1. Obtener order_ids de los labs procesados
     stmt = (
@@ -306,30 +305,10 @@ async def _sync_order_states_for_labs(db: AsyncSession, l_ids: List[int]):
             if row.l_test_id is not None:
                 study_labs[sid][row.l_test_id] = row.l_state
 
-        # 5. Decidir si cada estudio está "Con Resultados"
-        all_studies_done = True
-        for study_id, tests_map in study_labs.items():
-            required_ids = required_tests_by_study.get(study_id, set())
-            if not required_ids:
-                # Sin pruebas requeridas definidas: el estudio se considera completado
-                # si todas sus pruebas tienen resultados (comportamiento legacy)
-                if all(state in LAB_STATES_WITH_RESULTS for state in tests_map.values()):
-                    continue  # estudio completado
-                else:
-                    all_studies_done = False
-                    break
-            else:
-                # Solo las pruebas requeridas determinan el estado
-                all_required_have_results = all(
-                    tests_map.get(tid, 0) in LAB_STATES_WITH_RESULTS
-                    for tid in required_ids
-                )
-                if not all_required_have_results:
-                    all_studies_done = False
-                    break
+        # 5. Decidir el estado de la orden (Pendiente / Con Resultados / Validada)
+        new_order_state = compute_order_state_from_studies(study_labs, required_tests_by_study)
 
         # 6. Actualizar la orden
-        new_order_state = ORDER_STATE_CON_RESULTADOS if all_studies_done else ORDER_STATE_PENDIENTE
         stmt_order = (
             update(Order)
             .where(Order.o_id == order_id)
@@ -508,3 +487,119 @@ async def link_laboratory_graphic(
         "url": get_graphic_url(object_name),
         "message": "Object name vinculado correctamente al laboratorio.",
     }
+
+
+async def bulk_update_preliminaries(db: AsyncSession, items: List[dict], usr_id: int = None):
+    """
+    Valida múltiples resultados preliminares (lp_state = 1 / Validado).
+    Cada item debe contener: l_id (laboratorio), lp_id (preliminar).
+    Solo permite validar si el lp_state actual es 0 (Pendiente).
+    Registra traza en AppTrace por cada preliminar validado.
+    """
+    try:
+        if not items:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La lista de ítems no puede estar vacía."
+            )
+
+        validated_count, details, trace_data_list = await LaboratoryRepository.bulk_update_preliminaries(db, items)
+
+        # Registrar trazas para cada preliminar validado
+        for trace in trace_data_list:
+            desc = f"Preliminar lp_id={trace['lp_id']} del laboratorio l_id={trace['l_id']}"
+            if trace.get("lp_result"):
+                desc += f" | resultado: {trace['lp_result']}"
+
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_VALIDATE_PRELIMINARY,
+                operation_description=desc,
+                usr_id=usr_id,
+                order_id=trace["order_id"],
+                test_id=trace["test_id"],
+            )
+
+        await db.commit()
+
+        message_parts = [f"Se validaron {validated_count} resultados preliminares correctamente."]
+
+        if details.get("not_found"):
+            message_parts.append(f"{len(details['not_found'])} preliminares no fueron encontrados.")
+        if details.get("invalid_state"):
+            message_parts.append(f"{len(details['invalid_state'])} preliminares no estaban en estado Pendiente.")
+
+        return {
+            "success": True,
+            "validated_count": validated_count,
+            "failed_count": len(details.get("not_found", [])) + len(details.get("invalid_state", [])),
+            "message": " ".join(message_parts),
+            "details": details,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al validar los preliminares: {str(e)}"
+        )
+
+
+async def invalidate_preliminaries(db: AsyncSession, items: List[dict], usr_id: int = None, note: str = None):
+    """
+    Desvalida múltiples resultados preliminares (lp_state = 2 / Desvalidado).
+    Cada item debe contener: l_id (laboratorio), lp_id (preliminar).
+    Solo permite desvalidar si el lp_state actual es 1 (Validado).
+    Registra traza en AppTrace por cada preliminar desvalidado.
+    """
+    try:
+        if not items:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La lista de ítems no puede estar vacía."
+            )
+
+        invalidated_count, details, trace_data_list = await LaboratoryRepository.invalidate_preliminaries(db, items)
+
+        # Registrar trazas para cada preliminar desvalidado
+        for trace in trace_data_list:
+            desc = f"Preliminar lp_id={trace['lp_id']} del laboratorio l_id={trace['l_id']}"
+            if trace.get("lp_result"):
+                desc += f" | resultado: {trace['lp_result']}"
+            notes = f"Nota: {note}" if note else None
+
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_INVALIDATE_PRELIMINARY,
+                operation_description=desc,
+                usr_id=usr_id,
+                order_id=trace["order_id"],
+                test_id=trace["test_id"],
+                notes=notes,
+            )
+
+        await db.commit()
+
+        message_parts = [f"Se desvalidaron {invalidated_count} resultados preliminares correctamente."]
+
+        if details.get("not_found"):
+            message_parts.append(f"{len(details['not_found'])} preliminares no fueron encontrados.")
+        if details.get("invalid_state"):
+            message_parts.append(f"{len(details['invalid_state'])} preliminares no estaban en estado Validado.")
+
+        return {
+            "success": True,
+            "invalidated_count": invalidated_count,
+            "failed_count": len(details.get("not_found", [])) + len(details.get("invalid_state", [])),
+            "message": " ".join(message_parts),
+            "details": details,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error al desvalidar los preliminares: {str(e)}"
+        )

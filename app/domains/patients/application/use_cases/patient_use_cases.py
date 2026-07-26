@@ -1,13 +1,16 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.patients.infrastructure.repository import PatientRepository
 from app.domains.patients.domain.rules import calculate_age
+from app.domains.patients.domain.models import Patient
 from app.domains.traces.constants import OPERATION_EDIT_DEMOGRAPHICS
+from app.domains.traces.models import AppTrace
+from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_patient
+from app.core.security import get_password_hash
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
-from utils.trace import register_trace
-import json
 
-async def create_patient(db: AsyncSession, data: dict):
+
+async def create_patient(db: AsyncSession, data: dict, user_id: int | None = None):
     try:
         # Validar si ya existe el documento
         existing = await PatientRepository.get_by_document(db, data.get("pt_Number_document"))
@@ -16,7 +19,24 @@ async def create_patient(db: AsyncSession, data: dict):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="El número de documento ya se encuentra registrado."
             )
-        return await PatientRepository.create(db, data)
+
+        # Password por defecto: el número de documento, siempre hasheada
+        raw_password = data.get("pt_password") or data.get("pt_Number_document")
+        data["pt_password"] = get_password_hash(raw_password)
+
+        patient = await PatientRepository.create(db, data)
+        await provision_for_patient(db, patient)
+
+        if user_id:
+            db.add(AppTrace(
+                usr_id=user_id,
+                operation_type=OPERATION_EDIT_DEMOGRAPHICS,
+                operation_description=f"Creación de paciente {patient.pt_Number_document}",
+                notes=f"Paciente: {patient.pt_firts_name} {patient.pt_last_name} | Documento: {patient.pt_Number_document}",
+            ))
+            await db.commit()
+
+        return patient
     except IntegrityError as e:
         await db.rollback()
         error_msg = str(e.orig)
@@ -48,23 +68,78 @@ async def get_patient_by_id(db: AsyncSession, pt_id: int):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado")
     return patient
 
-async def update_patient(db: AsyncSession, pt_id: int, data: dict, usr_id: int = None):
+async def update_patient(db: AsyncSession, pt_id: int, data: dict, user_id: int | None = None):
+    """
+    Update patient fields and register trace with before/after diff.
+    """
     try:
-        patient = await PatientRepository.update(db, pt_id, data)
+        editable_fields = [
+            "pt_Number_document", "pt_firts_name", "pt_middle_name",
+            "pt_last_name", "pt_second_last_name", "pt_phone_number",
+            "pt_mail", "pt_address", "pt_date_of_birth", "pt_sex_type",
+            "pt_authorize_habeas_data", "pt_afiliation_type",
+            "pt_enterprise_id", "pt_Document_Type_id", "pt_city_id",
+        ]
+
+        field_labels = {
+            "pt_Number_document": "Documento",
+            "pt_firts_name": "Primer nombre",
+            "pt_middle_name": "Segundo nombre",
+            "pt_last_name": "Primer apellido",
+            "pt_second_last_name": "Segundo apellido",
+            "pt_phone_number": "Teléfono",
+            "pt_mail": "Email",
+            "pt_address": "Dirección",
+            "pt_date_of_birth": "Fecha de nacimiento",
+            "pt_sex_type": "Sexo",
+            "pt_authorize_habeas_data": "Habeas Data",
+            "pt_afiliation_type": "Afiliación",
+            "pt_enterprise_id": "Empresa",
+            "pt_Document_Type_id": "Tipo documento",
+            "pt_city_id": "Ciudad",
+        }
+
+        # --- Snapshot BEFORE ---
+        patient = await PatientRepository.get_by_id(db, pt_id)
         if not patient:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado")
 
-        # Serialize updated fields for trace, converting non-serializable types to str
-        serializable = {k: str(v) if not isinstance(v, (str, int, float, bool, type(None))) else v for k, v in data.items()}
-        await register_trace(
-            db=db,
-            operation_type=OPERATION_EDIT_DEMOGRAPHICS,
-            operation_description=f"Actualización datos paciente ID {pt_id}",
-            usr_id=usr_id,
-            notes=json.dumps(serializable, ensure_ascii=False),
-        )
+        before_snapshot = {
+            field: getattr(patient, field, None)
+            for field in editable_fields
+        }
 
-        return patient
+        # Si se envía una nueva contraseña, hashearla antes de guardar
+        if data.get("pt_password"):
+            data["pt_password"] = get_password_hash(data["pt_password"])
+
+        # --- Perform update ---
+        updated = await PatientRepository.update(db, pt_id, data)
+        if not updated:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente no encontrado")
+
+        # --- Build diff ---
+        diff_parts: list[str] = []
+        for field in editable_fields:
+            if field in data and data[field] is not None:
+                label = field_labels.get(field, field)
+                old_val = before_snapshot.get(field)
+                new_val = data[field]
+                if old_val != new_val:
+                    diff_parts.append(f"{label}: {old_val} → {new_val}")
+
+        # --- Register trace ---
+        if diff_parts and user_id:
+            db.add(AppTrace(
+                usr_id=user_id,
+                operation_type=OPERATION_EDIT_DEMOGRAPHICS,
+                operation_description=f"Actualización datos paciente {updated.pt_Number_document}",
+                notes=" | ".join(diff_parts),
+            ))
+            await db.commit()
+
+        return updated
+
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error al actualizar datos del paciente.")
@@ -80,17 +155,10 @@ async def get_patient_by_document(db: AsyncSession, doc_number: str):
 
 async def get_patient_orders_with_details(db: AsyncSession, search_query: str, skip: int = 0, limit: int = 100):
     from app.domains.orders.infrastructure.repository import OrderRepository
-    
+    from app.domains.orders.domain.constants import ORDER_STATES
+
     orders, total = await OrderRepository.get_patient_orders_paginated(db, search_query, skip, limit)
-    
-    state_mapping = {
-        1: "Ingresada",
-        2: "Pendiente",
-        3: "Con Resultados",
-        4: "Anulada",
-        5: "Cerrada"
-    }
-    
+
     items = []
     for order in orders:
         # Construir nombre completo amigable
@@ -105,7 +173,7 @@ async def get_patient_orders_with_details(db: AsyncSession, search_query: str, s
             "o_date": order.o_date,
             "patient_full_name": full_name,
             "o_order_state": order.o_order_state,
-            "order_state_name": state_mapping.get(order.o_order_state, "Desconocido")
+            "order_state_name": ORDER_STATES.get(order.o_order_state, "Desconocido")
         })
         
     return {

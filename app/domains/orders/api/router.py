@@ -4,12 +4,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
+from app.domains.users.infrastructure.models import AppUser
 from app.domains.orders.api.schemas import (
     OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse, 
     NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
     OrderCreatedResponse, OrderEditRequest, OrderEditResponse,
     GraficoEvolutivoResponse, CancelStudiesRequest, CancelStudiesResponse,
+    OrderFilterRequest, OrderFilterItemResponse,
 )
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
@@ -80,11 +82,18 @@ async def update(id: int, data: OrderUpdate, db: AsyncSession = Depends(get_db))
 
 @router.put("/{id}", response_model=OrderEditResponse, status_code=status.HTTP_200_OK,
             dependencies=[Depends(require_permission("Orders:Edit"))])
-async def edit(id: int, data: OrderEditRequest, db: AsyncSession = Depends(get_db)):
+async def edit(
+    id: int,
+    data: OrderEditRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
     """
     Edita campos de una orden y/o agrega nuevos estudios.
     """
-    return await use_cases.edit_order(db, id, data.model_dump(exclude_unset=True))
+    return await use_cases.edit_order(
+        db, id, data.model_dump(exclude_unset=True), current_user.usr_id
+    )
 
 
 @router.post("/{id}/cancel-studies", response_model=CancelStudiesResponse, status_code=status.HTTP_200_OK,
@@ -130,3 +139,24 @@ async def get_full_order_by_id(id: int, db: AsyncSession = Depends(get_db)):
     Get full details of an order including all non-paginated children arrays.
     """
     return await use_cases.get_full_order_details_by_id(db, id)
+
+@router.post("/filter", response_model=List[OrderFilterItemResponse],
+             dependencies=[Depends(require_permission("Orders:List"))])
+async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Filtra órdenes por múltiples criterios:
+    - Rango de fechas (start_date, end_date sobre o_date)
+    - Estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
+    - Grupos de trabajo (lista de IDs de Work_groups)
+    - Estudios (lista de IDs de StudiesLab)
+    
+    Retorna una lista plana con: o_id, o_number, pt_name, pt_number_document.
+    """
+    return await use_cases.filter_orders(
+        db,
+        start_date=data.start_date,
+        end_date=data.end_date,
+        order_states=data.order_states,
+        work_group_ids=data.work_group_ids,
+        study_ids=data.study_ids,
+    )

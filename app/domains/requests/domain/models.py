@@ -25,6 +25,9 @@ class InboundOrder(Base):
     io_enterprise_id = Column(Integer, ForeignKey("Enterprises.en_id"), nullable=True)
     io_municipality_id = Column(Integer, nullable=True)
     io_scholarity_id = Column(Integer, ForeignKey("Schooling.id"), nullable=True)
+    io_Piso = Column(String(500), nullable=True)
+    io_service_code = Column(String(500), nullable=True)
+    io_service_name = Column(String(500), nullable=True)
     io_created_at = Column(DateTime, nullable=True)
     io_updated_at = Column(DateTime, nullable=True)
 

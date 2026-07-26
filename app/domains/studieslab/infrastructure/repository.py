@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
+from app.domains.testslabs.domain.models import TestsLab
 
 class StudiesLabRepository:
     @staticmethod
@@ -23,7 +24,7 @@ class StudiesLabRepository:
         # 1. Base de la consulta
         query = select(StudiesLab).options(
             selectinload(StudiesLab.test_details).options(
-                selectinload(StudiesTestDetail.test),
+                selectinload(StudiesTestDetail.test).selectinload(TestsLab.sample_type),
                 selectinload(StudiesTestDetail.work_group),
             ),
             selectinload(StudiesLab.work_group),
@@ -53,7 +54,7 @@ class StudiesLabRepository:
             .filter(StudiesLab.id == study_id)
             .options(
                 selectinload(StudiesLab.test_details).options(
-                    selectinload(StudiesTestDetail.test),
+                    selectinload(StudiesTestDetail.test).selectinload(TestsLab.sample_type),
                     selectinload(StudiesTestDetail.work_group),
                 ),
                 selectinload(StudiesLab.work_group),
@@ -107,7 +108,7 @@ class StudiesLabRepository:
             select(StudiesTestDetail)
             .filter(StudiesTestDetail.id == detail_id)
             .options(
-                selectinload(StudiesTestDetail.test),
+                selectinload(StudiesTestDetail.test).selectinload(TestsLab.sample_type),
                 selectinload(StudiesTestDetail.work_group)
             )
         )
