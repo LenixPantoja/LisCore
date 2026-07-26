@@ -3,8 +3,9 @@ Utilidad para evaluar el rango de referencia de un resultado de laboratorio.
 
 Dado un test_id, el resultado numérico del laboratorio y el paciente (fecha de
 nacimiento y género), determina en qué rango de referencia (NORMAL, ACEPTABLE,
-CRITICO) se encuentra el valor y devuelve los límites mínimo/máximo del valor
-de referencia aplicable.
+CRITICO) se encuentra el valor. El min/max devueltos son siempre los del rango
+NORMAL aplicable (por género/edad) — es decir, el valor de referencia a
+mostrar, independientemente de en qué rango haya caído el resultado real.
 """
 
 from datetime import date
@@ -16,7 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.domains.testslabs.domain.models import RangeReference, ReferenceValue
-from app.domains.testslabs.domain.constants import AGE_TYPE_DIAS, AGE_TYPE_MESES, AGE_TYPE_ANIOS
+from app.domains.testslabs.domain.constants import (
+    AGE_TYPE_DIAS,
+    AGE_TYPE_MESES,
+    AGE_TYPE_ANIOS,
+    RANGE_TYPE_NORMAL,
+)
 
 
 # ── Constantes de género ──────────────────────────────────────────────────────
@@ -158,9 +164,12 @@ async def evaluate_reference_range(
     Retorna una tupla:
         (range_type, min_value, max_value)
 
-    - range_type: 'NORMAL' | 'ACEPTABLE' | 'CRITICO' | None
-    - min_value / max_value: límites del valor de referencia que coincidió
-      (None para evaluaciones textuales).
+    - range_type: 'NORMAL' | 'ACEPTABLE' | 'CRITICO' | None → el rango en el
+      que cae el resultado real.
+    - min_value / max_value: límites del rango NORMAL aplicable por
+      género/edad (el valor de referencia a mostrar), NO los del rango en el
+      que cayó el resultado. None si no hay un rango NORMAL configurado que
+      aplique, o para evaluaciones textuales.
 
     Si no hay resultado evaluable o no se encuentra rango aplicable,
     retorna (None, None, None).
@@ -170,8 +179,6 @@ async def evaluate_reference_range(
     """
     if result_num is None and not result_text:
         return (None, None, None)
-
-    result_decimal = Decimal(str(result_num)) if result_num is not None else None
 
     # Cargar rangos del test ordenados por prioridad ascendente (1 = más prioritario)
     stmt = (
@@ -223,21 +230,73 @@ def evaluate_reference_range_sync(
     """
     Evaluación pura en memoria usando rangos ya cargados (sin queries DB).
     Usar con los datos obtenidos por `bulk_fetch_ranges`.
+
+    El range_type se determina por el rango en el que cae el resultado real
+    (NORMAL/ACEPTABLE/CRITICO, por prioridad). El min/max devuelto es siempre
+    el del rango NORMAL aplicable por género/edad — el "valor de referencia"
+    a mostrar — sin importar en qué rango haya caído el resultado.
     """
     if result_num is None and not result_text:
         return (None, None, None)
 
     result_decimal = Decimal(str(result_num)) if result_num is not None else None
 
+    range_type: Optional[str] = None
+    normal_min: Optional[Decimal] = None
+    normal_max: Optional[Decimal] = None
+
+    for range_ref in ranges:
+        if not _gender_matches(range_ref.gender, patient_sex_type_id):
+            continue
+        if not _age_matches(range_ref, patient_dob):
+            continue
+
+        # Capturar los límites del rango NORMAL aplicable, independiente de
+        # si el resultado cae ahí o no.
+        if normal_min is None and normal_max is None and range_ref.range_type == RANGE_TYPE_NORMAL:
+            for ref_val in range_ref.reference_values:
+                if ref_val.min_value is not None or ref_val.max_values is not None:
+                    normal_min = Decimal(str(ref_val.min_value)) if ref_val.min_value is not None else None
+                    normal_max = Decimal(str(ref_val.max_values)) if ref_val.max_values is not None else None
+                    break
+
+        # Determinar en qué rango cae el resultado real (primero por prioridad).
+        if range_type is None:
+            for ref_val in range_ref.reference_values:
+                if _value_in_reference(result_decimal, result_text, ref_val):
+                    range_type = range_ref.range_type
+                    break
+
+    return (range_type, normal_min, normal_max)
+
+
+def list_reference_values_for_patient(
+    ranges: list[RangeReference],
+    patient_dob: Optional[date],
+    patient_sex_type_id: Optional[int],
+) -> list[dict]:
+    """
+    Devuelve la lista plana de valores de referencia configurados para un
+    test que aplican a este paciente por género/edad (uno por cada
+    ReferenceValue, sin importar el range_type) — para mostrar todos los
+    rangos configurados (NORMAL, ACEPTABLE, CRITICO, etc.), no solo el que
+    coincidió con el resultado.
+    """
+    entries: list[dict] = []
     for range_ref in ranges:
         if not _gender_matches(range_ref.gender, patient_sex_type_id):
             continue
         if not _age_matches(range_ref, patient_dob):
             continue
         for ref_val in range_ref.reference_values:
-            if _value_in_reference(result_decimal, result_text, ref_val):
-                min_v = Decimal(str(ref_val.min_value)) if ref_val.min_value is not None else None
-                max_v = Decimal(str(ref_val.max_values)) if ref_val.max_values is not None else None
-                return (range_ref.range_type, min_v, max_v)
-
-    return (None, None, None)
+            entries.append({
+                "range_type": range_ref.range_type,
+                "gender": range_ref.gender,
+                "age_type": range_ref.age_type,
+                "min_age": range_ref.min_age,
+                "max_age": range_ref.max_age,
+                "min_value": float(ref_val.min_value) if ref_val.min_value is not None else None,
+                "max_value": float(ref_val.max_values) if ref_val.max_values is not None else None,
+                "text_value": ref_val.text_value,
+            })
+    return entries

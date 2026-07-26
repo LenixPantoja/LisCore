@@ -5,3 +5,13 @@ s3/data/
 ./env
 *.tar
 lis_core_api_prod.tar
+
+# Evitar archivos compilados de Python
+**/__pycache__/
+*.pyc
+
+# Evitar la data local de almacenamiento S3/MinIO
+s3/data/
+
+# Evitar empaquetados pesados
+*.tar

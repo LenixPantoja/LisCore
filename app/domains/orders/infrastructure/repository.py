@@ -41,12 +41,16 @@ class OrderRepository:
         if needs_patient_join:
             query = query.join(Patient, Order.o_his_id == Patient.pt_id)
 
-        # 2. search global: número de orden o documento del paciente
+        # 2. search global: número de orden, documento o nombre del paciente
         if search:
             query = query.filter(
                 or_(
                     Order.o_number.ilike(f"%{search}%"),
-                    Patient.pt_Number_document.ilike(f"%{search}%")
+                    Patient.pt_Number_document.ilike(f"%{search}%"),
+                    Patient.pt_firts_name.ilike(f"%{search}%"),
+                    Patient.pt_middle_name.ilike(f"%{search}%"),
+                    Patient.pt_last_name.ilike(f"%{search}%"),
+                    Patient.pt_second_last_name.ilike(f"%{search}%"),
                 )
             )
 

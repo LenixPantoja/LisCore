@@ -12,6 +12,7 @@ from app.shared.utils.range_evaluator import (
     evaluate_reference_range,
     bulk_fetch_ranges,
     evaluate_reference_range_sync,
+    list_reference_values_for_patient,
 )
 from utils.minio_client import get_graphic_url
 from app.domains.testslabs.infrastructure.testslab_format_complete_repository import (
@@ -417,14 +418,10 @@ async def get_order_details_paginated_by_number(
     patient_dob = getattr(patient, "pt_date_of_birth", None) if patient else None
     patient_sex = getattr(patient, "pt_sex_type", None) if patient else None
 
-    test_ids_with_result = list({
-        lab.l_test_id for lab in labs
-        if lab.l_test_id and (lab.l_result_num is not None or lab.l_result)
-    })
-    ranges_by_test = await bulk_fetch_ranges(db, test_ids_with_result)
-
-    # Batch-fetch formats for all test_ids present in labs (with or without result)
+    # Batch-fetch de rangos y formatos para todos los test_ids presentes en labs
+    # (con o sin resultado, ya que list_references_values no depende de tener resultado).
     all_test_ids = list({lab.l_test_id for lab in labs if lab.l_test_id})
+    ranges_by_test = await bulk_fetch_ranges(db, all_test_ids)
     formats_by_test = await TestslabFormatCompleteRepository.get_formats_by_testslab_ids(db, all_test_ids)
 
     enriched_labs = []
@@ -441,8 +438,9 @@ async def get_order_details_paginated_by_number(
             except (ValueError, AttributeError):
                 result_text = lab.l_result
 
+        test_ranges = ranges_by_test.get(lab.l_test_id, []) if lab.l_test_id else []
+
         if lab.l_test_id and (result_num is not None or result_text):
-            test_ranges = ranges_by_test.get(lab.l_test_id, [])
             range_type, ref_min, ref_max = evaluate_reference_range_sync(
                 test_ranges, result_num, patient_dob, patient_sex, result_text=result_text
             )
@@ -450,6 +448,9 @@ async def get_order_details_paginated_by_number(
         lab.__dict__["range_type"] = range_type
         lab.__dict__["value_range_reference_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["value_range_reference_max"] = float(ref_max) if ref_max is not None else None
+        lab.__dict__["list_references_values"] = list_reference_values_for_patient(
+            test_ranges, patient_dob, patient_sex
+        )
 
         if lab.l_result_graphic:
             lab.l_result_graphic = get_graphic_url(lab.l_result_graphic)

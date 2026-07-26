@@ -211,6 +211,17 @@ class LaboratoryPreliminaryResponse(BaseModel):
         from_attributes = True
 
 
+class ReferenceValueEntry(BaseModel):
+    range_type: Optional[str] = None
+    gender: Optional[str] = None
+    age_type: Optional[str] = None
+    min_age: Optional[int] = None
+    max_age: Optional[int] = None
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+    text_value: Optional[str] = None
+
+
 class LaboratoryResponse(BaseModel):
     l_id: int
     l_order_detail_id: Optional[int] = None
@@ -232,6 +243,7 @@ class LaboratoryResponse(BaseModel):
     range_type: Optional[str] = None
     value_range_reference_min: Optional[float] = None
     value_range_reference_max: Optional[float] = None
+    list_references_values: List[ReferenceValueEntry] = []
 
     order_detail: Optional[BasicOrdersDetailResponse] = None
     test: Optional[TestsLabResponse] = None
