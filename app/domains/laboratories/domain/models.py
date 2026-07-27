@@ -16,7 +16,7 @@ class Laboratory(Base):
     l_result_graphic = Column(Text, nullable=True)
     l_nota_validation = Column(String(255), nullable=True)
     l_state = Column(Integer, default=0)
-    l_transmitted = Column(Integer, default=1, nullable=False)
+    l_transmitted = Column(Integer, default=0, nullable=False)
     l_date_transmited = Column(DateTime, nullable=True)
     l_date_validatie = Column(DateTime, nullable=True)
     l_user_validation_id = Column(Integer, ForeignKey("AppUsers.usr_id"), nullable=True)
@@ -54,7 +54,7 @@ class LaboratoryPreliminary(Base):
     lp_date_preliminary = Column(DateTime, nullable=True)
     analyzer = Column(String(255), nullable=True)
     lp_state = Column(Integer, default=0, nullable=False)
-    lp_transmitted = Column(Integer, default=1, nullable=False)
+    lp_transmitted = Column(Integer, default=0, nullable=False)
 
     # Relaciones
     laboratory = relationship("Laboratory", back_populates="preliminaries")

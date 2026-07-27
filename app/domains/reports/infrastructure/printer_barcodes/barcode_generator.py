@@ -17,21 +17,27 @@ LABELARY_URL = "http://api.labelary.com/v1/printers/8dpmm/labels/2x1/0/"
 LABELARY_TIMEOUT = 15  # seconds
 
 # ── ZPL template ────────────────────────────────────────────────────────────
+# ^CI28 activa la interpretación UTF-8 en el intérprete ZPL, necesaria para
+# que tildes y la Ñ se impriman correctamente (sin esto, el firmware asume
+# la codepage por defecto de la impresora y las salidas se ven corruptas).
 _ZPL_TEMPLATE = """\
 ^XA
+^CI28
 ^LH0,0
-^FO45,20^AB,20,1^FD{patient_full_name}^FS
-^FO45,45^AB,18,1^FDDOCU:{identification}^FS
-^FO260,45^AB,18,1^FDEDAD:{age_str}^FS
+
+^FO25,10^A0N,20,20^FD{patient_full_name}^FS
+^FO25,30^A0N,20,20^FD{document_type} {identification}^FS
+^FO260,30^A0N,18,18^FDEDAD:{age_str}^FS
 
 ^BY2,3,150
-^FO25,80^BCN,80,N,Y,N^FD{barcode_value}^FS
+^FO26,55^BCN,94,N,Y,N^FD{barcode_value}^FS
 
-^FO370,40^ADB,25,1^FD{label_number}^FS
-^FO5,80^ABB,15,1^FD{work_group_name}^FS
+^FO368,35^A0B,22,22^FD{label_number}^FS
+^FO4,80^A0B,18,18^FD{work_group_name}^FS
 
-^FO45,165^AB,18,1^FD{tests_line}^FS
-^FO45,189^AB,10,1^FD TM-{sample_type_name}^FS
+^FO45,155^A0N,16,16^FD{tests_line}^FS
+^FO45,175^A0N,16,16^FD TM-{sample_type_name}^FS
+^FO200,195^A0N,15,15^FD {piso}^FS
 
 ^PQ1
 ^XZ"""
@@ -41,6 +47,7 @@ def build_zpl(sticker: dict) -> str:
     """Build a ZPL string from a sticker data dict."""
     return _ZPL_TEMPLATE.format(
         patient_full_name=sticker["patient_full_name"],
+        document_type=sticker.get("document_type", ""),
         identification=sticker["identification"],
         enterprise_name=sticker["enterprise_name"],
         age_str=sticker["age_str"],
@@ -49,6 +56,7 @@ def build_zpl(sticker: dict) -> str:
         work_group_name=sticker["work_group_name"],
         tests_line=sticker["tests_line"],
         sample_type_name=sticker.get("sample_type_name", ""),
+        piso=sticker.get("piso", ""),
     )
 
 
@@ -61,7 +69,7 @@ def zpl_to_pdf(zpl: str) -> bytes:
         response = requests.post(
             LABELARY_URL,
             headers={"Accept": "application/pdf"},
-            files={"file": zpl},
+            files={"file": zpl.encode("utf-8")},
             timeout=LABELARY_TIMEOUT,
         )
         if response.status_code == 429:

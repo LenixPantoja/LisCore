@@ -30,22 +30,47 @@ from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.samples.domain.models import SamplesOrder, SampleType
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.masters.domain.models import WorkGroup
+from app.domains.patients.domain.models import Patient
+from app.domains.requests.domain.models import InboundOrder, InboundOrderDetail
 from app.domains.reports.infrastructure.printer_barcodes.barcode_generator import (
     build_stickers_result,
     pdf_to_base64,
 )
 
 
+async def _resolve_piso(db: AsyncSession, order: Order) -> str:
+    """
+    Resuelve el piso del paciente para el sticker:
+    - Si la orden tiene registros en InboundOrdersDetails (viene del HIS),
+      usa el io_Piso de su InboundOrder asociado.
+    - Si no hay registros en InboundOrdersDetails, o el io_Piso está vacío,
+      usa el nombre del servicio de la orden.
+    """
+    iod_result = await db.execute(
+        select(InboundOrder.io_Piso)
+        .join(InboundOrderDetail, InboundOrderDetail.iod_inboundOrder_id == InboundOrder.io_id)
+        .where(InboundOrderDetail.iod_order_id == order.o_id)
+        .limit(1)
+    )
+    piso = iod_result.scalars().first()
+    if piso:
+        return piso
+
+    service = order.service
+    return (getattr(service, "name", None) or "") if service else ""
+
+
 async def generate_barcode_stickers(
     db: AsyncSession, order_id: int, study_ids: Optional[List[int]] = None
 ) -> dict:
-    # 1. Load order with patient and enterprise
+    # 1. Load order with patient, enterprise and service
     order_result = await db.execute(
         select(Order)
         .filter(Order.o_id == order_id)
         .options(
-            selectinload(Order.patient),
+            selectinload(Order.patient).selectinload(Patient.document_type),
             selectinload(Order.enterprise),
+            selectinload(Order.service),
         )
     )
     order = order_result.scalars().first()
@@ -194,10 +219,14 @@ async def generate_barcode_stickers(
     identification = (
         getattr(patient, "pt_Number_document", "-") if patient else "-"
     )
+    document_type_code = (
+        (getattr(patient.document_type, "dt_code", None) or "") if patient and patient.document_type else ""
+    )
     enterprise_name = (
         (getattr(enterprise, "en_description", None) or "").upper()
         if enterprise else "-"
     )
+    piso = await _resolve_piso(db, order)
 
     age_str = "-"
     if patient and getattr(patient, "pt_date_of_birth", None):
@@ -276,6 +305,7 @@ async def generate_barcode_stickers(
             stickers.append({
                 "patient_full_name": patient_full_name,
                 "identification": identification,
+                "document_type": document_type_code,
                 "enterprise_name": enterprise_name,
                 "age_str": age_str,
                 "work_group_name": wg_name,
@@ -283,6 +313,7 @@ async def generate_barcode_stickers(
                 "label_number": label_number,
                 "tests_line": tests_line,
                 "sample_type_name": sample_type_name,
+                "piso": piso,
             })
         else:
             # Multiple work groups share the same sample type → merge into one sticker.
@@ -301,6 +332,7 @@ async def generate_barcode_stickers(
             stickers.append({
                 "patient_full_name": patient_full_name,
                 "identification": identification,
+                "document_type": document_type_code,
                 "enterprise_name": enterprise_name,
                 "age_str": age_str,
                 "work_group_name": combined_wg_name,
@@ -308,6 +340,7 @@ async def generate_barcode_stickers(
                 "label_number": label_number,
                 "tests_line": tests_line,
                 "sample_type_name": sample_type_name,
+                "piso": piso,
             })
 
     if not stickers:
