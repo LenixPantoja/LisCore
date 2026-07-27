@@ -210,9 +210,16 @@ async def registrar_solicitud_dg(
 
     # --- 7. Construir datos del InboundOrder ---
     now = datetime.utcnow()
+    # io_date_request: fecha del servicio enviada por Dinamica (LBHFECSER).
+    # Si no viene o no se puede parsear, se usa la fecha actual como respaldo.
+    fecha_servicio_raw = dg.fecha_servicio if dg else None
+    io_date_request = _parse_datetime(fecha_servicio_raw) or now
+    print(f"[InterfazDG] LBHFECSER raw='{fecha_servicio_raw}' → io_date_request={io_date_request}")
+
     order_data = {
         "io_number_request": dg.ord_consec if dg else None,
-        "io_date_request": now,
+        "io_date_request": io_date_request,
+        # io_date_transmission: fecha/hora real de inserción en esta base de datos.
         "io_date_transmission": now,
         "io_patient_id": patient.pt_id,
         "io_origin": dg.id_origen if dg else None,
@@ -343,6 +350,7 @@ def _parse_datetime(value: Optional[str]) -> Optional[datetime]:
         "%Y-%m-%d %H:%M:%S",
         "%d/%m/%Y %H:%M:%S",
         "%Y-%m-%d",
+        "%d/%m/%Y",
     ):
         try:
             return datetime.strptime(value, fmt)
