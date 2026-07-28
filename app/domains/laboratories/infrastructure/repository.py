@@ -155,7 +155,7 @@ class LaboratoryRepository:
         affected_order_ids = list({t["order_id"] for t in trace_data_list if t.get("order_id")})
         if affected_order_ids:
             await db.flush()
-            formula_updated = await LaboratoryRepository._recalculate_formula_labs(db, affected_order_ids)
+            formula_updated = await LaboratoryRepository.recalculate_formula_labs(db, affected_order_ids)
             updated_count += formula_updated
 
         await db.commit()
@@ -169,9 +169,12 @@ class LaboratoryRepository:
         return updated_count, details, trace_data_list
 
     @staticmethod
-    async def _recalculate_formula_labs(db: AsyncSession, order_ids: List[int]) -> int:
+    async def recalculate_formula_labs(db: AsyncSession, order_ids: List[int]) -> int:
         """
         Recomputes result for every formula-based lab in the given orders.
+        Called both from bulk_update (API path) and from the Postgres
+        LISTEN/NOTIFY listener (app/domains/laboratories/infrastructure/formula_listener.py)
+        for results written directly into the database by an external interface.
 
         For each order, fetches all labs together with their test info,
         builds the variable mapping from non-formula results, and evaluates
@@ -390,6 +393,7 @@ class LaboratoryRepository:
         skipped_ids = []
         invalid_state_ids = []
         trace_data_list: List[Dict[str, Any]] = []
+        affected_order_ids: set[int] = set()
 
         for item in items:
             l_id = item.get("l_id")
@@ -440,6 +444,10 @@ class LaboratoryRepository:
                 await db.execute(update_stmt)
                 validated_count += 1
 
+                # Si se corrigió el resultado al validar, recalcular fórmulas dependientes
+                if "l_result" in fields or "l_result_comp" in fields:
+                    affected_order_ids.add(order_id)
+
                 # Datos de traza para este laboratorio
                 trace_data_list.append({
                     "usr_id": item.get("l_user_validation_id"),
@@ -456,6 +464,10 @@ class LaboratoryRepository:
                     l_nota_validation=item["l_nota_validation"]
                 )
                 await db.execute(update_stmt)
+
+        if affected_order_ids:
+            await db.flush()
+            await LaboratoryRepository.recalculate_formula_labs(db, list(affected_order_ids))
 
         await db.commit()
 
