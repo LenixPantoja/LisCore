@@ -86,6 +86,8 @@ class InboundOrderRepository:
         enterprise_id: Optional[int] = None,
         date_from: Optional[datetime] = None,
         date_to: Optional[datetime] = None,
+        transmission_date_from: Optional[datetime] = None,
+        transmission_date_to: Optional[datetime] = None,
         search: Optional[str] = None,
     ) -> tuple[int, list[InboundOrder]]:
         base = _base_query_with_relations().join(
@@ -102,12 +104,21 @@ class InboundOrderRepository:
             # Si viene sin componente de hora (p.ej. "2026-07-25" -> medianoche),
             # se interpreta como "hasta el final de ese día" en vez de excluir
             # todo lo que no caiga exactamente a las 00:00:00.
-            effective_date_to = date_to
             if date_to.time() == datetime.min.time():
                 effective_date_to = date_to + timedelta(days=1)
                 base = base.filter(InboundOrder.io_date_request < effective_date_to)
             else:
                 base = base.filter(InboundOrder.io_date_request <= date_to)
+
+        if transmission_date_from is not None:
+            base = base.filter(InboundOrder.io_date_transmission >= transmission_date_from)
+
+        if transmission_date_to is not None:
+            if transmission_date_to.time() == datetime.min.time():
+                effective_transmission_date_to = transmission_date_to + timedelta(days=1)
+                base = base.filter(InboundOrder.io_date_transmission < effective_transmission_date_to)
+            else:
+                base = base.filter(InboundOrder.io_date_transmission <= transmission_date_to)
 
         if search:
             pattern = f"%{search}%"

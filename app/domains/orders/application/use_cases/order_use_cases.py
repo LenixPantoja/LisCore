@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -396,12 +396,14 @@ async def get_next_order_number(db: AsyncSession):
     return {"next_order_number": next_number}
 
 async def get_order_details_paginated_by_number(
-    db: AsyncSession, 
-    o_number: str, 
-    skip_labs: int = 0, 
+    db: AsyncSession,
+    o_number: str,
+    skip_labs: int = 0,
     limit_labs: int = 100,
-    skip_tests: int = 0, 
-    limit_tests: int = 100
+    skip_tests: int = 0,
+    limit_tests: int = 100,
+    l_state: Optional[int] = None,
+    work_group_id: Optional[int] = None,
 ):
     # 1. Obtener orden principal
     order = await OrderRepository.get_order_by_number(db, o_number)
@@ -409,7 +411,9 @@ async def get_order_details_paginated_by_number(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
 
     # 2. Consultar laboratorios y pruebas paginados
-    labs, total_labs = await OrderRepository.get_laboratories_paginated(db, order.o_id, skip_labs, limit_labs)
+    labs, total_labs = await OrderRepository.get_laboratories_paginated(
+        db, order.o_id, skip_labs, limit_labs, l_state=l_state, work_group_id=work_group_id
+    )
     tests, total_tests = await OrderRepository.get_tests_paginated(db, order.o_id, skip_tests, limit_tests)
 
     # 3. Enriquecer laboratorios con rangos de referencia
@@ -1165,8 +1169,8 @@ async def _compute_orders_state(db: AsyncSession, order_ids: list[int]) -> dict[
 
 async def filter_orders(
     db: AsyncSession,
-    start_date: Optional[date] = None,
-    end_date: Optional[date] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
     order_states: Optional[list[int]] = None,
     work_group_ids: Optional[list[int]] = None,
     study_ids: Optional[list[int]] = None,

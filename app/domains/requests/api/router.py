@@ -48,6 +48,8 @@ async def list_orders(
     enterprise_id: int = Query(..., description="ID de empresa (requerido)"),
     date_from: Optional[datetime] = Query(None, description="Fecha/hora inicio (io_date_request)"),
     date_to: Optional[datetime] = Query(None, description="Fecha/hora fin (io_date_request). Si se envía sin hora, incluye todo ese día."),
+    transmission_date_from: Optional[datetime] = Query(None, description="Fecha/hora inicio de transmisión (io_date_transmission)"),
+    transmission_date_to: Optional[datetime] = Query(None, description="Fecha/hora fin de transmisión (io_date_transmission). Si se envía sin hora, incluye todo ese día."),
     search: Optional[str] = Query(None, description="Buscar por documento de paciente, número de ingreso o número de solicitud (io_number_request)"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -59,6 +61,8 @@ async def list_orders(
         enterprise_id=enterprise_id,
         date_from=date_from,
         date_to=date_to,
+        transmission_date_from=transmission_date_from,
+        transmission_date_to=transmission_date_to,
         search=search,
     )
 

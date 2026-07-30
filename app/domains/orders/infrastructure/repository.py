@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload, joinedload, contains_eager
 from app.domains.orders.domain.models import Order, OrdersDetail
-from datetime import date
+from datetime import date, datetime, timedelta
 
 class OrderRepository:
     @staticmethod
@@ -113,15 +113,15 @@ class OrderRepository:
     @staticmethod
     async def get_filtered_orders(
         db: AsyncSession,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
         order_states: Optional[list[int]] = None,
         work_group_ids: Optional[list[int]] = None,
         study_ids: Optional[list[int]] = None,
     ) -> list[Order]:
         """
-        Filtra órdenes por fecha, estado, grupo de trabajo y estudios.
-        Retorna una lista plana de Order con patient cargado.
+        Filtra órdenes por fecha/hora (o_created_at), estado, grupo de trabajo
+        y estudios. Retorna una lista plana de Order con patient cargado.
         La relación con OrdersDetail → StudiesLab se usa para filtrar por
         work_group_ids y study_ids.
         """
@@ -135,11 +135,18 @@ class OrderRepository:
         # Join con Patient siempre (para devolver pt_name)
         query = query.join(Patient, Order.o_his_id == Patient.pt_id)
 
-        # Filtros de fecha
+        # Filtros de fecha/hora
         if start_date:
-            query = query.filter(Order.o_date >= start_date)
+            query = query.filter(Order.o_created_at >= start_date)
         if end_date:
-            query = query.filter(Order.o_date <= end_date)
+            # Si viene sin componente de hora (p.ej. solo "2026-07-28"), se
+            # interpreta como "hasta el final de ese día" en vez de excluir
+            # todo lo que no caiga exactamente a las 00:00:00.
+            if end_date.time() == datetime.min.time():
+                effective_end_date = end_date + timedelta(days=1)
+                query = query.filter(Order.o_created_at < effective_end_date)
+            else:
+                query = query.filter(Order.o_created_at <= end_date)
 
         # Filtro de estados
         if order_states:
@@ -344,24 +351,36 @@ class OrderRepository:
         return result.unique().scalars().first()
 
     @staticmethod
-    async def get_laboratories_paginated(db: AsyncSession, o_id: int, skip: int = 0, limit: int = 100):
+    async def get_laboratories_paginated(
+        db: AsyncSession,
+        o_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        l_state: Optional[int] = None,
+        work_group_id: Optional[int] = None,
+    ):
         from app.domains.laboratories.domain.models import Laboratory
         from app.domains.orders.domain.models import OrdersDetail
         from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
         from app.domains.testslabs.domain.models import TestsLab
 
-        # Simplified count — no subquery wrapper needed
+        # Count (con los mismos filtros que la query principal)
         count_stmt = (
             select(func.count())
             .select_from(Laboratory)
             .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+            .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
             .where(OrdersDetail.od_order_id == o_id)
         )
+        if l_state is not None:
+            count_stmt = count_stmt.where(Laboratory.l_state == l_state)
+        if work_group_id is not None:
+            count_stmt = count_stmt.where(StudiesLab.work_groups_id == work_group_id)
         total = (await db.execute(count_stmt)).scalar() or 0
 
         # JOIN StudiesLab and StudiesTestDetail to apply ordering by order_of_print / order_print.
         # contains_eager reuses the explicit JOINs instead of issuing separate SELECTs.
-        result = await db.execute(
+        query = (
             select(Laboratory)
             .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
             .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
@@ -377,7 +396,14 @@ class OrderRepository:
                 selectinload(Laboratory.preliminaries),
                 contains_eager(Laboratory.order_detail).contains_eager(OrdersDetail.study),
             )
-            .order_by(
+        )
+        if l_state is not None:
+            query = query.where(Laboratory.l_state == l_state)
+        if work_group_id is not None:
+            query = query.where(StudiesLab.work_groups_id == work_group_id)
+
+        result = await db.execute(
+            query.order_by(
                 StudiesLab.order_of_print.nulls_last(),
                 StudiesTestDetail.order_print.nulls_last(),
                 Laboratory.l_id,

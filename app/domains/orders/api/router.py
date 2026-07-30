@@ -123,13 +123,16 @@ async def get_order_details_paginated(
     limit_labs: int = Query(100, ge=1, le=500),
     skip_tests: int = Query(0, ge=0),
     limit_tests: int = Query(100, ge=1, le=500),
+    l_state: Optional[int] = Query(None, description="Filtrar analitos por estado de laboratorio (0=Sin Resultados, 1=Pendiente, 2=Con Resultados, 3=Validada, 4=Laboratorio Impreso, 5=Descartado)"),
+    work_group_id: Optional[int] = Query(None, description="Filtrar analitos por grupo de trabajo del estudio"),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get an order by number with its paginated laboratories and tests.
     """
     return await use_cases.get_order_details_paginated_by_number(
-        db, o_number, skip_labs, limit_labs, skip_tests, limit_tests
+        db, o_number, skip_labs, limit_labs, skip_tests, limit_tests,
+        l_state=l_state, work_group_id=work_group_id,
     )
 
 @router.get("/{id}/full", response_model=OrderFullDetailsResponse,
@@ -145,11 +148,13 @@ async def get_full_order_by_id(id: int, db: AsyncSession = Depends(get_db)):
 async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get_db)):
     """
     Filtra órdenes por múltiples criterios:
-    - Rango de fechas (start_date, end_date sobre o_date)
+    - Rango de fecha/hora (start_date, end_date sobre o_created_at). Acepta
+      solo fecha ("2026-07-28") o fecha y hora en formato de 12 horas
+      ("07/28/2026 02:30 PM"). Si end_date viene sin hora, incluye todo ese día.
     - Estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
     - Grupos de trabajo (lista de IDs de Work_groups)
     - Estudios (lista de IDs de StudiesLab)
-    
+
     Retorna una lista plana con: o_id, o_number, pt_name, pt_number_document.
     """
     return await use_cases.filter_orders(

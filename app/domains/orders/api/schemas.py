@@ -482,16 +482,49 @@ class OrderFilterRequest(BaseModel):
     """
     Esquema para filtrar órdenes por múltiples criterios.
 
-    - start_date / end_date: Rango de fechas (o_date)
+    - start_date / end_date: Rango de fecha/hora (o_created_at). Acepta solo
+      fecha ("2026-07-28") o fecha y hora en formato de 12 horas
+      ("07/28/2026 02:30 PM" / "28/07/2026 02:30 PM"). Si end_date viene sin
+      hora, incluye todo ese día.
     - order_states: Lista de estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
     - work_group_ids: Lista de IDs de grupos de trabajo (Work_groups.wg_id)
     - study_ids: Lista de IDs de estudios (StudiesLab.id)
     """
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     order_states: Optional[List[int]] = None
     work_group_ids: Optional[List[int]] = None
     study_ids: Optional[List[int]] = None
+
+    @field_validator("start_date", "end_date", mode="before")
+    @classmethod
+    def _parse_flexible_datetime(cls, v):
+        """Acepta datetime/date ya parseados, o texto en formato de 12 horas o solo fecha."""
+        if v is None or isinstance(v, datetime):
+            return v
+        if isinstance(v, date):
+            return datetime.combine(v, datetime.min.time())
+        text = str(v).strip()
+        if not text:
+            return None
+        for fmt in (
+            "%m/%d/%Y %I:%M %p",
+            "%d/%m/%Y %I:%M %p",
+            "%Y-%m-%d %I:%M %p",
+            "%m/%d/%Y %I:%M:%S %p",
+            "%d/%m/%Y %I:%M:%S %p",
+            "%Y-%m-%d %I:%M:%S %p",
+            "%m/%d/%Y",
+            "%d/%m/%Y",
+            "%Y-%m-%d",
+        ):
+            try:
+                return datetime.strptime(text, fmt)
+            except ValueError:
+                continue
+        raise ValueError(
+            f"Formato de fecha/hora inválido: '{v}'. Usa 'MM/DD/AAAA hh:mm AM/PM' (ej. '07/28/2026 02:30 PM') o 'AAAA-MM-DD'."
+        )
 
 
 class OrderFilterItemResponse(BaseModel):

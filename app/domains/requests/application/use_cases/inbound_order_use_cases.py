@@ -45,6 +45,8 @@ async def list_inbound_orders(
     enterprise_id: int = 0,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
+    transmission_date_from: Optional[datetime] = None,
+    transmission_date_to: Optional[datetime] = None,
     search: Optional[str] = None,
 ):
     skip = (page - 1) * page_size
@@ -56,6 +58,8 @@ async def list_inbound_orders(
         enterprise_id=enterprise_id,
         date_from=date_from,
         date_to=date_to,
+        transmission_date_from=transmission_date_from,
+        transmission_date_to=transmission_date_to,
         search=search,
     )
     return {
