@@ -224,6 +224,7 @@ def build_laboratory_pdf(
     s_ent_s    = ParagraphStyle("ent_s",    fontName="Helvetica",      fontSize=7,  textColor=C_GRAY,  alignment=TA_RIGHT)
     s_comp     = ParagraphStyle("comp",     fontName="Helvetica",       fontSize=8, textColor=C_DARK, leading=11)
     s_alt_ref  = ParagraphStyle("alt_ref",  fontName="Helvetica-Oblique", fontSize=7,   textColor=C_GRAY, leading=10, leftIndent=8)
+    s_note     = ParagraphStyle("note",     fontName="Helvetica-Oblique", fontSize=7.5, textColor=C_NAVY, leading=10, leftIndent=8)
 
     # ── Página: letter, márgenes ───────────────────────
     PAGE_W, PAGE_H = letter
@@ -316,6 +317,9 @@ def build_laboratory_pdf(
                 # rows with SPAN prevents Table.split() from working when the
                 # compound text is taller than a full page, causing LayoutError.
                 pending_compounds: list[dict] = []
+                # Notas de validación (l_nota_validation): se renderizan debajo de
+                # los resultados compuestos, no dentro de la tabla de resultados.
+                pending_notes: list[dict] = []
 
                 for row in study["rows"]:
                     ref_text = row["reference"]
@@ -332,6 +336,12 @@ def build_laboratory_pdf(
                         pending_compounds.append({
                             "result_comp": row["result_comp"],
                             "alternative_range_value": row.get("alternative_range_value"),
+                        })
+                    note_text = (row.get("note") or "").strip()
+                    if note_text:
+                        pending_notes.append({
+                            "test_name": row["test_name"],
+                            "note": note_text,
                         })
 
                 col_widths = [COL_W * 0.35, COL_W * 0.18, COL_W * 0.14, COL_W * 0.33]
@@ -365,6 +375,15 @@ def build_laboratory_pdf(
                             _xml_escape(comp["alternative_range_value"]).replace("\n", "<br/>"),
                             s_alt_ref,
                         ))
+
+                # Notas de validación: van debajo de los resultados compuestos
+                for note_item in pending_notes:
+                    story.append(Spacer(1, 4))
+                    story.append(Paragraph(
+                        f"<b>Nota – {_xml_escape(note_item['test_name'])}:</b> "
+                        f"{_xml_escape(note_item['note']).replace(chr(10), '<br/>')}",
+                        s_note,
+                    ))
 
                 story.append(Spacer(1, 8))
 
