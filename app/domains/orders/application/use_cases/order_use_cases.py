@@ -94,8 +94,6 @@ async def create_order(db: AsyncSession, data: dict):
         sample_suffix_map: dict[int, tuple[int, set[int]]] = {}
         # Mapa study_id → primer od_id creado (para InvoiceDetail)
         study_od_map: dict[int, int] = {}
-        # Pruebas ya registradas en la orden (evita duplicados entre estudios)
-        seen_test_ids: set[int] = set()
 
         for study_id in studies_ids:
             # Si el estudio viene repetido en la solicitud, no duplicar su OrdersDetail
@@ -132,16 +130,23 @@ async def create_order(db: AsyncSession, data: dict):
             # Registrar el od_id de este estudio para la factura
             study_od_map[study_id] = order_detail.od_id
 
+            # Pruebas ya registradas para ESTE estudio (evita duplicados si el
+            # mismo test aparece dos veces en la config del propio estudio).
+            # No debe compartirse entre estudios: cada estudio necesita su propio
+            # registro Laboratory por cada prueba, aunque otro estudio de la misma
+            # orden ya haya registrado esa misma prueba (ej: TRI en LDLD y en
+            # Triglicéridos deben quedar como dos registros independientes).
+            seen_test_ids_for_study: set[int] = set()
+
             for link in test_links:
-                # Crear el registro de laboratorio solo si la prueba no existe ya en esta orden
-                if link.tests_id not in seen_test_ids:
+                if link.tests_id not in seen_test_ids_for_study:
                     blank_result = Laboratory(
                         l_order_detail_id=order_detail.od_id,
                         l_test_id=link.tests_id,
                         l_state=LABORATORY_STATE_SIN_RESULTADOS
                     )
                     db.add(blank_result)
-                    seen_test_ids.add(link.tests_id)
+                    seen_test_ids_for_study.add(link.tests_id)
 
                 # 4. Recolectar tipos de muestra para SamplesOrder agrupando por st_sufix
                 #    Si dos SampleTypes tienen el mismo sufijo, solo se crea un SamplesOrder
