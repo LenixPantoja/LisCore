@@ -404,7 +404,12 @@ class OrderRepository:
 
         result = await db.execute(
             query.order_by(
+                # order_of_print casi siempre empata entre estudios (ej. todos en 0),
+                # así que se agrupa explícitamente por estudio (od_study_id) para que
+                # las pruebas de un mismo estudio queden siempre contiguas antes de
+                # ordenarlas entre sí por order_print.
                 StudiesLab.order_of_print.nulls_last(),
+                OrdersDetail.od_study_id,
                 StudiesTestDetail.order_print.nulls_last(),
                 Laboratory.l_id,
             )
