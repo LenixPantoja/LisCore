@@ -3,7 +3,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
+from app.domains.users.infrastructure.models import AppUser
 from app.domains.laboratories.api.schemas import (
     LaboratoryBulkUpdateItem,
     LaboratoryBulkUpdateResponse,
@@ -109,7 +110,8 @@ async def update_order_detail_state(
     order_id: int,
     study_id: int,
     data: UpdateOrderDetailStateRequest,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
 ):
     """
     Cambia el estado de un estudio en OrdersDetails.
@@ -118,7 +120,7 @@ async def update_order_detail_state(
     - **1** → Pendiente
     - **2** → Descartado
     """
-    return await use_cases.update_order_detail_state(db, order_id, study_id, data.state)
+    return await use_cases.update_order_detail_state(db, order_id, study_id, data.state, current_user.usr_id)
 
 
 @router.post("/{l_id}/graphic", response_model=GraphicUploadResponse, status_code=status.HTTP_200_OK,

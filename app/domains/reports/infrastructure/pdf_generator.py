@@ -225,6 +225,7 @@ def build_laboratory_pdf(
     s_comp     = ParagraphStyle("comp",     fontName="Helvetica",       fontSize=8, textColor=C_DARK, leading=11)
     s_alt_ref  = ParagraphStyle("alt_ref",  fontName="Helvetica-Oblique", fontSize=7,   textColor=C_GRAY, leading=10, leftIndent=8)
     s_note     = ParagraphStyle("note",     fontName="Helvetica-Oblique", fontSize=7.5, textColor=C_NAVY, leading=10, leftIndent=8)
+    s_val_date = ParagraphStyle("val_date", fontName="Helvetica",        fontSize=7.5, textColor=C_GRAY, leading=10, alignment=TA_RIGHT)
 
     # ── Página: letter, márgenes ───────────────────────
     PAGE_W, PAGE_H = letter
@@ -408,6 +409,15 @@ def build_laboratory_pdf(
                                 kind="proportional")
                     )
                     story.append(Spacer(1, 8))
+
+                # ── Fecha de validación del estudio (última prueba validada) ──────
+                validation_date = study.get("validation_date")
+                if validation_date:
+                    story.append(Paragraph(
+                        f"<b>Fecha Validación:</b>  {_format_validation_datetime(validation_date)}",
+                        s_val_date,
+                    ))
+                    story.append(Spacer(1, 6))
 
                 # ── Firma(s) del validador ────────────────────────────────────────
                 # Only render signatures at the last study of each same-validator group
@@ -658,7 +668,17 @@ def _group_by_study(laboratories: list, is_female: bool) -> list[dict]:
         for study_name in wg["study_order"]:
             entry = wg["studies"][study_name]
             rows = [_build_row(lab, is_female) for lab in entry["labs"]]
-            studies.append({"name": study_name, "id": entry["id"], "rows": rows})
+            # Fecha de validación del estudio: la más reciente entre todas sus
+            # pruebas validadas (si el estudio tiene 50 pruebas, se usa la del
+            # último laboratorio validado).
+            validation_dates = [r["date_validatie"] for r in rows if r.get("date_validatie")]
+            validation_date = max(validation_dates) if validation_dates else None
+            studies.append({
+                "name": study_name,
+                "id": entry["id"],
+                "rows": rows,
+                "validation_date": validation_date,
+            })
         result.append({"wg_name": wg_name, "studies": studies})
 
     return result
@@ -686,6 +706,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
         "note": lab.l_nota_validation or "",
         "graphic_object_name": lab.l_result_graphic or None,
         "result_comp": lab.l_result_comp or "",
+        "date_validatie": lab.l_date_validatie,
         "alternative_range_value": (lab.test.alternative_range_value or "") if lab.test else "",
     }
 
@@ -745,6 +766,15 @@ def _build_comp_table(text: str, style: ParagraphStyle, avail_width: float) -> T
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
     return tbl
+
+
+def _format_validation_datetime(dt: Any) -> str:
+    """Formatea una fecha de validación como DD/MM/AAAA H:MM AM/PM (12 horas,
+    sin cero a la izquierda en la hora), independiente del locale del sistema."""
+    hour = dt.hour % 12
+    hour = 12 if hour == 0 else hour
+    period = "AM" if dt.hour < 12 else "PM"
+    return f"{dt.strftime('%d/%m/%Y')} {hour}:{dt.strftime('%M')} {period}"
 
 
 def _full_name(patient: Any) -> str:

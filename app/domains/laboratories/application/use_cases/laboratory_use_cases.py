@@ -12,6 +12,7 @@ from app.domains.traces.constants import (
     OPERATION_INVALIDATE_RESULT,
     OPERATION_VALIDATE_PRELIMINARY,
     OPERATION_INVALIDATE_PRELIMINARY,
+    OPERATION_CHANGE_STUDY_STATE,
 )
 from utils.trace import register_trace
 from typing import List
@@ -368,7 +369,7 @@ _ORDER_DETAIL_STATE_NAMES = ORDER_DETAIL_STATES
 _VALID_ORDER_DETAIL_STATES = set(_ORDER_DETAIL_STATE_NAMES.keys())
 
 
-async def update_order_detail_state(db: AsyncSession, order_id: int, study_id: int, new_state: int):
+async def update_order_detail_state(db: AsyncSession, order_id: int, study_id: int, new_state: int, usr_id: int | None = None):
     """
     Cambia el estado (od_state) de un estudio en OrdersDetails.
 
@@ -395,6 +396,22 @@ async def update_order_detail_state(db: AsyncSession, order_id: int, study_id: i
             status_code=status.HTTP_409_CONFLICT,
             detail=f"El estudio con study_id={study_id} fue descartado y no puede cambiar de estado."
         )
+
+    # Registrar traza del cambio de estado del estudio (incluye descarte),
+    # ya que antes esta operación no dejaba ningún registro en AppTrace.
+    from app.domains.studieslab.domain.models import StudiesLab
+    study = await db.get(StudiesLab, study_id)
+    study_label = f"{study.name} ({study.code})" if study else f"ID {study_id}"
+
+    await register_trace(
+        db=db,
+        operation_type=OPERATION_CHANGE_STUDY_STATE,
+        operation_description=f"Cambio de estado de estudio {study_label} a '{_ORDER_DETAIL_STATE_NAMES[new_state]}'",
+        usr_id=usr_id,
+        order_id=order_id,
+    )
+    await db.commit()
+
     return {
         "success": True,
         "od_id": detail.od_id,

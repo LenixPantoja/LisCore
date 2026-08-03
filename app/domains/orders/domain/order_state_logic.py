@@ -12,6 +12,7 @@ from app.domains.laboratories.domain.constants import (
     LABORATORY_STATE_CON_RESULTADOS,
     LABORATORY_STATE_VALIDADA,
     LABORATORY_STATE_IMPRESO,
+    LABORATORY_STATE_DESCARTADO,
 )
 from app.domains.orders.domain.constants import (
     ORDER_STATE_PENDIENTE,
@@ -19,17 +20,22 @@ from app.domains.orders.domain.constants import (
     ORDER_STATE_VALIDADA,
 )
 
-# Un lab "tiene resultado" si está Con Resultados, Validada o Impreso
+# Un lab "tiene resultado" si está Con Resultados, Validada o Impreso.
+# Un lab Descartado también cuenta como "resuelto": no se espera un resultado
+# para él, así que no debe impedir que la orden avance a Con Resultados/Validada.
 LAB_STATES_WITH_RESULTS = {
     LABORATORY_STATE_CON_RESULTADOS,
     LABORATORY_STATE_VALIDADA,
     LABORATORY_STATE_IMPRESO,
+    LABORATORY_STATE_DESCARTADO,
 }
 
-# Un lab está "validado" (o superior) si está Validada o Impreso
+# Un lab está "validado" (o superior) si está Validada o Impreso.
+# Descartado también cuenta como resuelto por la misma razón que arriba.
 LAB_STATES_VALIDATED_OR_BEYOND = {
     LABORATORY_STATE_VALIDADA,
     LABORATORY_STATE_IMPRESO,
+    LABORATORY_STATE_DESCARTADO,
 }
 
 
