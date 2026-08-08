@@ -5,10 +5,11 @@ from datetime import date
 
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.orders.domain.constants import ORDER_STATES
-from app.domains.masters.domain.models import WorkGroup
+from app.domains.masters.domain.models import WorkGroup, Service, SexType
 from app.domains.Headquarters.domain.models import Headquarter
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.laboratories.domain.models import Laboratory
+from app.domains.patients.domain.models import Patient
 
 
 async def get_dashboard_stats(
@@ -147,4 +148,195 @@ async def get_dashboard_stats(
         "orders_by_day": [{"period": str(r.period), "total": r.total} for r in day_rows],
         "orders_by_month": [{"period": str(r.period), "total": r.total} for r in month_rows],
         "orders_by_year": [{"period": str(r.period), "total": r.total} for r in year_rows],
+    }
+
+
+def _apply_order_date_filter(stmt, date_from: Optional[date], date_to: Optional[date]):
+    if date_from:
+        stmt = stmt.filter(Order.o_date >= date_from)
+    if date_to:
+        stmt = stmt.filter(Order.o_date <= date_to)
+    return stmt
+
+
+async def get_production_by_work_group(
+    db: AsyncSession,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> dict:
+    """Cantidad (y %) de pruebas (Laboratories) producidas por grupo de trabajo."""
+    stmt = (
+        select(
+            WorkGroup.wg_id.label("work_group_id"),
+            WorkGroup.wg_name.label("work_group"),
+            func.count(Laboratory.l_id).label("total"),
+        )
+        .select_from(Laboratory)
+        .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+        .join(Order, Order.o_id == OrdersDetail.od_order_id)
+        .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+        .join(WorkGroup, WorkGroup.wg_id == StudiesLab.work_groups_id)
+        .group_by(WorkGroup.wg_id, WorkGroup.wg_name)
+        .order_by(func.count(Laboratory.l_id).desc())
+    )
+    stmt = _apply_order_date_filter(stmt, date_from, date_to)
+    rows = (await db.execute(stmt)).all()
+
+    total = sum(r.total for r in rows)
+    items = [
+        {
+            "work_group_id": r.work_group_id,
+            "work_group": r.work_group,
+            "total": r.total,
+            "percentage": round((r.total / total * 100), 2) if total else 0.0,
+        }
+        for r in rows
+    ]
+    return {"total": total, "items": items}
+
+
+async def get_top_studies(
+    db: AsyncSession,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    limit: int = 10,
+) -> dict:
+    """Top N estudios (StudiesLab) más solicitados."""
+    stmt = (
+        select(
+            StudiesLab.id.label("study_id"),
+            StudiesLab.name.label("study_name"),
+            func.count(OrdersDetail.od_id).label("total"),
+        )
+        .select_from(OrdersDetail)
+        .join(Order, Order.o_id == OrdersDetail.od_order_id)
+        .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+        .group_by(StudiesLab.id, StudiesLab.name)
+        .order_by(func.count(OrdersDetail.od_id).desc())
+        .limit(limit)
+    )
+    stmt = _apply_order_date_filter(stmt, date_from, date_to)
+    rows = (await db.execute(stmt)).all()
+
+    items = [
+        {"study_id": r.study_id, "study_name": r.study_name, "total": r.total}
+        for r in rows
+    ]
+    return {"items": items}
+
+
+async def get_studies_by_service(
+    db: AsyncSession,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> dict:
+    """Cantidad (y %) de estudios (OrdersDetail) agrupados por servicio de la orden."""
+    stmt = (
+        select(
+            Service.id.label("service_id"),
+            Service.name.label("service_name"),
+            func.count(OrdersDetail.od_id).label("total"),
+        )
+        .select_from(OrdersDetail)
+        .join(Order, Order.o_id == OrdersDetail.od_order_id)
+        .outerjoin(Service, Service.id == Order.o_service_id)
+        .group_by(Service.id, Service.name)
+        .order_by(func.count(OrdersDetail.od_id).desc())
+    )
+    stmt = _apply_order_date_filter(stmt, date_from, date_to)
+    rows = (await db.execute(stmt)).all()
+
+    total = sum(r.total for r in rows)
+    items = [
+        {
+            "service_id": r.service_id,
+            "service_name": r.service_name,
+            "total": r.total,
+            "percentage": round((r.total / total * 100), 2) if total else 0.0,
+        }
+        for r in rows
+    ]
+    return {"total": total, "items": items}
+
+
+async def get_kpis_summary(
+    db: AsyncSession,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+) -> dict:
+    """KPIs del dashboard: pacientes atendidos (por género), órdenes, pruebas, promedio y paciente con más atenciones."""
+    # Total de órdenes procesadas
+    orders_stmt = _apply_order_date_filter(select(func.count(Order.o_id.distinct())), date_from, date_to)
+    total_orders = (await db.execute(orders_stmt)).scalar_one()
+
+    # Total de pruebas recibidas (Laboratories)
+    tests_stmt = _apply_order_date_filter(
+        select(func.count(Laboratory.l_id))
+        .select_from(Laboratory)
+        .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+        .join(Order, Order.o_id == OrdersDetail.od_order_id),
+        date_from,
+        date_to,
+    )
+    total_tests = (await db.execute(tests_stmt)).scalar_one()
+
+    avg_tests_per_order = round(total_tests / total_orders, 2) if total_orders else 0.0
+
+    # Pacientes atendidos (únicos) y desglose por género
+    patients_stmt = _apply_order_date_filter(
+        select(
+            SexType.code.label("sex_code"),
+            func.count(Patient.pt_id.distinct()).label("total"),
+        )
+        .select_from(Order)
+        .join(Patient, Patient.pt_id == Order.o_his_id)
+        .outerjoin(SexType, SexType.id == Patient.pt_sex_type)
+        .group_by(SexType.code),
+        date_from,
+        date_to,
+    )
+    sex_rows = (await db.execute(patients_stmt)).all()
+    # Códigos de Sex_Types: 'H' = Hombre (masculino), 'M' = Mujer (femenino)
+    male_patients = sum(r.total for r in sex_rows if r.sex_code == "H")
+    female_patients = sum(r.total for r in sex_rows if r.sex_code == "M")
+    total_patients = sum(r.total for r in sex_rows)
+
+    # Paciente con más atenciones (órdenes)
+    top_patient_stmt = _apply_order_date_filter(
+        select(
+            Patient.pt_id,
+            Patient.pt_Number_document.label("document"),
+            func.concat(
+                Patient.pt_firts_name, " ", Patient.pt_last_name
+            ).label("name"),
+            func.count(Order.o_id.distinct()).label("total_visits"),
+        )
+        .select_from(Order)
+        .join(Patient, Patient.pt_id == Order.o_his_id)
+        .group_by(Patient.pt_id, Patient.pt_Number_document, Patient.pt_firts_name, Patient.pt_last_name)
+        .order_by(func.count(Order.o_id.distinct()).desc())
+        .limit(1),
+        date_from,
+        date_to,
+    )
+    top_row = (await db.execute(top_patient_stmt)).first()
+    top_patient = (
+        {
+            "pt_id": top_row.pt_id,
+            "document": top_row.document,
+            "name": top_row.name,
+            "total_visits": top_row.total_visits,
+        }
+        if top_row
+        else None
+    )
+
+    return {
+        "total_patients": total_patients,
+        "male_patients": male_patients,
+        "female_patients": female_patients,
+        "total_orders": total_orders,
+        "total_tests": total_tests,
+        "avg_tests_per_order": avg_tests_per_order,
+        "top_patient": top_patient,
     }

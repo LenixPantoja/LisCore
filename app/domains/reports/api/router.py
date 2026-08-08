@@ -12,6 +12,10 @@ from app.domains.reports.api.schemas import (
     KpiOrdersByWorkGroupResponse,
     KpiOrdersBySedeResponse,
     KpiOrdersByPeriodResponse,
+    ProductionByWorkGroupResponse,
+    TopStudiesResponse,
+    StudiesByServiceResponse,
+    DashboardKpisSummaryResponse,
     SendWhatsAppResultsRequest, SendWhatsAppResultsResponse,
     SendEmailResultsRequest, SendEmailResultsResponse,
 )
@@ -163,3 +167,72 @@ async def get_kpi_orders_by_period(
     db: AsyncSession = Depends(get_db),
 ):
     return await kpis_use_cases.get_orders_by_period(db, date_from, date_to)
+
+
+@router.get(
+    "/dashboard/production-by-work-group",
+    response_model=ProductionByWorkGroupResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Producción por área (grupo de trabajo)",
+    description="Cantidad y porcentaje de pruebas producidas por grupo de trabajo, con filtro opcional de rango de fechas.",
+    dependencies=[Depends(require_permission("Reports:Dashboard"))],
+)
+async def get_production_by_work_group(
+    date_from: Optional[date] = Query(None, description="Fecha inicial (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Fecha final (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await stats_use_cases.get_production_by_work_group(db, date_from, date_to)
+
+
+@router.get(
+    "/dashboard/top-studies",
+    response_model=TopStudiesResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Top estudios más solicitados",
+    description="Retorna los N estudios con mayor cantidad de solicitudes, con filtro opcional de rango de fechas.",
+    dependencies=[Depends(require_permission("Reports:Dashboard"))],
+)
+async def get_top_studies(
+    date_from: Optional[date] = Query(None, description="Fecha inicial (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Fecha final (YYYY-MM-DD)"),
+    limit: int = Query(10, ge=1, le=100, description="Cantidad de estudios a retornar"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await stats_use_cases.get_top_studies(db, date_from, date_to, limit)
+
+
+@router.get(
+    "/dashboard/studies-by-service",
+    response_model=StudiesByServiceResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Estudios por servicio",
+    description="Cantidad y porcentaje de estudios agrupados por servicio de la orden, con filtro opcional de rango de fechas.",
+    dependencies=[Depends(require_permission("Reports:Dashboard"))],
+)
+async def get_studies_by_service(
+    date_from: Optional[date] = Query(None, description="Fecha inicial (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Fecha final (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await stats_use_cases.get_studies_by_service(db, date_from, date_to)
+
+
+@router.get(
+    "/dashboard/kpis-summary",
+    response_model=DashboardKpisSummaryResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resumen de KPIs del dashboard",
+    description=(
+        "Retorna pacientes atendidos (con desglose por género), total de órdenes procesadas, "
+        "total de pruebas recibidas, promedio de exámenes por orden y el paciente con más "
+        "atenciones, con filtro opcional de rango de fechas."
+    ),
+    dependencies=[Depends(require_permission("Reports:Dashboard"))],
+)
+async def get_kpis_summary(
+    date_from: Optional[date] = Query(None, description="Fecha inicial (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Fecha final (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await stats_use_cases.get_kpis_summary(db, date_from, date_to)

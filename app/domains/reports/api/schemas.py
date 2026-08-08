@@ -127,3 +127,56 @@ class KpiPeriodItem(BaseModel):
 
 class KpiOrdersByPeriodResponse(BaseModel):
     data: List[KpiPeriodItem]
+
+
+# --- Dashboard: gráficas de producción ---
+
+class ProductionByWorkGroupItem(BaseModel):
+    work_group_id: Optional[int] = None
+    work_group: Optional[str] = None
+    total: int
+    percentage: float
+
+
+class ProductionByWorkGroupResponse(BaseModel):
+    total: int
+    items: List[ProductionByWorkGroupItem] = []
+
+
+class TopStudyItem(BaseModel):
+    study_id: int
+    study_name: Optional[str] = None
+    total: int
+
+
+class TopStudiesResponse(BaseModel):
+    items: List[TopStudyItem] = []
+
+
+class StudiesByServiceItem(BaseModel):
+    service_id: Optional[int] = None
+    service_name: Optional[str] = None
+    total: int
+    percentage: float
+
+
+class StudiesByServiceResponse(BaseModel):
+    total: int
+    items: List[StudiesByServiceItem] = []
+
+
+class TopPatientItem(BaseModel):
+    pt_id: int
+    document: Optional[str] = None
+    name: Optional[str] = None
+    total_visits: int
+
+
+class DashboardKpisSummaryResponse(BaseModel):
+    total_patients: int
+    male_patients: int
+    female_patients: int
+    total_orders: int
+    total_tests: int
+    avg_tests_per_order: float
+    top_patient: Optional[TopPatientItem] = None
