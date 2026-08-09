@@ -156,14 +156,15 @@ async def list_remissions(
     response_model=OrdersWithRemittedStudiesListResponse,
     summary="Listar órdenes con al menos un estudio remitido a laboratorio externo",
     description=(
-        "Retorna, en formato plano (una fila por cada combinación orden + estudio remitido), "
-        "las órdenes que tienen uno o más estudios configurados como remitidos a un "
-        "laboratorio de referencia externo (StudiesLab.external_lab_id, excluyendo el "
-        "centinela 'LOCAL'). Busca directamente en los estudios de la orden (OrdersDetails → "
-        "StudiesLab), sin depender de que exista una remisión logística "
+        "Retorna, agrupadas por orden con sus estudios remitidos anidados en "
+        "'estudios_remitidos', las órdenes que tienen uno o más estudios configurados "
+        "como remitidos a un laboratorio de referencia externo (StudiesLab.external_lab_id, "
+        "excluyendo el centinela 'LOCAL'). Busca directamente en los estudios de la orden "
+        "(OrdersDetails → StudiesLab), sin depender de que exista una remisión logística "
         "(Remissions/RemissionDetails) creada. Permite filtrar por rango de fecha de la orden, "
-        "por si ya tienen resultados anexos (PDF) cargados o no, y por laboratorio de "
-        "referencia externo destino."
+        "por si ya tienen resultados anexos (PDF) cargados o no, por laboratorio de referencia "
+        "externo destino, y por búsqueda de texto (o_number, documento del paciente o nombre "
+        "de estudio)."
     ),
     dependencies=[Depends(require_permission("Remissions:View"))],
 )
@@ -174,6 +175,9 @@ async def list_orders_with_remitted_studies(
         None, description="True = solo órdenes con resultados anexos cargados, False = solo sin anexos"
     ),
     external_lab_id: Optional[int] = Query(None, description="Filtrar por laboratorio de referencia externo destino"),
+    search: Optional[str] = Query(
+        None, description="Búsqueda parcial (insensible a mayúsculas) por o_number, documento del paciente o nombre de estudio"
+    ),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
@@ -184,6 +188,7 @@ async def list_orders_with_remitted_studies(
         date_to=date_to,
         has_annexed_results=has_annexed_results,
         external_lab_id=external_lab_id,
+        search=search,
         skip=skip,
         limit=limit,
     )

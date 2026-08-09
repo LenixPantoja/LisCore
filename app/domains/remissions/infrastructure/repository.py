@@ -512,6 +512,7 @@ class RemissionRepository:
         date_to: Optional[date] = None,
         has_annexed_results: Optional[bool] = None,
         external_lab_id: Optional[int] = None,
+        search: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> Tuple[List[Dict[str, Any]], int]:
@@ -528,6 +529,9 @@ class RemissionRepository:
         la orden completa — así, cargar el PDF de un laboratorio no afecta el
         estado de un estudio remitido a otro laboratorio distinto.
 
+        `search` filtra por o_number, pt_Number_document o nombre de estudio
+        (StudiesLab.name), con coincidencia parcial insensible a mayúsculas.
+
         Retorna (orders, total) — total es la cantidad de órdenes (no de filas).
         """
         from app.domains.annexes.domain.models import AnnexedResult
@@ -541,6 +545,7 @@ class RemissionRepository:
             .select_from(OrdersDetail)
             .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
             .join(Order, Order.o_id == OrdersDetail.od_order_id)
+            .join(Patient, Patient.pt_id == Order.o_his_id)
             .where(
                 StudiesLab.external_lab_id.isnot(None),
                 StudiesLab.external_lab_id != 1,
@@ -553,6 +558,15 @@ class RemissionRepository:
             id_stmt = id_stmt.where(Order.o_date >= date_from)
         if date_to is not None:
             id_stmt = id_stmt.where(Order.o_date <= date_to)
+        if search:
+            like_term = f"%{search}%"
+            id_stmt = id_stmt.where(
+                or_(
+                    Order.o_number.ilike(like_term),
+                    Patient.pt_Number_document.ilike(like_term),
+                    StudiesLab.name.ilike(like_term),
+                )
+            )
 
         if has_annexed_results is not None:
             # Existencia de CUALQUIER anexo con archivo para la orden (sin filtrar por

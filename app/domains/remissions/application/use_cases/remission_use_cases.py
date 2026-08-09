@@ -523,6 +523,7 @@ async def list_orders_with_remitted_studies(
     date_to: Optional[date] = None,
     has_annexed_results: Optional[bool] = None,
     external_lab_id: Optional[int] = None,
+    search: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
 ) -> dict:
@@ -532,6 +533,7 @@ async def list_orders_with_remitted_studies(
         date_to=date_to,
         has_annexed_results=has_annexed_results,
         external_lab_id=external_lab_id,
+        search=search,
         skip=skip,
         limit=limit,
     )

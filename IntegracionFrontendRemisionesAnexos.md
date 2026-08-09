@@ -29,7 +29,7 @@ Authorization: Bearer <token>
 
 | # | Método | Endpoint | Permiso RBAC | Uso |
 |---|--------|----------|---------------|-----|
-| 1 | GET | `/api/remissions/orders?date_from=&date_to=&has_annexed_results=&external_lab_id=&skip=&limit=` | `Remissions:View` | Listar órdenes con estudios remitidos (estudios anidados) |
+| 1 | GET | `/api/remissions/orders?date_from=&date_to=&has_annexed_results=&external_lab_id=&search=&skip=&limit=` | `Remissions:View` | Listar órdenes con estudios remitidos (estudios anidados) |
 | 2 | POST | `/api/remissions/orders/{order_id}/annexed-results` (multipart: `external_lab_id`, `file`) | `Remissions:UploadAnnexedResult` | Cargar PDF anexo **para un laboratorio específico** y marcar solo sus pruebas como `PDF ANEXO` |
 
 Ambos filtros de fecha son opcionales y aplican sobre la fecha de la orden (`o_date`, formato `YYYY-MM-DD`). `skip`/`limit` paginan a **nivel de orden** (no de estudio).
@@ -48,6 +48,7 @@ export interface OrdersWithRemittedStudiesFilter {
   date_to?: string;                // 'YYYY-MM-DD'
   has_annexed_results?: boolean;   // true = solo con anexos, false = solo sin anexos
   external_lab_id?: number;
+  search?: string;                 // busca en o_number, pt_Number_document y nombre de estudio (parcial, insensible a mayúsculas)
   skip?: number;
   limit?: number;
 }
@@ -235,6 +236,11 @@ export class RemittedOrdersListComponent implements OnInit {
 
 ```html
 <div class="filters-bar">
+  <label>
+    Buscar
+    <input type="text" placeholder="N° de orden, documento del paciente o nombre de estudio"
+           [(ngModel)]="filter.search" (ngModelChange)="onFilterChange()" />
+  </label>
   <label>
     Fecha Inicial
     <input type="date" [(ngModel)]="filter.date_from" (change)="onFilterChange()" />
@@ -435,6 +441,7 @@ Verifica que el rol del usuario tenga asignados estos permisos; de lo contrario 
 - **Refrescar tras cargar:** después de una carga exitosa, vuelve a pedir el listado (o actualiza localmente `ar_file_status = 'Cargado'` solo en los estudios de esa orden **cuyo `external_lab_id` coincide** con el laboratorio cargado) para que la tabla se actualice sin recargar la pantalla.
 - **Multi-carga:** el endpoint permite subir más de un PDF por (orden, laboratorio); el listado solo distingue "Cargado" vs "Sin resultado Anexo" por laboratorio — para ver el detalle de cada archivo, usa `GET /api/annexes/order/{order_id}` (módulo de anexos, que ahora también incluye `ar_external_lab_id` en cada registro).
 - **Filtro `has_annexed_results` sin seleccionar:** no envíes el parámetro (déjalo `undefined`), no lo envíes como cadena vacía, para que el backend no aplique el filtro y traiga todas las órdenes.
+- **Búsqueda (`search`):** hace `ILIKE %texto%` sobre `o_number`, el documento del paciente y el nombre del estudio (no el código). Es una condición `OR` combinada con el resto de filtros por `AND` — por ejemplo `search=colcan` no encontrará nada porque "COLCAN" es el nombre del laboratorio, no del estudio ni del número de orden; usa `external_lab_id` para filtrar por laboratorio. Debounce el input (300ms) antes de llamar a `onFilterChange()` para no disparar una petición por cada tecla.
 - **Anexos cargados antes de este cambio:** los PDFs subidos antes de que existiera el campo `external_lab_id` (columna `ar_external_lab_id` agregada en la migración 039) no tienen laboratorio asociado, así que ya no cuentan como "Cargado" para ningún estudio específico — quedan como referencia histórica en el módulo general de anexos.
 
 ---
@@ -449,6 +456,13 @@ curl -H "Authorization: Bearer $TOKEN" \
 # Filtrar además por laboratorio de referencia externo
 curl -H "Authorization: Bearer $TOKEN" \
   "http://localhost:8000/api/remissions/orders?date_from=2026-08-01&date_to=2026-08-09&external_lab_id=3"
+
+# Buscar por número de orden, documento del paciente o nombre de estudio
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/remissions/orders?search=mielograma"
+
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8000/api/remissions/orders?search=1086050471"
 
 # Cargar el PDF anexo de la orden 849 PARA EL LABORATORIO 3 (LAB. COLCAN)
 # — no afecta los 6 estudios de la misma orden remitidos al laboratorio 2 (CLINIZAD)
