@@ -164,20 +164,19 @@ async def get_production_by_work_group(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> dict:
-    """Cantidad (y %) de pruebas (Laboratories) producidas por grupo de trabajo."""
+    """Cantidad (y %) de estudios (OrdersDetail) procesados por grupo de trabajo."""
     stmt = (
         select(
             WorkGroup.wg_id.label("work_group_id"),
             WorkGroup.wg_name.label("work_group"),
-            func.count(Laboratory.l_id).label("total"),
+            func.count(OrdersDetail.od_id).label("total"),
         )
-        .select_from(Laboratory)
-        .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+        .select_from(OrdersDetail)
         .join(Order, Order.o_id == OrdersDetail.od_order_id)
         .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
         .join(WorkGroup, WorkGroup.wg_id == StudiesLab.work_groups_id)
         .group_by(WorkGroup.wg_id, WorkGroup.wg_name)
-        .order_by(func.count(Laboratory.l_id).desc())
+        .order_by(func.count(OrdersDetail.od_id).desc())
     )
     stmt = _apply_order_date_filter(stmt, date_from, date_to)
     rows = (await db.execute(stmt)).all()

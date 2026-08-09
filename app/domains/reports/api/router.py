@@ -174,7 +174,7 @@ async def get_kpi_orders_by_period(
     response_model=ProductionByWorkGroupResponse,
     status_code=status.HTTP_200_OK,
     summary="Producción por área (grupo de trabajo)",
-    description="Cantidad y porcentaje de pruebas producidas por grupo de trabajo, con filtro opcional de rango de fechas.",
+    description="Cantidad y porcentaje de estudios (OrdersDetail) procesados por grupo de trabajo, con filtro opcional de rango de fechas.",
     dependencies=[Depends(require_permission("Reports:Dashboard"))],
 )
 async def get_production_by_work_group(
