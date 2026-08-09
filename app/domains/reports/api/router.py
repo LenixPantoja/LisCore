@@ -158,7 +158,11 @@ async def get_kpi_orders_by_sede(
     response_model=KpiOrdersByPeriodResponse,
     status_code=status.HTTP_200_OK,
     summary="Órdenes por mes/año con estados",
-    description="Retorna la cantidad de órdenes agrupadas por mes y año, con el desglose por estado de la orden. Acepta filtros opcionales de rango de fechas.",
+    description=(
+        "Retorna la cantidad de órdenes agrupadas por mes y año, con el desglose por estado "
+        "de la orden. Acepta filtros opcionales de rango de fechas. Solo cuenta órdenes cuyos "
+        "laboratorios ya están validados (Validada / Laboratorio Impreso)."
+    ),
     dependencies=[Depends(require_permission("Reports:Kpis"))],
 )
 async def get_kpi_orders_by_period(
@@ -174,7 +178,11 @@ async def get_kpi_orders_by_period(
     response_model=ProductionByWorkGroupResponse,
     status_code=status.HTTP_200_OK,
     summary="Producción por área (grupo de trabajo)",
-    description="Cantidad y porcentaje de estudios (OrdersDetail) procesados por grupo de trabajo, con filtro opcional de rango de fechas.",
+    description=(
+        "Cantidad y porcentaje de estudios (OrdersDetail) procesados por grupo de trabajo, "
+        "con filtro opcional de rango de fechas. Solo cuenta estudios cuyos laboratorios ya "
+        "están validados (Validada / Laboratorio Impreso)."
+    ),
     dependencies=[Depends(require_permission("Reports:Dashboard"))],
 )
 async def get_production_by_work_group(
@@ -190,7 +198,11 @@ async def get_production_by_work_group(
     response_model=TopStudiesResponse,
     status_code=status.HTTP_200_OK,
     summary="Top estudios más solicitados",
-    description="Retorna los N estudios con mayor cantidad de solicitudes, con filtro opcional de rango de fechas.",
+    description=(
+        "Retorna los N estudios con mayor cantidad de solicitudes, con filtro opcional de "
+        "rango de fechas. Solo cuenta estudios cuyos laboratorios ya están validados "
+        "(Validada / Laboratorio Impreso)."
+    ),
     dependencies=[Depends(require_permission("Reports:Dashboard"))],
 )
 async def get_top_studies(
@@ -207,7 +219,11 @@ async def get_top_studies(
     response_model=StudiesByServiceResponse,
     status_code=status.HTTP_200_OK,
     summary="Estudios por servicio",
-    description="Cantidad y porcentaje de estudios agrupados por servicio de la orden, con filtro opcional de rango de fechas.",
+    description=(
+        "Cantidad y porcentaje de estudios agrupados por servicio de la orden, con filtro "
+        "opcional de rango de fechas. Solo cuenta estudios cuyos laboratorios ya están "
+        "validados (Validada / Laboratorio Impreso)."
+    ),
     dependencies=[Depends(require_permission("Reports:Dashboard"))],
 )
 async def get_studies_by_service(
@@ -226,7 +242,8 @@ async def get_studies_by_service(
     description=(
         "Retorna pacientes atendidos (con desglose por género), total de órdenes procesadas, "
         "total de pruebas recibidas, promedio de exámenes por orden y el paciente con más "
-        "atenciones, con filtro opcional de rango de fechas."
+        "atenciones, con filtro opcional de rango de fechas. Todo se calcula solo sobre "
+        "órdenes cuyos laboratorios ya están validados (Validada / Laboratorio Impreso)."
     ),
     dependencies=[Depends(require_permission("Reports:Dashboard"))],
 )

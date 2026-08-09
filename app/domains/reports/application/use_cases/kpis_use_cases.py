@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, extract
+from sqlalchemy import select, func, extract, exists
 from datetime import date
 from typing import Optional
 
@@ -8,8 +8,11 @@ from app.domains.orders.domain.constants import ORDER_STATE_PENDIENTE, ORDER_STA
 from app.domains.masters.domain.models import WorkGroup
 from app.domains.studieslab.domain.models import StudiesLab
 from app.domains.Headquarters.domain.models import Headquarter
+from app.domains.laboratories.domain.models import Laboratory
+from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO
 
 ORDER_PRIORITY_URGENTE = 1
+_VALIDATED_LAB_STATES = (LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO)
 
 
 def _format_count(value: int) -> str:
@@ -103,6 +106,22 @@ async def get_orders_by_period(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> dict:
+    """
+    Solo cuenta órdenes cuyos laboratorios ya están validados (Validada /
+    Laboratorio Impreso): la orden debe tener al menos una prueba, y ninguna
+    de sus pruebas puede estar en un estado distinto de esos dos.
+    """
+    labs_of_order = (
+        select(Laboratory.l_id)
+        .select_from(Laboratory)
+        .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+        .where(OrdersDetail.od_order_id == Order.o_id)
+    )
+    has_labs = exists(labs_of_order)
+    has_unvalidated_lab = exists(
+        labs_of_order.where(Laboratory.l_state.notin_(_VALIDATED_LAB_STATES))
+    )
+
     stmt = (
         select(
             extract("year", Order.o_date).label("year"),
@@ -110,7 +129,7 @@ async def get_orders_by_period(
             Order.o_order_state.label("state_id"),
             func.count(Order.o_id).label("total"),
         )
-        .where(Order.o_date.isnot(None))
+        .where(Order.o_date.isnot(None), has_labs, ~has_unvalidated_lab)
         .group_by(
             extract("year", Order.o_date),
             extract("month", Order.o_date),

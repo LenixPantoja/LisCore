@@ -1,6 +1,6 @@
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, extract, cast, String, Integer, text
+from sqlalchemy import select, func, extract, cast, String, Integer, text, exists
 from datetime import date
 
 from app.domains.orders.domain.models import Order, OrdersDetail
@@ -9,7 +9,47 @@ from app.domains.masters.domain.models import WorkGroup, Service, SexType
 from app.domains.Headquarters.domain.models import Headquarter
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.laboratories.domain.models import Laboratory
+from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO
 from app.domains.patients.domain.models import Patient
+
+_VALIDATED_LAB_STATES = (LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO)
+
+
+def _study_fully_validated_filters():
+    """
+    Condiciones SQL (para usar en .where()) que restringen a estudios
+    (OrdersDetail) cuyos laboratorios YA están validados: tiene al menos una
+    prueba, y ninguna de sus pruebas está en un estado distinto de
+    Validada/Laboratorio Impreso.
+    """
+    has_labs = exists(
+        select(Laboratory.l_id).where(Laboratory.l_order_detail_id == OrdersDetail.od_id)
+    )
+    has_unvalidated_lab = exists(
+        select(Laboratory.l_id).where(
+            Laboratory.l_order_detail_id == OrdersDetail.od_id,
+            Laboratory.l_state.notin_(_VALIDATED_LAB_STATES),
+        )
+    )
+    return has_labs, ~has_unvalidated_lab
+
+
+def _order_fully_validated_filters():
+    """
+    Condiciones SQL (para usar en .where()) que restringen a órdenes (Order)
+    cuyos laboratorios YA están validados: la orden tiene al menos una
+    prueba, y ninguna de sus pruebas está en un estado distinto de
+    Validada/Laboratorio Impreso.
+    """
+    labs_of_order = (
+        select(Laboratory.l_id)
+        .select_from(Laboratory)
+        .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+        .where(OrdersDetail.od_order_id == Order.o_id)
+    )
+    has_labs = exists(labs_of_order)
+    has_unvalidated_lab = exists(labs_of_order.where(Laboratory.l_state.notin_(_VALIDATED_LAB_STATES)))
+    return has_labs, ~has_unvalidated_lab
 
 
 async def get_dashboard_stats(
@@ -164,7 +204,12 @@ async def get_production_by_work_group(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> dict:
-    """Cantidad (y %) de estudios (OrdersDetail) procesados por grupo de trabajo."""
+    """
+    Cantidad (y %) de estudios (OrdersDetail) procesados por grupo de trabajo.
+    Solo cuenta estudios cuyos laboratorios ya están validados (Validada /
+    Laboratorio Impreso).
+    """
+    has_labs, all_validated = _study_fully_validated_filters()
     stmt = (
         select(
             WorkGroup.wg_id.label("work_group_id"),
@@ -175,6 +220,7 @@ async def get_production_by_work_group(
         .join(Order, Order.o_id == OrdersDetail.od_order_id)
         .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
         .join(WorkGroup, WorkGroup.wg_id == StudiesLab.work_groups_id)
+        .where(has_labs, all_validated)
         .group_by(WorkGroup.wg_id, WorkGroup.wg_name)
         .order_by(func.count(OrdersDetail.od_id).desc())
     )
@@ -200,7 +246,11 @@ async def get_top_studies(
     date_to: Optional[date] = None,
     limit: int = 10,
 ) -> dict:
-    """Top N estudios (StudiesLab) más solicitados."""
+    """
+    Top N estudios (StudiesLab) más solicitados. Solo cuenta estudios cuyos
+    laboratorios ya están validados (Validada / Laboratorio Impreso).
+    """
+    has_labs, all_validated = _study_fully_validated_filters()
     stmt = (
         select(
             StudiesLab.id.label("study_id"),
@@ -210,6 +260,7 @@ async def get_top_studies(
         .select_from(OrdersDetail)
         .join(Order, Order.o_id == OrdersDetail.od_order_id)
         .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+        .where(has_labs, all_validated)
         .group_by(StudiesLab.id, StudiesLab.name)
         .order_by(func.count(OrdersDetail.od_id).desc())
         .limit(limit)
@@ -229,7 +280,12 @@ async def get_studies_by_service(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> dict:
-    """Cantidad (y %) de estudios (OrdersDetail) agrupados por servicio de la orden."""
+    """
+    Cantidad (y %) de estudios (OrdersDetail) agrupados por servicio de la
+    orden. Solo cuenta estudios cuyos laboratorios ya están validados
+    (Validada / Laboratorio Impreso).
+    """
+    has_labs, all_validated = _study_fully_validated_filters()
     stmt = (
         select(
             Service.id.label("service_id"),
@@ -239,6 +295,7 @@ async def get_studies_by_service(
         .select_from(OrdersDetail)
         .join(Order, Order.o_id == OrdersDetail.od_order_id)
         .outerjoin(Service, Service.id == Order.o_service_id)
+        .where(has_labs, all_validated)
         .group_by(Service.id, Service.name)
         .order_by(func.count(OrdersDetail.od_id).desc())
     )
@@ -263,17 +320,29 @@ async def get_kpis_summary(
     date_from: Optional[date] = None,
     date_to: Optional[date] = None,
 ) -> dict:
-    """KPIs del dashboard: pacientes atendidos (por género), órdenes, pruebas, promedio y paciente con más atenciones."""
-    # Total de órdenes procesadas
-    orders_stmt = _apply_order_date_filter(select(func.count(Order.o_id.distinct())), date_from, date_to)
+    """
+    KPIs del dashboard: pacientes atendidos (por género), órdenes, pruebas,
+    promedio y paciente con más atenciones. Todo se calcula solo sobre
+    órdenes cuyos laboratorios ya están validados (Validada / Laboratorio
+    Impreso).
+    """
+    has_labs, all_validated = _order_fully_validated_filters()
+
+    # Total de órdenes procesadas (con laboratorios ya validados)
+    orders_stmt = _apply_order_date_filter(
+        select(func.count(Order.o_id.distinct())).where(has_labs, all_validated),
+        date_from,
+        date_to,
+    )
     total_orders = (await db.execute(orders_stmt)).scalar_one()
 
-    # Total de pruebas recibidas (Laboratories)
+    # Total de pruebas recibidas (Laboratories) de esas órdenes ya validadas
     tests_stmt = _apply_order_date_filter(
         select(func.count(Laboratory.l_id))
         .select_from(Laboratory)
         .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
-        .join(Order, Order.o_id == OrdersDetail.od_order_id),
+        .join(Order, Order.o_id == OrdersDetail.od_order_id)
+        .where(has_labs, all_validated),
         date_from,
         date_to,
     )
@@ -281,7 +350,7 @@ async def get_kpis_summary(
 
     avg_tests_per_order = round(total_tests / total_orders, 2) if total_orders else 0.0
 
-    # Pacientes atendidos (únicos) y desglose por género
+    # Pacientes atendidos (únicos) y desglose por género, de órdenes ya validadas
     patients_stmt = _apply_order_date_filter(
         select(
             SexType.code.label("sex_code"),
@@ -290,6 +359,7 @@ async def get_kpis_summary(
         .select_from(Order)
         .join(Patient, Patient.pt_id == Order.o_his_id)
         .outerjoin(SexType, SexType.id == Patient.pt_sex_type)
+        .where(has_labs, all_validated)
         .group_by(SexType.code),
         date_from,
         date_to,
@@ -300,7 +370,7 @@ async def get_kpis_summary(
     female_patients = sum(r.total for r in sex_rows if r.sex_code == "M")
     total_patients = sum(r.total for r in sex_rows)
 
-    # Paciente con más atenciones (órdenes)
+    # Paciente con más atenciones (órdenes ya validadas)
     top_patient_stmt = _apply_order_date_filter(
         select(
             Patient.pt_id,
@@ -312,6 +382,7 @@ async def get_kpis_summary(
         )
         .select_from(Order)
         .join(Patient, Patient.pt_id == Order.o_his_id)
+        .where(has_labs, all_validated)
         .group_by(Patient.pt_id, Patient.pt_Number_document, Patient.pt_firts_name, Patient.pt_last_name)
         .order_by(func.count(Order.o_id.distinct()).desc())
         .limit(1),
