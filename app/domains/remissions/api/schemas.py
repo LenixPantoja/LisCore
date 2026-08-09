@@ -168,3 +168,50 @@ class RemissionCreatedResponse(BaseModel):
     rem_id: int
     rem_consecutive: str
     message: str
+
+
+# ── Órdenes con estudios remitidos / Resultados anexos ─────────────────
+
+class RemittedStudyChild(BaseModel):
+    """Un estudio remitido de la orden (JSON hijo)."""
+    order_detail_id: int
+    study_code: Optional[str] = None
+    study_name: Optional[str] = None
+    external_lab_id: Optional[int] = None
+    external_lab_name: Optional[str] = None
+    ar_file_status: str = Field(
+        ...,
+        description=(
+            "'Cargado' o 'Sin resultado Anexo'. Es específico del laboratorio externo "
+            "de ESTE estudio: si la orden tiene estudios remitidos a dos laboratorios "
+            "distintos, cargar el PDF de uno no cambia el estado del otro."
+        ),
+    )
+
+
+class OrderWithRemittedStudiesItem(BaseModel):
+    o_id: int
+    o_number: Optional[str] = None
+    fecha_ingreso: Optional[datetime] = None
+    patient_full_name: Optional[str] = None
+    pt_number_document: Optional[str] = None
+    estudios_remitidos: List[RemittedStudyChild] = []
+
+
+class OrdersWithRemittedStudiesListResponse(BaseModel):
+    items: List[OrderWithRemittedStudiesItem]
+    total: int
+    skip: int
+    limit: int
+
+
+class UploadRemittedAnnexedResponse(BaseModel):
+    success: bool
+    ar_id: int
+    ar_file: str
+    order_id: int
+    external_lab_id: int
+    external_lab_name: Optional[str] = None
+    labs_marked: List[int] = []
+    labs_skipped_validated: List[int] = []
+    message: str

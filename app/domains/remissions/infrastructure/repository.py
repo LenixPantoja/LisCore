@@ -503,6 +503,232 @@ class RemissionRepository:
         await db.refresh(detail)
         return detail, None
 
+    # ── Orders con estudios remitidos ────────────────────────────────
+
+    @staticmethod
+    async def list_orders_with_remitted_studies(
+        db: AsyncSession,
+        date_from: Optional[date] = None,
+        date_to: Optional[date] = None,
+        has_annexed_results: Optional[bool] = None,
+        external_lab_id: Optional[int] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """
+        Lista (paginado) las órdenes que tienen al menos un estudio configurado
+        como remitido a un laboratorio de referencia externo real
+        (StudiesLab.external_lab_id, excluyendo el centinela 'LOCAL'). Busca
+        directamente en OrdersDetail → StudiesLab, sin depender de
+        Remissions/RemissionDetails.
+
+        Cada orden trae sus estudios remitidos anidados en "estudios_remitidos".
+        El estado de anexo (ar_file_status) es específico por laboratorio: se
+        calcula comparando contra AnnexedResult.ar_external_lab_id, no contra
+        la orden completa — así, cargar el PDF de un laboratorio no afecta el
+        estado de un estudio remitido a otro laboratorio distinto.
+
+        Retorna (orders, total) — total es la cantidad de órdenes (no de filas).
+        """
+        from app.domains.annexes.domain.models import AnnexedResult
+        from app.domains.studieslab.domain.models import StudiesLab
+        from app.domains.patients.domain.models import Patient
+        from sqlalchemy import case
+
+        # ── 1. IDs de órdenes que cumplen los filtros (paginado a nivel de orden) ──
+        id_stmt = (
+            select(Order.o_id)
+            .select_from(OrdersDetail)
+            .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+            .join(Order, Order.o_id == OrdersDetail.od_order_id)
+            .where(
+                StudiesLab.external_lab_id.isnot(None),
+                StudiesLab.external_lab_id != 1,
+            )
+            .distinct()
+        )
+        if external_lab_id is not None:
+            id_stmt = id_stmt.where(StudiesLab.external_lab_id == external_lab_id)
+        if date_from is not None:
+            id_stmt = id_stmt.where(Order.o_date >= date_from)
+        if date_to is not None:
+            id_stmt = id_stmt.where(Order.o_date <= date_to)
+
+        if has_annexed_results is not None:
+            # Existencia de CUALQUIER anexo con archivo para la orden (sin filtrar por
+            # laboratorio): coincide con los anexos antiguos, subidos antes de que
+            # existiera ar_external_lab_id, que quedaron con ese campo en NULL.
+            ann_sub = select(AnnexedResult.ar_order_id).where(
+                AnnexedResult.ar_file.isnot(None), AnnexedResult.ar_file != ""
+            )
+            if has_annexed_results is True:
+                id_stmt = id_stmt.where(Order.o_id.in_(ann_sub))
+            else:
+                id_stmt = id_stmt.where(~Order.o_id.in_(ann_sub))
+
+        count_stmt = select(func.count()).select_from(id_stmt.subquery())
+        total = (await db.execute(count_stmt)).scalar_one()
+
+        paged_stmt = id_stmt.order_by(Order.o_id.asc()).offset(skip).limit(limit)
+        order_ids = [row[0] for row in (await db.execute(paged_stmt)).all()]
+
+        if not order_ids:
+            return [], total
+
+        # ── 2. Cabeceras de orden + paciente ──
+        headers_stmt = (
+            select(
+                Order.o_id,
+                Order.o_number,
+                Order.o_created_at.label("fecha_ingreso"),
+                func.concat_ws(
+                    " ",
+                    Patient.pt_firts_name,
+                    Patient.pt_middle_name,
+                    Patient.pt_last_name,
+                    Patient.pt_second_last_name,
+                ).label("patient_full_name"),
+                Patient.pt_Number_document.label("pt_number_document"),
+            )
+            .select_from(Order)
+            .join(Patient, Patient.pt_id == Order.o_his_id)
+            .where(Order.o_id.in_(order_ids))
+        )
+        headers_by_id = {r.o_id: r for r in (await db.execute(headers_stmt)).all()}
+
+        # ── 3. Estudios remitidos (hijos), con estado de anexo por laboratorio ──
+        ar_file_status = case(
+            (or_(AnnexedResult.ar_file.is_(None), AnnexedResult.ar_file == ""), "Sin resultado Anexo"),
+            else_="Cargado",
+        ).label("ar_file_status")
+
+        studies_stmt = (
+            select(
+                OrdersDetail.od_order_id,
+                OrdersDetail.od_id.label("order_detail_id"),
+                StudiesLab.code.label("study_code"),
+                StudiesLab.name.label("study_name"),
+                StudiesLab.external_lab_id,
+                ExternalReferenceLaboratory.erl_name.label("external_lab_name"),
+                ar_file_status,
+            )
+            .distinct()
+            .select_from(OrdersDetail)
+            .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+            .join(ExternalReferenceLaboratory, ExternalReferenceLaboratory.erl_id == StudiesLab.external_lab_id)
+            .outerjoin(
+                AnnexedResult,
+                and_(
+                    AnnexedResult.ar_order_id == OrdersDetail.od_order_id,
+                    AnnexedResult.ar_external_lab_id == StudiesLab.external_lab_id,
+                ),
+            )
+            .where(
+                OrdersDetail.od_order_id.in_(order_ids),
+                StudiesLab.external_lab_id.isnot(None),
+                StudiesLab.external_lab_id != 1,
+            )
+        )
+        if external_lab_id is not None:
+            studies_stmt = studies_stmt.where(StudiesLab.external_lab_id == external_lab_id)
+
+        studies_by_order: Dict[int, List[Dict[str, Any]]] = {}
+        seen_details: set = set()
+        for r in (await db.execute(studies_stmt)).all():
+            if r.order_detail_id in seen_details:
+                continue
+            seen_details.add(r.order_detail_id)
+            studies_by_order.setdefault(r.od_order_id, []).append({
+                "order_detail_id": r.order_detail_id,
+                "study_code": r.study_code,
+                "study_name": r.study_name,
+                "external_lab_id": r.external_lab_id,
+                "external_lab_name": r.external_lab_name,
+                "ar_file_status": r.ar_file_status,
+            })
+
+        items = []
+        for oid in order_ids:
+            h = headers_by_id.get(oid)
+            if not h:
+                continue
+            items.append({
+                "o_id": h.o_id,
+                "o_number": h.o_number,
+                "fecha_ingreso": h.fecha_ingreso,
+                "patient_full_name": h.patient_full_name,
+                "pt_number_document": h.pt_number_document,
+                "estudios_remitidos": studies_by_order.get(oid, []),
+            })
+
+        return items, total
+
+    @staticmethod
+    async def get_remitted_order_detail_ids(
+        db: AsyncSession, order_id: int, external_lab_id: Optional[int] = None
+    ) -> List[int]:
+        """
+        Retorna los od_id de los OrdersDetails de una orden cuyo estudio está
+        configurado como remitido a un laboratorio de referencia externo real
+        (excluye el centinela 'LOCAL'). Si se indica external_lab_id, solo
+        retorna los od_id remitidos a ESE laboratorio específico.
+        """
+        from app.domains.studieslab.domain.models import StudiesLab
+
+        stmt = (
+            select(OrdersDetail.od_id)
+            .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+            .where(
+                OrdersDetail.od_order_id == order_id,
+                StudiesLab.external_lab_id.isnot(None),
+                StudiesLab.external_lab_id != 1,
+            )
+            .distinct()
+        )
+        if external_lab_id is not None:
+            stmt = stmt.where(StudiesLab.external_lab_id == external_lab_id)
+        result = await db.execute(stmt)
+        return [row[0] for row in result.all()]
+
+    @staticmethod
+    async def mark_remitted_labs_as_annexed(
+        db: AsyncSession, order_detail_ids: List[int]
+    ) -> Tuple[List[int], List[int]]:
+        """
+        Escribe l_result = 'PDF ANEXO' y l_state = Con Resultados (2) en todas
+        las Laboratories asociadas a los OrdersDetails remitidos indicados,
+        siempre que su estado actual sea menor a Validada (3).
+
+        Retorna (ids_actualizados, ids_omitidos_por_ya_validados).
+        """
+        from app.domains.laboratories.domain.models import Laboratory
+        from app.domains.laboratories.domain.constants import (
+            LABORATORY_STATE_CON_RESULTADOS,
+            LABORATORY_STATE_VALIDADA,
+        )
+
+        if not order_detail_ids:
+            return [], []
+
+        labs_result = await db.execute(
+            select(Laboratory).where(Laboratory.l_order_detail_id.in_(order_detail_ids))
+        )
+        labs = labs_result.scalars().all()
+
+        updated_ids: List[int] = []
+        skipped_ids: List[int] = []
+        for lab in labs:
+            if lab.l_state >= LABORATORY_STATE_VALIDADA:
+                skipped_ids.append(lab.l_id)
+                continue
+            lab.l_result = "PDF ANEXO"
+            lab.l_result_num = None
+            lab.l_state = LABORATORY_STATE_CON_RESULTADOS
+            updated_ids.append(lab.l_id)
+
+        await db.flush()
+        return updated_ids, skipped_ids
+
     # ── Cancel: Cancelar Remisión ─────────────────────────────────────
 
     @staticmethod

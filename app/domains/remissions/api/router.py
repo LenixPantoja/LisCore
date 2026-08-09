@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, Query, status
+from datetime import date
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
@@ -20,6 +21,8 @@ from app.domains.remissions.api.schemas import (
     ReceiveItemRequest,
     CancelRemissionRequest,
     RemissionCreatedResponse,
+    OrdersWithRemittedStudiesListResponse,
+    UploadRemittedAnnexedResponse,
     MessageResponse,
 )
 from app.domains.remissions.application.use_cases import remission_use_cases as use_cases
@@ -145,6 +148,71 @@ async def list_remissions(
 ):
     return await use_cases.list_remissions(
         db, state=state, type_=type_, origin_hq_id=origin_hq_id, skip=skip, limit=limit
+    )
+
+
+@router.get(
+    "/orders",
+    response_model=OrdersWithRemittedStudiesListResponse,
+    summary="Listar órdenes con al menos un estudio remitido a laboratorio externo",
+    description=(
+        "Retorna, en formato plano (una fila por cada combinación orden + estudio remitido), "
+        "las órdenes que tienen uno o más estudios configurados como remitidos a un "
+        "laboratorio de referencia externo (StudiesLab.external_lab_id, excluyendo el "
+        "centinela 'LOCAL'). Busca directamente en los estudios de la orden (OrdersDetails → "
+        "StudiesLab), sin depender de que exista una remisión logística "
+        "(Remissions/RemissionDetails) creada. Permite filtrar por rango de fecha de la orden, "
+        "por si ya tienen resultados anexos (PDF) cargados o no, y por laboratorio de "
+        "referencia externo destino."
+    ),
+    dependencies=[Depends(require_permission("Remissions:View"))],
+)
+async def list_orders_with_remitted_studies(
+    date_from: Optional[date] = Query(None, description="Fecha inicial de la orden (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Fecha final de la orden (YYYY-MM-DD)"),
+    has_annexed_results: Optional[bool] = Query(
+        None, description="True = solo órdenes con resultados anexos cargados, False = solo sin anexos"
+    ),
+    external_lab_id: Optional[int] = Query(None, description="Filtrar por laboratorio de referencia externo destino"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+):
+    return await use_cases.list_orders_with_remitted_studies(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        has_annexed_results=has_annexed_results,
+        external_lab_id=external_lab_id,
+        skip=skip,
+        limit=limit,
+    )
+
+
+@router.post(
+    "/orders/{order_id}/annexed-results",
+    response_model=UploadRemittedAnnexedResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cargar PDF anexo de una orden remitida (por laboratorio externo)",
+    description=(
+        "Sube un PDF de resultados para una orden y UN laboratorio de referencia externo "
+        "específico (`external_lab_id`), y marca automáticamente solo las pruebas "
+        "(Laboratories) de los estudios remitidos a ESE laboratorio con el resultado "
+        "'PDF ANEXO', dejándolas en estado Con Resultados (2). Si la misma orden tiene "
+        "otros estudios remitidos a un laboratorio distinto, quedan sin tocar (pendientes "
+        "de su propio anexo). Solo se modifican pruebas que no estén ya Validadas."
+    ),
+    dependencies=[Depends(require_permission("Remissions:UploadAnnexedResult"))],
+)
+async def upload_annexed_result_for_remitted_order(
+    order_id: int,
+    external_lab_id: int = Form(..., description="ID del laboratorio de referencia externo (ExternalReferenceLaboratories.erl_id) al que corresponde este PDF"),
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    return await use_cases.upload_annexed_result_for_remitted_order(
+        db, order_id, external_lab_id, file, current_user.usr_id
     )
 
 

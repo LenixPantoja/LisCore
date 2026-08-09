@@ -166,6 +166,7 @@ _PERMISSIONS = [
     {"p_name": "Remissions:Receive",           "p_description": "Procesar recepción de ítems en destino",        "p_module": "Remissions"},
     {"p_name": "Remissions:Cancel",            "p_description": "Cancelar remisiones pendientes",                "p_module": "Remissions"},
     {"p_name": "Remissions:ManageExternalLabs","p_description": "Crear, editar y eliminar laboratorios externos","p_module": "Remissions"},
+    {"p_name": "Remissions:UploadAnnexedResult","p_description": "Cargar PDF anexo de una orden remitida y marcar sus pruebas como 'PDF ANEXO'","p_module": "Remissions"},
 
     # ── Samples ───────────────────────────────────────────────────────────
     {"p_name": "Samples:Create", "p_description": "Crear tipos de muestra", "p_module": "Samples"},

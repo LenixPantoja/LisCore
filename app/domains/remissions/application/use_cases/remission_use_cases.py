@@ -1,6 +1,7 @@
+from datetime import date
 from typing import Optional
 
-from fastapi import HTTPException, status
+from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +13,7 @@ from app.domains.remissions.domain.constants import (
     DETAIL_ITEM_STATE_RECEIVED_OK,
     DETAIL_ITEM_STATE_REJECTED,
 )
-from app.domains.traces.constants import OPERATION_MANAGE_REMISSION
+from app.domains.traces.constants import OPERATION_MANAGE_REMISSION, OPERATION_UPLOAD_ANNEXED
 from app.domains.traces.models import AppTrace
 
 
@@ -509,4 +510,127 @@ async def cancel_remission(
         "message": "Remisión cancelada correctamente.",
         "rem_id": remission.rem_id,
         "rem_state": remission.rem_state,
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Órdenes con estudios remitidos / Resultados anexos
+# ═══════════════════════════════════════════════════════════════════════
+
+async def list_orders_with_remitted_studies(
+    db: AsyncSession,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
+    has_annexed_results: Optional[bool] = None,
+    external_lab_id: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 100,
+) -> dict:
+    items, total = await RemissionRepository.list_orders_with_remitted_studies(
+        db,
+        date_from=date_from,
+        date_to=date_to,
+        has_annexed_results=has_annexed_results,
+        external_lab_id=external_lab_id,
+        skip=skip,
+        limit=limit,
+    )
+    return {"items": items, "total": total, "skip": skip, "limit": limit}
+
+
+async def upload_annexed_result_for_remitted_order(
+    db: AsyncSession,
+    order_id: int,
+    external_lab_id: int,
+    file: UploadFile,
+    user_id: int,
+) -> dict:
+    """
+    Sube un PDF de resultados para una orden con estudios remitidos a UN
+    laboratorio de referencia externo específico, y marca solo las pruebas
+    (Laboratories) de los estudios remitidos a ESE laboratorio con el
+    resultado 'PDF ANEXO'. Los estudios de la misma orden remitidos a otro
+    laboratorio distinto quedan sin tocar (pendientes de su propio anexo).
+    """
+    from app.domains.orders.domain.models import Order as OrderModel
+    from app.domains.annexes.infrastructure.repository import AnnexedResultRepository
+    from utils.minio_client import upload_annexed_pdf, build_annexed_object_name
+
+    order = await db.get(OrderModel, order_id)
+    if not order:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Orden con ID {order_id} no encontrada.",
+        )
+
+    lab = await ExternalLabRepository.get_by_id(db, external_lab_id)
+    if not lab:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Laboratorio de referencia externo con ID {external_lab_id} no encontrado.",
+        )
+
+    remitted_od_ids = await RemissionRepository.get_remitted_order_detail_ids(
+        db, order_id, external_lab_id=external_lab_id
+    )
+    if not remitted_od_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"La orden {order.o_number} no tiene estudios remitidos al laboratorio '{lab.erl_name}'.",
+        )
+
+    file_data = await file.read()
+    if not file_data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo está vacío.")
+
+    content_type = file.content_type or "application/pdf"
+    if content_type != "application/pdf" and not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Solo se permiten archivos PDF.")
+
+    ann = await AnnexedResultRepository.create(db, {
+        "ar_order_id": order_id,
+        "ar_external_lab_id": external_lab_id,
+        "ar_file": "",
+        "ar_user_record_file": user_id,
+    })
+
+    object_name = build_annexed_object_name(order.o_number, ann.ar_id, file.filename or "documento.pdf")
+    upload_annexed_pdf(file_data, object_name, content_type="application/pdf")
+
+    ann.ar_file = object_name
+    await db.flush()
+
+    updated_lab_ids, skipped_lab_ids = await RemissionRepository.mark_remitted_labs_as_annexed(
+        db, remitted_od_ids
+    )
+
+    db.add(AppTrace(
+        usr_id=user_id,
+        order_id=order_id,
+        operation_type=OPERATION_UPLOAD_ANNEXED,
+        operation_description=f"Carga de anexo PDF a orden remitida {order.o_number} (lab. {lab.erl_name})",
+        notes=(
+            f"Archivo: {object_name} | Laboratorio: {lab.erl_name} | "
+            f"Pruebas marcadas 'PDF ANEXO': {len(updated_lab_ids)} "
+            f"| Omitidas (ya validadas): {len(skipped_lab_ids)}"
+        ),
+    ))
+
+    await db.commit()
+    await db.refresh(ann)
+
+    return {
+        "success": True,
+        "ar_id": ann.ar_id,
+        "ar_file": object_name,
+        "order_id": order_id,
+        "external_lab_id": external_lab_id,
+        "external_lab_name": lab.erl_name,
+        "labs_marked": updated_lab_ids,
+        "labs_skipped_validated": skipped_lab_ids,
+        "message": (
+            f"PDF anexo subido correctamente para '{lab.erl_name}'. "
+            f"{len(updated_lab_ids)} prueba(s) marcada(s) como 'PDF ANEXO'."
+            + (f" {len(skipped_lab_ids)} ya estaban validadas y no se modificaron." if skipped_lab_ids else "")
+        ),
     }
