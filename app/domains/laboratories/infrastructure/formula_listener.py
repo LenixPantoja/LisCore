@@ -47,12 +47,17 @@ async def _handle_notification(connection, pid, channel, payload: str) -> None:
 async def start_listener() -> None:
     """Abre una conexión asyncpg dedicada y se suscribe al canal de notificación."""
     global _listener_conn
-    dsn = (
-        f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}"
-        f"@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}"
-    )
     try:
-        _listener_conn = await asyncpg.connect(dsn)
+        # Se pasan como argumentos separados (no como DSN concatenado) para que
+        # contraseñas con caracteres especiales (p.ej. '#', '@', ':') no rompan
+        # el parseo de URL — asyncpg.connect(dsn) sí lo requeriría escapado.
+        _listener_conn = await asyncpg.connect(
+            host=settings.DB_HOST,
+            port=int(settings.DB_PORT),
+            user=settings.DB_USER,
+            password=settings.DB_PASSWORD,
+            database=settings.DB_NAME,
+        )
         await _listener_conn.add_listener(_CHANNEL, _handle_notification)
         logger.info("Escuchando notificaciones de Postgres en el canal '%s'.", _CHANNEL)
     except Exception:
