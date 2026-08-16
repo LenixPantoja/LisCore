@@ -5,7 +5,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
+from app.domains.users.infrastructure.models import AppUser
 from app.domains.requests.api.schemas import (
     InboundOrderCreate,
     InboundOrderUpdate,
@@ -101,12 +102,14 @@ async def update_detail(
     description=(
         "Recibe el ID de un InboundOrder y una lista de IDs de InboundOrderDetail. "
         "Crea una Order con los estudios de los detalles seleccionados, actualiza "
-        "dichos detalles a estado Ejecutada (1) y guarda el ID de la orden creada."
+        "dichos detalles a estado Ejecutada (1) y guarda el ID de la orden creada. "
+        "El usuario que registra la orden se toma del token de autenticación."
     ),
     dependencies=[Depends(require_permission("Requests:CreateOrder"))],
 )
 async def create_order_from_inbound_endpoint(
     payload: CreateOrderFromInboundRequest,
     db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
 ):
-    return await create_order_from_inbound(db, payload)
+    return await create_order_from_inbound(db, payload, current_user.usr_id)

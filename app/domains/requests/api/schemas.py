@@ -250,7 +250,6 @@ class CreateOrderFromInboundRequest(BaseModel):
     inbound_detail_ids: List[int]
     tariff_id: Optional[int] = None
     o_headquarter_id: Optional[int] = None
-    o_AppUser_id: Optional[int] = None
 
 
 class CreateOrderFromInboundResponse(BaseModel):

@@ -18,6 +18,8 @@ from app.domains.requests.infrastructure.repository import (
 )
 from app.domains.requests.domain.models import InboundOrderDetail
 from app.domains.requests.domain.constants import INBOUND_ORDER_DETAIL_STATE_EJECUTADA
+from app.domains.traces.constants import OPERATION_CREATE_ORDER
+from utils.trace import register_trace
 
 
 async def create_inbound_order(db: AsyncSession, payload: InboundOrderCreate):
@@ -96,11 +98,15 @@ async def update_inbound_order_detail(db: AsyncSession, iod_id: int, payload: In
 async def create_order_from_inbound(
     db: AsyncSession,
     payload: CreateOrderFromInboundRequest,
+    user_id: int,
 ) -> CreateOrderFromInboundResponse:
     """
     Crea una Order en el sistema a partir de un InboundOrder y los
     InboundOrderDetail seleccionados. Después actualiza esos detalles
     con estado Ejecutada y el id de la orden creada.
+
+    `user_id` se toma del token de autenticación (no del payload del cliente)
+    y se registra en AppTrace como el usuario que ingresó la orden.
     """
     from app.domains.orders.application.use_cases.order_use_cases import create_order
 
@@ -194,13 +200,23 @@ async def create_order_from_inbound(
         "o_enterprise_id": inbound.io_enterprise_id,
         "o_scholarity": inbound.io_scholarity_id,
         "o_headquarter_id": payload.o_headquarter_id or inbound.io_headquarter_id,
-        "o_AppUser_id": payload.o_AppUser_id,
+        "o_AppUser_id": user_id,
         "o_autorizacion": inbound.io_number_request,
         "studies": study_ids,
     }
 
     # 4. Crear la orden (genera número, detalles, laboratorios, muestras, factura)
     order = await create_order(db, order_data)
+
+    # Traza específica: qué usuario registró esta orden a partir del InboundOrder
+    await register_trace(
+        db=db,
+        operation_type=OPERATION_CREATE_ORDER,
+        operation_description=f"Creación de orden Centralink {order.o_number}",
+        usr_id=user_id,
+        order_id=order.o_id,
+        notes=f"Solicitud entrante: {inbound.io_number_request} (InboundOrder ID: {inbound.io_id}) | Detalles ejecutados: {len(selected_details)}",
+    )
 
     # 5. Mapear Laboratories creados a cada InboundOrderDetail
     #    Un InboundOrderDetail → un estudio (iod_study_id)
