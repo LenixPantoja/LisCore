@@ -232,6 +232,23 @@ class GradillaResponse(BaseModel):
     g_created_at: Optional[datetime]
     g_updated_at: Optional[datetime]
 
+    @computed_field
+    @property
+    def days_until_discard(self) -> Optional[int]:
+        if self.g_discard_date is None:
+            return None
+        from utils.timezone import get_bogota_now
+        return (self.g_discard_date - get_bogota_now()).days
+
+    @computed_field
+    @property
+    def about_to_discard(self) -> bool:
+        """True solo si a la gradilla le quedan entre 0 y 3 días para su fecha de descarte (y aún no fue descartada)."""
+        if self.g_discarted or self.g_discard_date is None:
+            return False
+        days = self.days_until_discard
+        return days is not None and 0 <= days <= 3
+
     class Config:
         from_attributes = True
 
