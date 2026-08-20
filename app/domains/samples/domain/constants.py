@@ -8,9 +8,11 @@ SAMPLE_ORDER_STATES: dict[int, str] = {
     1: "Con Muestra",
     2: "Muestra Sin Definir",
     3: "Almacenada",
+    4: "Descartada"
 }
 
 SAMPLE_ORDER_STATE_NO_INGRESADA = 0
 SAMPLE_ORDER_STATE_CON_MUESTRA = 1
 SAMPLE_ORDER_STATE_SIN_DEFINIR = 2
 SAMPLE_ORDER_STATE_ALMACENADA = 3
+SAMPLE_ORDER_STATE_DESCARTADA = 4
