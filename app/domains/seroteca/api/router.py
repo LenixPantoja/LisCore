@@ -10,7 +10,7 @@ from app.domains.seroteca.api.schemas import (
     SampleLogCreate, SampleLogPaginatedResponse,
     SerotecaCreate, SerotecaUpdate, SerotecaResponse, SerotecaPaginatedResponse,
     GradillaCreate, GradillaUpdate, GradillaResponse, GradillaWithPositionsResponse,
-    GradillaPaginatedResponse, GradillaPosicionResponse,
+    GradillaPaginatedResponse, GradillaPosicionResponse, GradillaDiscardResponse,
     TipoGradillaCreate, TipoGradillaUpdate, TipoGradillaResponse, TipoGradillaPaginatedResponse,
     AutoStoreRequest, ManualStoreRequest,
 )
@@ -23,7 +23,7 @@ from app.domains.seroteca.application.use_cases.tracking_use_cases import (
 )
 from app.domains.seroteca.application.use_cases.seroteca_use_cases import (
     create_seroteca, get_seroteca, list_serotecas, update_seroteca, delete_seroteca,
-    create_rack, get_rack, list_racks, update_rack, delete_rack,
+    create_rack, get_rack, list_racks, update_rack, delete_rack, discard_rack,
     create_tipo_gradilla, get_tipo_gradilla, list_tipos_gradilla, update_tipo_gradilla, delete_tipo_gradilla,
     generate_gradilla_sticker,
 )
@@ -162,9 +162,12 @@ async def list_racks_endpoint(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=200),
     search: Optional[str] = Query(None, description="Buscar por nombre de rack"),
+    discarted: Optional[bool] = Query(
+        None, description="Filtrar por estado de descarte: false = pendientes por descartar, true = ya descartadas"
+    ),
     db: AsyncSession = Depends(get_db),
 ):
-    return await list_racks(db, s_id, skip, limit, search)
+    return await list_racks(db, s_id, skip, limit, search, discarted)
 
 
 @router.get(
@@ -200,6 +203,30 @@ async def delete_rack_endpoint(
     current_user: AppUser = Depends(get_current_user),
 ):
     return await delete_rack(db, g_id, current_user.usr_id)
+
+
+@router.post(
+    "/racks/{g_id}/discard",
+    response_model=GradillaDiscardResponse,
+    summary="Descartar las muestras de una gradilla",
+    description=(
+        "Descarta (so_state=4) las muestras de la gradilla cuyos estudios ya están "
+        "completamente procesados, registrando un SamplesLog por cada una con el "
+        "usuario (tomado del token), la hora y la ubicación de la seroteca. Las "
+        "muestras con estudios pendientes (considerando is_required de "
+        "StudiesTestDetail) se OMITEN y se reportan en `pending_samples`, sin "
+        "bloquear el descarte de las demás. La gradilla solo queda marcada como "
+        "completamente descartada (g_discarted=1, `fully_discarded=true`) cuando no "
+        "le queda ninguna muestra pendiente."
+    ),
+    dependencies=[Depends(require_permission("Seroteca:DiscardRack"))],
+)
+async def discard_rack_endpoint(
+    g_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
+    return await discard_rack(db, g_id, current_user.usr_id)
 
 
 # ── Tipos de Gradilla ─────────────────────────────────────────────────────────

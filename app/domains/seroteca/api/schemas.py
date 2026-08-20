@@ -172,8 +172,23 @@ class OrderBasic(BaseModel):
 class SampleOrderBasic(BaseModel):
     so_id: int
     so_barcode: Optional[str]
+    so_state: Optional[int] = Field(None, description="0=Muestra No Ingresada 1=Con Muestra 2=Muestra Sin Definir 3=Almacenada 4=Descartada")
     order: Optional[OrderBasic] = None
     sample_type: Optional[SampleTypeBasic] = None
+
+    @computed_field
+    @property
+    def so_state_name(self) -> Optional[str]:
+        from app.domains.samples.domain.constants import SAMPLE_ORDER_STATES
+        if self.so_state is None:
+            return None
+        return SAMPLE_ORDER_STATES.get(self.so_state, str(self.so_state))
+
+    @computed_field
+    @property
+    def is_discarded(self) -> bool:
+        from app.domains.samples.domain.constants import SAMPLE_ORDER_STATE_DESCARTADA
+        return self.so_state == SAMPLE_ORDER_STATE_DESCARTADA
 
     @computed_field
     @property
@@ -211,6 +226,7 @@ class GradillaResponse(BaseModel):
     g_rows: int
     g_cols: int
     g_discard_date: Optional[datetime] = None
+    g_discarted: int = Field(0, description="0=No descartada, 1=Descartada")
     g_active: bool
     g_created_by: Optional[int]
     g_created_at: Optional[datetime]
@@ -229,6 +245,25 @@ class GradillaPaginatedResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+class PendingSampleInfo(BaseModel):
+    so_id: int
+    so_barcode: Optional[str]
+    pending_tests: List[str]
+    message: str
+
+
+class GradillaDiscardResponse(BaseModel):
+    g_id: int
+    g_name: str
+    g_discarted: int = Field(..., description="0=No descartada, 1=Descartada por completo")
+    fully_discarded: bool = Field(..., description="True si al terminar no quedó ninguna muestra pendiente en la gradilla")
+    samples_discarded: int
+    discarded_sample_ids: List[int]
+    samples_pending: int
+    pending_samples: List[PendingSampleInfo]
+    message: str
 
 
 # ── Tipos de Gradilla ─────────────────────────────────────────────────────────

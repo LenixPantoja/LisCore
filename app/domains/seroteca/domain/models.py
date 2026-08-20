@@ -72,6 +72,7 @@ class Gradilla(Base):
     g_rows = Column(Integer, nullable=False)
     g_cols = Column(Integer, nullable=False)
     g_discard_date = Column(DateTime, nullable=True)  # Calculated from tipo_gradilla.storage_days
+    g_discarted = Column(Integer, default=0, nullable=False)  # 0=No descartada, 1=Descartada
     g_active = Column(Boolean, default=True, nullable=False)
     g_created_by = Column(Integer, ForeignKey("AppUsers.usr_id", ondelete="SET NULL"), nullable=True)
     g_created_at = Column(DateTime, default=get_bogota_now)

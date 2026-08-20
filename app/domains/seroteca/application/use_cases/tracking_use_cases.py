@@ -9,12 +9,40 @@ logger = logging.getLogger(__name__)
 from app.domains.seroteca.infrastructure.repository import (
     SampleLogRepository,
     GradillaPosicionRepository,
+    GradillaRepository,
 )
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.samples.domain.constants import (
     SAMPLE_ORDER_STATE_CON_MUESTRA,
     SAMPLE_ORDER_STATE_ALMACENADA,
+    SAMPLE_ORDER_STATE_DESCARTADA,
 )
+
+
+def _format_position_label(row: int, col: int) -> str:
+    """Etiqueta estilo hoja de cálculo: letra de columna (0=A, 1=B, ...) + fila 1-indexada. Ej: row=0, col=2 -> 'C1'."""
+    n = col
+    letters = ""
+    while True:
+        n, rem = divmod(n, 26)
+        letters = chr(ord("A") + rem) + letters
+        if n == 0:
+            break
+        n -= 1
+    return f"{letters}{row + 1}"
+
+
+async def _build_storage_observation(db: AsyncSession, g_id: int, row: int, col: int) -> tuple[str, Optional[int]]:
+    """Construye el texto de observación y el log_location_id para un evento de almacenamiento."""
+    rack = await GradillaRepository.get_by_id_with_location(db, g_id)
+    g_number = rack.g_number if rack and rack.g_number else str(g_id)
+    location = rack.seroteca.location if rack and rack.seroteca else None
+    loc_name = location.loc_name if location else "Sin ubicación"
+    loc_id = location.loc_id if location else None
+
+    position_label = _format_position_label(row, col)
+    observation = f"Muestra almacenada en gradilla [ {g_number} ] posicion [ {position_label} ] Localidad [ {loc_name} ]"
+    return observation, loc_id
 
 
 async def _get_sample_by_barcode(db: AsyncSession, barcode: str) -> SamplesOrder:
@@ -55,6 +83,12 @@ async def log_sample_event(
     notes: Optional[str],
 ) -> dict:
     sample = await _get_sample_by_barcode(db, barcode)
+
+    if sample.so_state == SAMPLE_ORDER_STATE_DESCARTADA:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"La muestra con código de barras '{barcode}' fue descartada y ya no admite trazabilidad.",
+        )
 
     # When a sample is found and tracked, mark it as "Con Muestra" at the order level
     sample.so_state = SAMPLE_ORDER_STATE_CON_MUESTRA
@@ -166,11 +200,12 @@ async def auto_store_in_rack(
 
     pos = await GradillaPosicionRepository.store_sample(db, pos.gp_id, sample.so_id, user_id)
 
+    observation, loc_id = await _build_storage_observation(db, g_id, pos.gp_row, pos.gp_col)
     await SampleLogRepository.create(db, {
         "log_sample_order_id": sample.so_id,
         "log_state": 2,  # Almacenada
-        "log_location_id": None,
-        "log_observation": f"Stored in rack {g_id}, row {pos.gp_row}, col {pos.gp_col}",
+        "log_location_id": loc_id,
+        "log_observation": observation,
         "log_user_id": user_id,
     })
 
@@ -203,11 +238,12 @@ async def manual_store_in_position(
             detail="Position is already occupied or does not exist",
         )
 
+    observation, loc_id = await _build_storage_observation(db, pos.gp_gradilla_id, pos.gp_row, pos.gp_col)
     await SampleLogRepository.create(db, {
         "log_sample_order_id": sample.so_id,
         "log_state": 2,
-        "log_location_id": None,
-        "log_observation": f"Manually stored in position {gp_id} (row {pos.gp_row}, col {pos.gp_col})",
+        "log_location_id": loc_id,
+        "log_observation": observation,
         "log_user_id": user_id,
     })
 

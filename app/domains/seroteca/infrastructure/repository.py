@@ -166,8 +166,37 @@ class GradillaRepository:
         return (await db.execute(q)).scalars().first()
 
     @staticmethod
+    async def get_by_id_with_location(db: AsyncSession, g_id: int) -> Optional[Gradilla]:
+        """Carga la gradilla junto con la ubicación de su seroteca (sin posiciones)."""
+        q = (
+            select(Gradilla)
+            .where(Gradilla.g_id == g_id)
+            .options(selectinload(Gradilla.seroteca).selectinload(Seroteca.location))
+        )
+        return (await db.execute(q)).scalars().first()
+
+    @staticmethod
+    async def get_by_id_for_discard(db: AsyncSession, g_id: int) -> Optional[Gradilla]:
+        """Carga la gradilla con sus posiciones/muestras y la ubicación de su seroteca."""
+        sample_loader = selectinload(GradillaPosicion.sample)
+        q = (
+            select(Gradilla)
+            .where(Gradilla.g_id == g_id)
+            .options(
+                selectinload(Gradilla.positions).options(sample_loader),
+                selectinload(Gradilla.seroteca).selectinload(Seroteca.location),
+            )
+        )
+        return (await db.execute(q)).scalars().first()
+
+    @staticmethod
     async def list_by_seroteca(
-        db: AsyncSession, s_id: int, skip: int = 0, limit: int = 100, search: Optional[str] = None
+        db: AsyncSession,
+        s_id: int,
+        skip: int = 0,
+        limit: int = 100,
+        search: Optional[str] = None,
+        discarted: Optional[bool] = None,
     ) -> Tuple[Sequence[Gradilla], int]:
         q = select(Gradilla).where(Gradilla.g_seroteca_id == s_id)
         if search:
@@ -175,6 +204,8 @@ class GradillaRepository:
                 (Gradilla.g_name.ilike(f"%{search}%")) |
                 (Gradilla.g_number.ilike(f"%{search}%"))
             )
+        if discarted is not None:
+            q = q.where(Gradilla.g_discarted == (1 if discarted else 0))
         total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar_one()
         rows = (
             await db.execute(q.offset(skip).limit(limit).order_by(Gradilla.g_name.asc()))

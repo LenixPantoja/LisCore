@@ -223,6 +223,7 @@ _PERMISSIONS = [
     {"p_name": "Seroteca:ManageRacks",     "p_description": "Crear, editar y eliminar gradillas de una seroteca",        "p_module": "Seroteca"},
     {"p_name": "Seroteca:ManageRackTypes", "p_description": "Crear, editar, listar y eliminar tipos de gradilla",        "p_module": "Seroteca"},
     {"p_name": "Seroteca:StoreSample",     "p_description": "Almacenar o retirar muestras en posiciones de gradilla",    "p_module": "Seroteca"},
+    {"p_name": "Seroteca:DiscardRack",     "p_description": "Descartar una gradilla completa y sus muestras",           "p_module": "Seroteca"},
 
     # ── CompoundTemplates ───────────────────────────────────────────────────
     {"p_name": "CompoundTemplates:Create",      "p_description": "Crear plantillas de completado dinámico",          "p_module": "CompoundTemplates"},

@@ -18,13 +18,37 @@ LABELARY_TIMEOUT = 15
 
 _ZPL_TEMPLATE = """^XA
 ^LH0,0
-^FO10,40^AR,0,0^FA20^FDGRADILLA:^FS
-^FO200,40^AR,0,0^FA20^FD{consecutivo}^FS
-^FO10,80^AR,0,0^FA20^FDFECHA:^FS
-^FO200,80^AR,0,0^FA20^FD{fecha_creacion}^FS
-^FO10,120^AR,0,0^FA20^FDFEC DESCARTE:^FS
-^FO200,120^AR,0,0^FA20^FD{fecha_descarte}^FS
-^PQ1^XZ
+
+^FO20,20
+^AR,0,0
+^FDGRADILLA:^FS
+
+^FO180,20
+^AR,0,0
+^FD{consecutivo}^FS
+
+^FO20,60
+^AR,0,0
+^FDFECHA CREA:^FS
+
+^FO180,60
+^AR,0,0
+^FD{fecha_creacion}^FS
+
+^FO20,100
+^AR,0,0
+^FDDESCARTE:^FS
+
+^FO180,100
+^AR,0,0
+^FD{fecha_descarte}^FS
+
+^BY2,3,100
+^FO50,145
+^BCN,50,Y,N,N
+^FD{consecutivo}^FS
+
+^PQ1
 ^XZ"""
 
 
