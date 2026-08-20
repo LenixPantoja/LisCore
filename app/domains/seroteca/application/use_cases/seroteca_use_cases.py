@@ -201,6 +201,19 @@ async def delete_rack(db: AsyncSession, g_id: int, user_id: int | None = None) -
     before = await GradillaRepository.get_by_id(db, g_id)
     if not before:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
+
+    occupied = [pos for pos in before.positions if pos.gp_occupied and pos.sample is not None]
+    if occupied:
+        barcodes = ", ".join(pos.sample.so_barcode for pos in occupied)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"No se puede eliminar la gradilla '{before.g_name}': todavía tiene "
+                f"{len(occupied)} muestra(s) almacenada(s) ({barcodes}). Retire o descarte "
+                f"las muestras antes de eliminarla."
+            ),
+        )
+
     name = before.g_name
     number = before.g_number
     deleted = await GradillaRepository.delete(db, g_id)

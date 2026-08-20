@@ -195,6 +195,7 @@ async def update_rack_endpoint(
 
 @router.delete(
     "/racks/{g_id}",
+    description="Elimina la gradilla y sus posiciones. Falla con 422 si todavía tiene muestras almacenadas.",
     dependencies=[Depends(require_permission("Seroteca:ManageRacks"))],
 )
 async def delete_rack_endpoint(
