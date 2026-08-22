@@ -118,6 +118,9 @@ class GradillaCreate(BaseModel):
     g_name: str
     g_seroteca_id: int
     g_tipo_gradilla_id: Optional[int] = Field(None, description="ID del tipo de gradilla. Si se provee, rows/cols se heredan del template")
+    g_work_group_id: int = Field(
+        ..., description="Grupo de trabajo (área de procesamiento). Solo se podrán almacenar en la gradilla muestras con estudios de ese grupo."
+    )
     g_rows: Optional[int] = Field(None, ge=1, le=100)
     g_cols: Optional[int] = Field(None, ge=1, le=100)
     g_created_by: Optional[int] = None
@@ -125,6 +128,7 @@ class GradillaCreate(BaseModel):
 
 class GradillaUpdate(BaseModel):
     g_name: Optional[str] = None
+    g_work_group_id: Optional[int] = None
     g_active: Optional[bool] = None
 
 
@@ -218,11 +222,21 @@ class GradillaPosicionResponse(BaseModel):
         from_attributes = True
 
 
+class WorkGroupBasic(BaseModel):
+    wg_id: int
+    wg_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class GradillaResponse(BaseModel):
     g_id: int
     g_name: str
     g_number: Optional[str] = None
     g_seroteca_id: int
+    g_work_group_id: Optional[int] = Field(None, description="Grupo de trabajo asignado. Si es null, la gradilla no tiene restricción de grupo.")
+    work_group: Optional[WorkGroupBasic] = None
     g_rows: int
     g_cols: int
     g_discard_date: Optional[datetime] = None

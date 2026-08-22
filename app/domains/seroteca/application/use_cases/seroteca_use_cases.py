@@ -117,6 +117,15 @@ async def delete_seroteca(db: AsyncSession, s_id: int, user_id: int | None = Non
 # ── Gradillas ────────────────────────────────────────────────────────────────
 
 async def create_rack(db: AsyncSession, data: dict, user_id: int | None = None) -> dict:
+    from app.domains.masters.domain.models import WorkGroup
+
+    work_group = await db.get(WorkGroup, data.get("g_work_group_id"))
+    if not work_group:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Grupo de trabajo con ID {data.get('g_work_group_id')} no encontrado.",
+        )
+
     # If g_tipo_gradilla_id is provided, auto-fill rows + cols from the template
     tipo = None
     if data.get("g_tipo_gradilla_id"):
@@ -167,9 +176,18 @@ async def update_rack(db: AsyncSession, g_id: int, data: dict, user_id: int | No
     if not before:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
 
-    editable_fields = ["g_name", "g_rows", "g_cols", "g_discard_date", "g_active"]
+    if data.get("g_work_group_id") is not None:
+        from app.domains.masters.domain.models import WorkGroup
+        work_group = await db.get(WorkGroup, data["g_work_group_id"])
+        if not work_group:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Grupo de trabajo con ID {data['g_work_group_id']} no encontrado.",
+            )
+
+    editable_fields = ["g_name", "g_work_group_id", "g_rows", "g_cols", "g_discard_date", "g_active"]
     field_labels = {
-        "g_name": "Nombre", "g_rows": "Filas", "g_cols": "Columnas",
+        "g_name": "Nombre", "g_work_group_id": "Grupo de trabajo", "g_rows": "Filas", "g_cols": "Columnas",
         "g_discard_date": "Fecha descarte", "g_active": "Activo",
     }
     before_snap = {f: getattr(before, f, None) for f in editable_fields}

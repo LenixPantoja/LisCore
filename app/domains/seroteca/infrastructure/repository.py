@@ -146,8 +146,7 @@ class GradillaRepository:
         ]
         db.add_all(positions)
         await db.commit()
-        await db.refresh(rack)
-        return rack
+        return await GradillaRepository.get_by_id_with_location(db, rack.g_id)
 
     @staticmethod
     async def get_by_id(db: AsyncSession, g_id: int) -> Optional[Gradilla]:
@@ -156,6 +155,7 @@ class GradillaRepository:
             select(Gradilla)
             .where(Gradilla.g_id == g_id)
             .options(
+                selectinload(Gradilla.work_group),
                 selectinload(Gradilla.positions).options(
                     sample_loader.selectinload(SamplesOrder.order)
                         .selectinload(Order.patient),
@@ -171,7 +171,10 @@ class GradillaRepository:
         q = (
             select(Gradilla)
             .where(Gradilla.g_id == g_id)
-            .options(selectinload(Gradilla.seroteca).selectinload(Seroteca.location))
+            .options(
+                selectinload(Gradilla.seroteca).selectinload(Seroteca.location),
+                selectinload(Gradilla.work_group),
+            )
         )
         return (await db.execute(q)).scalars().first()
 
@@ -198,7 +201,7 @@ class GradillaRepository:
         search: Optional[str] = None,
         discarted: Optional[bool] = None,
     ) -> Tuple[Sequence[Gradilla], int]:
-        q = select(Gradilla).where(Gradilla.g_seroteca_id == s_id)
+        q = select(Gradilla).where(Gradilla.g_seroteca_id == s_id).options(selectinload(Gradilla.work_group))
         if search:
             q = q.where(
                 (Gradilla.g_name.ilike(f"%{search}%")) |
@@ -221,8 +224,7 @@ class GradillaRepository:
             setattr(rack, k, v)
         rack.g_updated_at = get_bogota_now()
         await db.commit()
-        await db.refresh(rack)
-        return rack
+        return await GradillaRepository.get_by_id_with_location(db, g_id)
 
     @staticmethod
     async def delete(db: AsyncSession, g_id: int) -> bool:

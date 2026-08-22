@@ -45,6 +45,70 @@ async def _build_storage_observation(db: AsyncSession, g_id: int, row: int, col:
     return observation, loc_id
 
 
+async def _sample_work_group_ids(db: AsyncSession, sample: SamplesOrder) -> set[int]:
+    """
+    Retorna el conjunto de work_group_id de los estudios de la orden de la
+    muestra cuyas pruebas se extraen de ESTE tubo (mismo grupo de sufijo de
+    tipo de muestra que su sample_type), para validar contra el
+    g_work_group_id de una gradilla.
+    """
+    from app.domains.samples.domain.models import SampleType
+    from app.domains.testslabs.domain.models import TestsLab
+    from app.domains.studieslab.domain.models import StudiesTestDetail, StudiesLab
+    from app.domains.orders.domain.models import OrdersDetail
+
+    if not sample.so_sample_type_id or not sample.so_order_id:
+        return set()
+
+    all_st_rows = (await db.execute(select(SampleType))).scalars().all()
+    st_by_id = {st.st_id: st for st in all_st_rows}
+    st = st_by_id.get(sample.so_sample_type_id)
+    sfx = st.st_sufix if st and st.st_sufix is not None else sample.so_sample_type_id
+    related_st_ids = {
+        s.st_id for s in all_st_rows
+        if (s.st_sufix if s.st_sufix is not None else s.st_id) == sfx
+    } or {sample.so_sample_type_id}
+
+    tube_test_ids = set(
+        (await db.execute(
+            select(TestsLab.id).where(TestsLab.samples_type_id.in_(related_st_ids))
+        )).scalars().all()
+    )
+    if not tube_test_ids:
+        return set()
+
+    wg_rows = (
+        await db.execute(
+            select(StudiesLab.work_groups_id)
+            .select_from(OrdersDetail)
+            .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+            .join(StudiesTestDetail, StudiesTestDetail.studies_id == OrdersDetail.od_study_id)
+            .where(
+                OrdersDetail.od_order_id == sample.so_order_id,
+                StudiesTestDetail.tests_id.in_(tube_test_ids),
+            )
+            .distinct()
+        )
+    ).scalars().all()
+    return {wg for wg in wg_rows if wg is not None}
+
+
+async def _validate_sample_work_group(db: AsyncSession, sample: SamplesOrder, g_id: int) -> None:
+    """Si la gradilla tiene g_work_group_id definido, exige que la muestra tenga al menos un estudio de ese grupo."""
+    from app.domains.seroteca.domain.models import Gradilla
+
+    rack = await db.get(Gradilla, g_id)
+    if not rack or not rack.g_work_group_id:
+        return  # gradilla sin restricción de grupo de trabajo
+
+    sample_wgs = await _sample_work_group_ids(db, sample)
+    if rack.g_work_group_id not in sample_wgs:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"La muestra '{sample.so_barcode}' no tiene estudios para esa gradilla.",
+        )
+
+
 async def _get_sample_by_barcode(db: AsyncSession, barcode: str) -> SamplesOrder:
     """Search by barcode. Tries exact match, then reconstructed legacy format {10digits}-{rest}."""
     from sqlalchemy.orm import selectinload
@@ -191,6 +255,8 @@ async def auto_store_in_rack(
             detail=f"La muestra con código de barras '{barcode}' ya está almacenada en la posición {existing.gp_id} (rack {existing.gp_gradilla_id}, fila {existing.gp_row}, col {existing.gp_col}).",
         )
 
+    await _validate_sample_work_group(db, sample, g_id)
+
     pos = await GradillaPosicionRepository.get_next_free(db, g_id)
     if not pos:
         raise HTTPException(
@@ -230,6 +296,11 @@ async def manual_store_in_position(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"La muestra con código de barras '{barcode}' ya está almacenada en la posición {existing.gp_id} (rack {existing.gp_gradilla_id}, fila {existing.gp_row}, col {existing.gp_col}).",
         )
+
+    target_pos = await GradillaPosicionRepository.get_by_id(db, gp_id)
+    if not target_pos:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Position not found")
+    await _validate_sample_work_group(db, sample, target_pos.gp_gradilla_id)
 
     pos = await GradillaPosicionRepository.store_sample(db, gp_id, sample.so_id, user_id)
     if not pos:

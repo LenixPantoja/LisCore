@@ -69,6 +69,7 @@ class Gradilla(Base):
     g_number = Column(String(50), nullable=True)  # DDMMAA-CONSECUTIVO e.g. 300626-1
     g_seroteca_id = Column(Integer, ForeignKey("Serotecas.s_id", ondelete="CASCADE"), nullable=False)
     g_tipo_gradilla_id = Column(Integer, ForeignKey("TiposGradilla.tg_id", ondelete="SET NULL"), nullable=True)
+    g_work_group_id = Column(Integer, ForeignKey("Work_groups.wg_id", ondelete="SET NULL"), nullable=True)
     g_rows = Column(Integer, nullable=False)
     g_cols = Column(Integer, nullable=False)
     g_discard_date = Column(DateTime, nullable=True)  # Calculated from tipo_gradilla.storage_days
@@ -80,6 +81,7 @@ class Gradilla(Base):
 
     seroteca = relationship("Seroteca", back_populates="racks")
     tipo_gradilla = relationship("TipoGradilla", back_populates="racks")
+    work_group = relationship("WorkGroup", foreign_keys=[g_work_group_id])
     positions = relationship("GradillaPosicion", back_populates="rack", cascade="all, delete-orphan")
     created_by_user = relationship("AppUser", foreign_keys=[g_created_by])
 
