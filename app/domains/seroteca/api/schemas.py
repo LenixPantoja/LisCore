@@ -32,6 +32,14 @@ class UserBasic(BaseModel):
         from_attributes = True
 
 
+class WorkGroupBasic(BaseModel):
+    wg_id: int
+    wg_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 class SampleLogResponse(BaseModel):
     sl_id: int
     log_sample_order_id: Optional[int]
@@ -118,8 +126,8 @@ class GradillaCreate(BaseModel):
     g_name: str
     g_seroteca_id: int
     g_tipo_gradilla_id: Optional[int] = Field(None, description="ID del tipo de gradilla. Si se provee, rows/cols se heredan del template")
-    g_work_group_id: int = Field(
-        ..., description="Grupo de trabajo (área de procesamiento). Solo se podrán almacenar en la gradilla muestras con estudios de ese grupo."
+    work_group_ids: List[int] = Field(
+        ..., min_length=1, description="Grupos de trabajo (áreas de procesamiento). Solo se podrán almacenar en la gradilla muestras con estudios de alguno de estos grupos."
     )
     g_rows: Optional[int] = Field(None, ge=1, le=100)
     g_cols: Optional[int] = Field(None, ge=1, le=100)
@@ -128,7 +136,9 @@ class GradillaCreate(BaseModel):
 
 class GradillaUpdate(BaseModel):
     g_name: Optional[str] = None
-    g_work_group_id: Optional[int] = None
+    work_group_ids: Optional[List[int]] = Field(
+        None, min_length=1, description="Reemplaza por completo el conjunto de grupos de trabajo asignados a la gradilla."
+    )
     g_active: Optional[bool] = None
 
 
@@ -179,6 +189,9 @@ class SampleOrderBasic(BaseModel):
     so_state: Optional[int] = Field(None, description="0=Muestra No Ingresada 1=Con Muestra 2=Muestra Sin Definir 3=Almacenada 4=Descartada")
     order: Optional[OrderBasic] = None
     sample_type: Optional[SampleTypeBasic] = None
+    work_groups: List[WorkGroupBasic] = Field(
+        default=[], description="Grupo(s) de trabajo a los que corresponden los estudios de esta muestra."
+    )
 
     @computed_field
     @property
@@ -222,9 +235,9 @@ class GradillaPosicionResponse(BaseModel):
         from_attributes = True
 
 
-class WorkGroupBasic(BaseModel):
-    wg_id: int
-    wg_name: Optional[str] = None
+class GradillaWorkGroupLink(BaseModel):
+    gwg_id: int
+    work_group: Optional[WorkGroupBasic] = None
 
     class Config:
         from_attributes = True
@@ -235,8 +248,7 @@ class GradillaResponse(BaseModel):
     g_name: str
     g_number: Optional[str] = None
     g_seroteca_id: int
-    g_work_group_id: Optional[int] = Field(None, description="Grupo de trabajo asignado. Si es null, la gradilla no tiene restricción de grupo.")
-    work_group: Optional[WorkGroupBasic] = None
+    work_group_links: List[GradillaWorkGroupLink] = Field(default=[], exclude=True)
     g_rows: int
     g_cols: int
     g_discard_date: Optional[datetime] = None
@@ -245,6 +257,11 @@ class GradillaResponse(BaseModel):
     g_created_by: Optional[int]
     g_created_at: Optional[datetime]
     g_updated_at: Optional[datetime]
+
+    @computed_field
+    @property
+    def work_groups(self) -> List[WorkGroupBasic]:
+        return [link.work_group for link in self.work_group_links if link.work_group]
 
     @computed_field
     @property
@@ -294,6 +311,17 @@ class GradillaDiscardResponse(BaseModel):
     discarded_sample_ids: List[int]
     samples_pending: int
     pending_samples: List[PendingSampleInfo]
+    message: str
+
+
+class SampleDiscardResponse(BaseModel):
+    so_id: int
+    so_barcode: Optional[str]
+    so_state: Optional[int] = Field(None, description="0=Muestra No Ingresada 1=Con Muestra 2=Muestra Sin Definir 3=Almacenada 4=Descartada")
+    g_id: int
+    g_name: str
+    g_discarted: int = Field(..., description="0=No descartada, 1=Descartada por completo")
+    fully_discarded: bool = Field(..., description="True si al descartar esta muestra no quedó ninguna otra muestra activa en la gradilla")
     message: str
 
 

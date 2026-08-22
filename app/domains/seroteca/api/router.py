@@ -10,7 +10,7 @@ from app.domains.seroteca.api.schemas import (
     SampleLogCreate, SampleLogPaginatedResponse,
     SerotecaCreate, SerotecaUpdate, SerotecaResponse, SerotecaPaginatedResponse,
     GradillaCreate, GradillaUpdate, GradillaResponse, GradillaWithPositionsResponse,
-    GradillaPaginatedResponse, GradillaPosicionResponse, GradillaDiscardResponse,
+    GradillaPaginatedResponse, GradillaPosicionResponse, GradillaDiscardResponse, SampleDiscardResponse,
     TipoGradillaCreate, TipoGradillaUpdate, TipoGradillaResponse, TipoGradillaPaginatedResponse,
     AutoStoreRequest, ManualStoreRequest,
 )
@@ -23,7 +23,8 @@ from app.domains.seroteca.application.use_cases.tracking_use_cases import (
 )
 from app.domains.seroteca.application.use_cases.seroteca_use_cases import (
     create_seroteca, get_seroteca, list_serotecas, update_seroteca, delete_seroteca,
-    create_rack, get_rack, list_racks, update_rack, delete_rack, discard_rack,
+    create_rack, get_rack, list_racks, update_rack, delete_rack,
+    discard_rack, discard_rack_by_work_group, discard_sample,
     create_tipo_gradilla, get_tipo_gradilla, list_tipos_gradilla, update_tipo_gradilla, delete_tipo_gradilla,
     generate_gradilla_sticker,
 )
@@ -228,6 +229,51 @@ async def discard_rack_endpoint(
     current_user: AppUser = Depends(get_current_user),
 ):
     return await discard_rack(db, g_id, current_user.usr_id)
+
+
+@router.post(
+    "/racks/{g_id}/discard/work-group/{work_group_id}",
+    response_model=GradillaDiscardResponse,
+    summary="Descartar las muestras de una gradilla que pertenecen a un grupo de trabajo",
+    description=(
+        "Descarta (so_state=4), dentro de la gradilla indicada, solo las muestras "
+        "cuyos estudios correspondan al grupo de trabajo indicado y que ya estén "
+        "completamente procesadas. Las muestras de ese grupo con estudios "
+        "pendientes se OMITEN y se reportan en `pending_samples`. La gradilla solo "
+        "queda marcada como completamente descartada (`fully_discarded=true`) si, "
+        "al terminar, no queda ninguna muestra activa pendiente en TODA la "
+        "gradilla (no solo en el grupo indicado)."
+    ),
+    dependencies=[Depends(require_permission("Seroteca:DiscardRack"))],
+)
+async def discard_rack_by_work_group_endpoint(
+    g_id: int,
+    work_group_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
+    return await discard_rack_by_work_group(db, g_id, work_group_id, current_user.usr_id)
+
+
+@router.post(
+    "/racks/{g_id}/discard/sample/{so_id}",
+    response_model=SampleDiscardResponse,
+    summary="Descartar una única muestra de una gradilla",
+    description=(
+        "Descarta (so_state=4) una sola muestra (por so_id) almacenada en la "
+        "gradilla indicada, siempre que ya tenga todos sus estudios procesados. "
+        "Si la muestra tiene estudios pendientes, retorna 422 indicando cuáles "
+        "faltan y no la descarta."
+    ),
+    dependencies=[Depends(require_permission("Seroteca:DiscardRack"))],
+)
+async def discard_sample_endpoint(
+    g_id: int,
+    so_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
+    return await discard_sample(db, g_id, so_id, current_user.usr_id)
 
 
 # ── Tipos de Gradilla ─────────────────────────────────────────────────────────

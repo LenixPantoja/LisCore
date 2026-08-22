@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Text, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 from utils.timezone import get_bogota_now
@@ -69,7 +69,6 @@ class Gradilla(Base):
     g_number = Column(String(50), nullable=True)  # DDMMAA-CONSECUTIVO e.g. 300626-1
     g_seroteca_id = Column(Integer, ForeignKey("Serotecas.s_id", ondelete="CASCADE"), nullable=False)
     g_tipo_gradilla_id = Column(Integer, ForeignKey("TiposGradilla.tg_id", ondelete="SET NULL"), nullable=True)
-    g_work_group_id = Column(Integer, ForeignKey("Work_groups.wg_id", ondelete="SET NULL"), nullable=True)
     g_rows = Column(Integer, nullable=False)
     g_cols = Column(Integer, nullable=False)
     g_discard_date = Column(DateTime, nullable=True)  # Calculated from tipo_gradilla.storage_days
@@ -81,9 +80,29 @@ class Gradilla(Base):
 
     seroteca = relationship("Seroteca", back_populates="racks")
     tipo_gradilla = relationship("TipoGradilla", back_populates="racks")
-    work_group = relationship("WorkGroup", foreign_keys=[g_work_group_id])
+    work_group_links = relationship("GradillaWorkGroup", back_populates="gradilla", cascade="all, delete-orphan")
     positions = relationship("GradillaPosicion", back_populates="rack", cascade="all, delete-orphan")
     created_by_user = relationship("AppUser", foreign_keys=[g_created_by])
+
+
+class GradillaWorkGroup(Base):
+    """
+    Asociación muchos-a-muchos entre una gradilla y los grupos de trabajo
+    (áreas de procesamiento) de los cuales puede almacenar muestras.
+    """
+
+    __tablename__ = "GradillaWorkGroups"
+
+    gwg_id = Column(Integer, primary_key=True, index=True)
+    gwg_gradilla_id = Column(Integer, ForeignKey("Gradillas.g_id", ondelete="CASCADE"), nullable=False)
+    gwg_work_group_id = Column(Integer, ForeignKey("Work_groups.wg_id", ondelete="CASCADE"), nullable=False)
+
+    gradilla = relationship("Gradilla", back_populates="work_group_links")
+    work_group = relationship("WorkGroup", foreign_keys=[gwg_work_group_id])
+
+    __table_args__ = (
+        UniqueConstraint("gwg_gradilla_id", "gwg_work_group_id", name="uq_gradilla_work_group"),
+    )
 
 
 class GradillaPosicion(Base):

@@ -119,11 +119,15 @@ async def delete_seroteca(db: AsyncSession, s_id: int, user_id: int | None = Non
 async def create_rack(db: AsyncSession, data: dict, user_id: int | None = None) -> dict:
     from app.domains.masters.domain.models import WorkGroup
 
-    work_group = await db.get(WorkGroup, data.get("g_work_group_id"))
-    if not work_group:
+    work_group_ids = data.get("work_group_ids") or []
+    found_ids = set((
+        await db.execute(select(WorkGroup.wg_id).where(WorkGroup.wg_id.in_(work_group_ids)))
+    ).scalars().all())
+    missing = set(work_group_ids) - found_ids
+    if missing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Grupo de trabajo con ID {data.get('g_work_group_id')} no encontrado.",
+            detail=f"Grupo(s) de trabajo no encontrado(s): {', '.join(str(i) for i in sorted(missing))}.",
         )
 
     # If g_tipo_gradilla_id is provided, auto-fill rows + cols from the template
@@ -146,16 +150,52 @@ async def create_rack(db: AsyncSession, data: dict, user_id: int | None = None) 
     _add_trace(
         db, user_id, OPERATION_MANAGE_GRADILLA,
         f"Creación de gradilla {result.g_name}",
-        f"ID: {result.g_id} | Número: {result.g_number} | Seroteca: {result.g_seroteca_id} | {result.g_rows}x{result.g_cols}",
+        (
+            f"ID: {result.g_id} | Número: {result.g_number} | Seroteca: {result.g_seroteca_id} "
+            f"| {result.g_rows}x{result.g_cols} | Grupos de trabajo: {sorted(work_group_ids)}"
+        ),
     )
     await db.commit()
     return result
+
+
+async def _attach_sample_work_groups(db: AsyncSession, rack: Gradilla) -> None:
+    """
+    Adjunta a cada muestra almacenada en la gradilla el/los grupo(s) de trabajo
+    a los que corresponden sus estudios (mismo criterio que la validación de
+    almacenamiento), para que el front pueda mostrar a qué grupo pertenece
+    cada muestra.
+    """
+    from app.domains.masters.domain.models import WorkGroup
+    from app.domains.seroteca.application.use_cases.tracking_use_cases import _sample_work_group_ids
+
+    samples = [pos.sample for pos in rack.positions if pos.sample is not None]
+    if not samples:
+        return
+
+    wg_ids_by_sample: dict[int, set[int]] = {}
+    all_wg_ids: set[int] = set()
+    for sample in samples:
+        wg_ids = await _sample_work_group_ids(db, sample)
+        wg_ids_by_sample[sample.so_id] = wg_ids
+        all_wg_ids |= wg_ids
+
+    wg_by_id: dict[int, WorkGroup] = {}
+    if all_wg_ids:
+        wg_rows = (await db.execute(select(WorkGroup).where(WorkGroup.wg_id.in_(all_wg_ids)))).scalars().all()
+        wg_by_id = {wg.wg_id: wg for wg in wg_rows}
+
+    for sample in samples:
+        sample.work_groups = [
+            wg_by_id[wg_id] for wg_id in sorted(wg_ids_by_sample.get(sample.so_id, set())) if wg_id in wg_by_id
+        ]
 
 
 async def get_rack(db: AsyncSession, g_id: int) -> dict:
     rack = await GradillaRepository.get_by_id(db, g_id)
     if not rack:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
+    await _attach_sample_work_groups(db, rack)
     return rack
 
 
@@ -176,21 +216,57 @@ async def update_rack(db: AsyncSession, g_id: int, data: dict, user_id: int | No
     if not before:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
 
-    if data.get("g_work_group_id") is not None:
+    work_group_ids = data.get("work_group_ids")
+    if work_group_ids is not None:
         from app.domains.masters.domain.models import WorkGroup
-        work_group = await db.get(WorkGroup, data["g_work_group_id"])
-        if not work_group:
+        found_ids = set((
+            await db.execute(select(WorkGroup.wg_id).where(WorkGroup.wg_id.in_(work_group_ids)))
+        ).scalars().all())
+        missing = set(work_group_ids) - found_ids
+        if missing:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Grupo de trabajo con ID {data['g_work_group_id']} no encontrado.",
+                detail=f"Grupo(s) de trabajo no encontrado(s): {', '.join(str(i) for i in sorted(missing))}.",
             )
 
-    editable_fields = ["g_name", "g_work_group_id", "g_rows", "g_cols", "g_discard_date", "g_active"]
+        # No permitir desvincular un grupo de trabajo si la gradilla ya tiene
+        # muestras almacenadas que corresponden a ese grupo.
+        current_wg_ids = {link.gwg_work_group_id for link in before.work_group_links}
+        removed_wg_ids = current_wg_ids - set(work_group_ids)
+        if removed_wg_ids:
+            from app.domains.seroteca.application.use_cases.tracking_use_cases import _sample_work_group_ids
+
+            occupied_samples = [pos.sample for pos in before.positions if pos.gp_occupied and pos.sample is not None]
+            barcodes_by_blocked_wg: dict[int, list[str]] = {}
+            for sample in occupied_samples:
+                sample_wgs = await _sample_work_group_ids(db, sample)
+                for wg_id in sample_wgs & removed_wg_ids:
+                    barcodes_by_blocked_wg.setdefault(wg_id, []).append(sample.so_barcode)
+
+            if barcodes_by_blocked_wg:
+                wg_rows = (
+                    await db.execute(select(WorkGroup).where(WorkGroup.wg_id.in_(barcodes_by_blocked_wg.keys())))
+                ).scalars().all()
+                wg_name_by_id = {wg.wg_id: wg.wg_name for wg in wg_rows}
+                details = "; ".join(
+                    f"{wg_name_by_id.get(wg_id, wg_id)} (muestras: {', '.join(barcodes)})"
+                    for wg_id, barcodes in barcodes_by_blocked_wg.items()
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"No se puede desvincular el/los grupo(s) de trabajo con muestras ya "
+                        f"almacenadas en la gradilla: {details}."
+                    ),
+                )
+
+    editable_fields = ["g_name", "g_rows", "g_cols", "g_discard_date", "g_active"]
     field_labels = {
-        "g_name": "Nombre", "g_work_group_id": "Grupo de trabajo", "g_rows": "Filas", "g_cols": "Columnas",
+        "g_name": "Nombre", "g_rows": "Filas", "g_cols": "Columnas",
         "g_discard_date": "Fecha descarte", "g_active": "Activo",
     }
     before_snap = {f: getattr(before, f, None) for f in editable_fields}
+    before_wg_ids = sorted(link.gwg_work_group_id for link in before.work_group_links)
 
     rack = await GradillaRepository.update(db, g_id, data)
     if not rack:
@@ -203,6 +279,9 @@ async def update_rack(db: AsyncSession, g_id: int, data: dict, user_id: int | No
             new = data[f]
             if old != new:
                 diff.append(f"{field_labels.get(f, f)}: {old} → {new}")
+
+    if work_group_ids is not None and sorted(work_group_ids) != before_wg_ids:
+        diff.append(f"Grupos de trabajo: {before_wg_ids} → {sorted(work_group_ids)}")
 
     if diff:
         _add_trace(
@@ -344,6 +423,52 @@ async def _get_pending_tests_by_sample(db: AsyncSession, samples: list) -> dict[
     return pending_by_sample
 
 
+async def _get_user_display_name(db: AsyncSession, user_id: int | None) -> str:
+    from app.domains.users.infrastructure.models import AppUser
+
+    user = await db.get(AppUser, user_id) if user_id else None
+    parts = [
+        user.usr_first_name if user else None,
+        user.usr_middle_name if user else None,
+        user.usr_last_name if user else None,
+        user.usr_second_last_name if user else None,
+    ]
+    return " ".join(p for p in parts if p).strip() or "Usuario desconocido"
+
+
+def _pending_sample_info(pos, pending_by_sample: dict[int, list[str]]) -> dict:
+    pending = pending_by_sample[pos.sample.so_id]
+    return {
+        "so_id": pos.sample.so_id,
+        "so_barcode": pos.sample.so_barcode,
+        "pending_tests": pending,
+        "message": f"Muestra {pos.sample.so_barcode} tiene pendiente {', '.join(pending)}",
+    }
+
+
+async def _discard_samples(
+    db: AsyncSession,
+    samples: list,
+    user_id: int,
+    user_name: str,
+    loc_id: Optional[int],
+    loc_name: str,
+    time_str: str,
+) -> list[int]:
+    discarded_ids: list[int] = []
+    for sample in samples:
+        sample.so_state = SAMPLE_ORDER_STATE_DESCARTADA
+        await SampleLogRepository.create(db, {
+            "log_sample_order_id": sample.so_id,
+            "log_state": SAMPLE_LOG_STATE_DESCARTADA,
+            "log_location_id": loc_id,
+            "log_observation": f"Muestra Descartada por [ {user_name} ] [ {time_str} ] [ {loc_name} ]",
+            "log_user_id": user_id,
+        })
+        discarded_ids.append(sample.so_id)
+    return discarded_ids
+
+
 async def discard_rack(db: AsyncSession, g_id: int, user_id: int) -> dict:
     """
     Descarta las muestras de una gradilla que ya tienen todos sus estudios
@@ -356,8 +481,6 @@ async def discard_rack(db: AsyncSession, g_id: int, user_id: int) -> dict:
     muestra pendiente. Si aún quedan muestras pendientes, la gradilla sigue
     con g_discarted=0 y puede volver a intentarse más adelante.
     """
-    from app.domains.users.infrastructure.models import AppUser
-
     rack = await GradillaRepository.get_by_id_for_discard(db, g_id)
     if not rack:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
@@ -375,25 +498,12 @@ async def discard_rack(db: AsyncSession, g_id: int, user_id: int) -> dict:
 
     ready_positions = [pos for pos in active_positions if pos.sample.so_id not in pending_by_sample]
     pending_samples = [
-        {
-            "so_id": pos.sample.so_id,
-            "so_barcode": pos.sample.so_barcode,
-            "pending_tests": pending_by_sample[pos.sample.so_id],
-            "message": f"Muestra {pos.sample.so_barcode} tiene pendiente {', '.join(pending_by_sample[pos.sample.so_id])}",
-        }
+        _pending_sample_info(pos, pending_by_sample)
         for pos in active_positions
         if pos.sample.so_id in pending_by_sample
     ]
 
-    user = await db.get(AppUser, user_id)
-    user_parts = [
-        user.usr_first_name if user else None,
-        user.usr_middle_name if user else None,
-        user.usr_last_name if user else None,
-        user.usr_second_last_name if user else None,
-    ]
-    user_name = " ".join(p for p in user_parts if p).strip() or "Usuario desconocido"
-
+    user_name = await _get_user_display_name(db, user_id)
     location = rack.seroteca.location if rack.seroteca else None
     loc_name = location.loc_name if location else "Sin ubicación"
     loc_id = location.loc_id if location else None
@@ -401,19 +511,9 @@ async def discard_rack(db: AsyncSession, g_id: int, user_id: int) -> dict:
     now = get_bogota_now()
     time_str = now.strftime("%I:%M:%S %p").lower()
 
-    discarded_sample_ids: list[int] = []
-    for pos in ready_positions:
-        sample = pos.sample
-
-        sample.so_state = SAMPLE_ORDER_STATE_DESCARTADA
-        await SampleLogRepository.create(db, {
-            "log_sample_order_id": sample.so_id,
-            "log_state": SAMPLE_LOG_STATE_DESCARTADA,
-            "log_location_id": loc_id,
-            "log_observation": f"Muestra Descartada por [ {user_name} ] [ {time_str} ] [ {loc_name} ]",
-            "log_user_id": user_id,
-        })
-        discarded_sample_ids.append(sample.so_id)
+    discarded_sample_ids = await _discard_samples(
+        db, [pos.sample for pos in ready_positions], user_id, user_name, loc_id, loc_name, time_str
+    )
 
     fully_discarded = len(pending_samples) == 0
     if fully_discarded:
@@ -456,6 +556,196 @@ async def discard_rack(db: AsyncSession, g_id: int, user_id: int) -> dict:
         "samples_pending": len(pending_samples),
         "pending_samples": pending_samples,
         "message": message,
+    }
+
+
+async def discard_rack_by_work_group(db: AsyncSession, g_id: int, work_group_id: int, user_id: int) -> dict:
+    """
+    Descarta, dentro de una gradilla, solo las muestras cuyos estudios
+    correspondan al grupo de trabajo indicado y que ya tengan todo procesado.
+    Las muestras de ese grupo que sigan pendientes se reportan pero no se
+    tocan (igual que en discard_rack). La gradilla completa solo queda
+    marcada como g_discarted=1 si, al terminar, no queda ninguna muestra
+    activa pendiente en TODA la gradilla (no solo en el grupo indicado).
+    """
+    from app.domains.masters.domain.models import WorkGroup
+    from app.domains.seroteca.application.use_cases.tracking_use_cases import _sample_work_group_ids
+
+    work_group = await db.get(WorkGroup, work_group_id)
+    if not work_group:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Grupo de trabajo con ID {work_group_id} no encontrado.",
+        )
+
+    rack = await GradillaRepository.get_by_id_for_discard(db, g_id)
+    if not rack:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
+    if rack.g_discarted:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"La gradilla '{rack.g_name}' ya fue descartada.",
+        )
+
+    occupied_positions = [pos for pos in rack.positions if pos.gp_occupied and pos.sample is not None]
+    active_positions = [pos for pos in occupied_positions if pos.sample.so_state != SAMPLE_ORDER_STATE_DESCARTADA]
+
+    pending_by_sample = await _get_pending_tests_by_sample(db, [pos.sample for pos in active_positions])
+
+    group_positions = []
+    for pos in active_positions:
+        wgs = await _sample_work_group_ids(db, pos.sample)
+        if work_group_id in wgs:
+            group_positions.append(pos)
+
+    if not group_positions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"La gradilla '{rack.g_name}' no tiene muestras activas del grupo de trabajo '{work_group.wg_name}'.",
+        )
+
+    ready_positions = [pos for pos in group_positions if pos.sample.so_id not in pending_by_sample]
+    pending_samples = [
+        _pending_sample_info(pos, pending_by_sample)
+        for pos in group_positions
+        if pos.sample.so_id in pending_by_sample
+    ]
+
+    user_name = await _get_user_display_name(db, user_id)
+    location = rack.seroteca.location if rack.seroteca else None
+    loc_name = location.loc_name if location else "Sin ubicación"
+    loc_id = location.loc_id if location else None
+
+    now = get_bogota_now()
+    time_str = now.strftime("%I:%M:%S %p").lower()
+
+    discarded_sample_ids = await _discard_samples(
+        db, [pos.sample for pos in ready_positions], user_id, user_name, loc_id, loc_name, time_str
+    )
+
+    # ¿Queda algo activo en TODA la gradilla (no solo en el grupo) tras este descarte?
+    remaining_active = len(active_positions) - len(discarded_sample_ids)
+    fully_discarded = remaining_active == 0
+    if fully_discarded:
+        rack.g_discarted = 1
+        rack.g_updated_at = get_bogota_now()
+
+    _add_trace(
+        db, user_id, OPERATION_MANAGE_GRADILLA,
+        f"Descarte de gradilla {rack.g_name} - grupo {work_group.wg_name}",
+        (
+            f"ID: {rack.g_id} | Número: {rack.g_number} | Grupo de trabajo: {work_group.wg_name} "
+            f"| Muestras descartadas: {len(discarded_sample_ids)} | Muestras pendientes (omitidas): {len(pending_samples)} "
+            f"| Gradilla completamente descartada: {fully_discarded}"
+        ),
+    )
+
+    await db.commit()
+    await db.refresh(rack)
+
+    if discarded_sample_ids and not pending_samples:
+        message = f"{len(discarded_sample_ids)} muestra(s) del grupo '{work_group.wg_name}' descartada(s) correctamente."
+    elif discarded_sample_ids:
+        message = (
+            f"{len(discarded_sample_ids)} muestra(s) del grupo '{work_group.wg_name}' descartada(s). "
+            f"{len(pending_samples)} muestra(s) de ese grupo quedaron pendientes por tener estudios sin procesar."
+        )
+    else:
+        message = (
+            f"No se descartó ninguna muestra del grupo '{work_group.wg_name}': "
+            f"las {len(pending_samples)} muestra(s) todavía tienen estudios pendientes por procesar."
+        )
+
+    return {
+        "g_id": rack.g_id,
+        "g_name": rack.g_name,
+        "g_discarted": rack.g_discarted,
+        "fully_discarded": fully_discarded,
+        "samples_discarded": len(discarded_sample_ids),
+        "discarded_sample_ids": discarded_sample_ids,
+        "samples_pending": len(pending_samples),
+        "pending_samples": pending_samples,
+        "message": message,
+    }
+
+
+async def discard_sample(db: AsyncSession, g_id: int, so_id: int, user_id: int) -> dict:
+    """
+    Descarta una única muestra (por so_id) dentro de una gradilla, siempre
+    que ya tenga todos sus estudios procesados. Si tiene estudios
+    pendientes, no se descarta y se informa cuáles faltan.
+    """
+    rack = await GradillaRepository.get_by_id_for_discard(db, g_id)
+    if not rack:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
+
+    pos = next(
+        (p for p in rack.positions if p.gp_occupied and p.sample is not None and p.sample.so_id == so_id),
+        None,
+    )
+    if not pos:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"La muestra con ID {so_id} no está almacenada en la gradilla '{rack.g_name}'.",
+        )
+
+    sample = pos.sample
+    if sample.so_state == SAMPLE_ORDER_STATE_DESCARTADA:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"La muestra '{sample.so_barcode}' ya fue descartada.",
+        )
+
+    pending_by_sample = await _get_pending_tests_by_sample(db, [sample])
+    if sample.so_id in pending_by_sample:
+        pending = pending_by_sample[sample.so_id]
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Muestra {sample.so_barcode} tiene pendiente {', '.join(pending)}",
+        )
+
+    user_name = await _get_user_display_name(db, user_id)
+    location = rack.seroteca.location if rack.seroteca else None
+    loc_name = location.loc_name if location else "Sin ubicación"
+    loc_id = location.loc_id if location else None
+
+    now = get_bogota_now()
+    time_str = now.strftime("%I:%M:%S %p").lower()
+
+    await _discard_samples(db, [sample], user_id, user_name, loc_id, loc_name, time_str)
+
+    occupied_positions = [p for p in rack.positions if p.gp_occupied and p.sample is not None]
+    remaining_active = [
+        p for p in occupied_positions
+        if p.sample.so_id != sample.so_id and p.sample.so_state != SAMPLE_ORDER_STATE_DESCARTADA
+    ]
+    fully_discarded = len(remaining_active) == 0
+    if fully_discarded and not rack.g_discarted:
+        rack.g_discarted = 1
+        rack.g_updated_at = get_bogota_now()
+
+    _add_trace(
+        db, user_id, OPERATION_MANAGE_GRADILLA,
+        f"Descarte individual de muestra {sample.so_barcode} - gradilla {rack.g_name}",
+        (
+            f"ID gradilla: {rack.g_id} | Número: {rack.g_number} | Muestra: {sample.so_barcode} (so_id {sample.so_id}) "
+            f"| Gradilla completamente descartada: {fully_discarded}"
+        ),
+    )
+
+    await db.commit()
+    await db.refresh(rack)
+    await db.refresh(sample)
+
+    return {
+        "so_id": sample.so_id,
+        "so_barcode": sample.so_barcode,
+        "so_state": sample.so_state,
+        "g_id": rack.g_id,
+        "g_name": rack.g_name,
+        "g_discarted": rack.g_discarted,
+        "fully_discarded": fully_discarded,
+        "message": f"Muestra '{sample.so_barcode}' descartada correctamente.",
     }
 
 

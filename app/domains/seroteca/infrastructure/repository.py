@@ -1,11 +1,13 @@
 from typing import Optional, Sequence, Tuple
 from datetime import datetime, timedelta
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.domains.seroteca.domain.models import SampleLog, Seroteca, Gradilla, GradillaPosicion, TipoGradilla
+from app.domains.seroteca.domain.models import (
+    SampleLog, Seroteca, Gradilla, GradillaPosicion, TipoGradilla, GradillaWorkGroup,
+)
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.orders.domain.models import Order
 from utils.timezone import get_bogota_now
@@ -134,6 +136,8 @@ class GradillaRepository:
 
     @staticmethod
     async def create(db: AsyncSession, data: dict) -> Gradilla:
+        data = dict(data)
+        work_group_ids = data.pop("work_group_ids", None) or []
         rack = Gradilla(**data)
         db.add(rack)
         await db.flush()  # get rack.g_id before generating positions
@@ -145,6 +149,10 @@ class GradillaRepository:
             for c in range(rack.g_cols)
         ]
         db.add_all(positions)
+
+        for wg_id in work_group_ids:
+            db.add(GradillaWorkGroup(gwg_gradilla_id=rack.g_id, gwg_work_group_id=wg_id))
+
         await db.commit()
         return await GradillaRepository.get_by_id_with_location(db, rack.g_id)
 
@@ -155,7 +163,7 @@ class GradillaRepository:
             select(Gradilla)
             .where(Gradilla.g_id == g_id)
             .options(
-                selectinload(Gradilla.work_group),
+                selectinload(Gradilla.work_group_links).selectinload(GradillaWorkGroup.work_group),
                 selectinload(Gradilla.positions).options(
                     sample_loader.selectinload(SamplesOrder.order)
                         .selectinload(Order.patient),
@@ -173,7 +181,7 @@ class GradillaRepository:
             .where(Gradilla.g_id == g_id)
             .options(
                 selectinload(Gradilla.seroteca).selectinload(Seroteca.location),
-                selectinload(Gradilla.work_group),
+                selectinload(Gradilla.work_group_links).selectinload(GradillaWorkGroup.work_group),
             )
         )
         return (await db.execute(q)).scalars().first()
@@ -201,7 +209,11 @@ class GradillaRepository:
         search: Optional[str] = None,
         discarted: Optional[bool] = None,
     ) -> Tuple[Sequence[Gradilla], int]:
-        q = select(Gradilla).where(Gradilla.g_seroteca_id == s_id).options(selectinload(Gradilla.work_group))
+        q = (
+            select(Gradilla)
+            .where(Gradilla.g_seroteca_id == s_id)
+            .options(selectinload(Gradilla.work_group_links).selectinload(GradillaWorkGroup.work_group))
+        )
         if search:
             q = q.where(
                 (Gradilla.g_name.ilike(f"%{search}%")) |
@@ -220,9 +232,23 @@ class GradillaRepository:
         rack = await db.get(Gradilla, g_id)
         if not rack:
             return None
+        data = dict(data)
+        work_group_ids = data.pop("work_group_ids", None)
         for k, v in data.items():
             setattr(rack, k, v)
         rack.g_updated_at = get_bogota_now()
+
+        if work_group_ids is not None:
+            await db.execute(
+                delete(GradillaWorkGroup).where(GradillaWorkGroup.gwg_gradilla_id == g_id)
+            )
+            for wg_id in work_group_ids:
+                db.add(GradillaWorkGroup(gwg_gradilla_id=g_id, gwg_work_group_id=wg_id))
+            # `rack` may already have work_group_links loaded in the identity map
+            # (e.g. from an earlier get_by_id in this same session) — expire it so
+            # the next selectinload actually re-fetches instead of reusing the stale list.
+            db.expire(rack, ["work_group_links"])
+
         await db.commit()
         return await GradillaRepository.get_by_id_with_location(db, g_id)
 

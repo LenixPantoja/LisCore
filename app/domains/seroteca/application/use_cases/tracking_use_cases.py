@@ -45,12 +45,28 @@ async def _build_storage_observation(db: AsyncSession, g_id: int, row: int, col:
     return observation, loc_id
 
 
+async def _describe_existing_storage(db: AsyncSession, existing, sample: SamplesOrder, barcode: str) -> str:
+    """Mensaje para cuando un barcode ya está ocupando una posición: indica gradilla + posición
+    con el formato de etiqueta (ej. 'gradilla 200826-5 posición C1'), y aclara si la muestra
+    en esa posición ya fue descartada (para no confundirlo con un almacenamiento activo)."""
+    rack = await GradillaRepository.get_by_id_with_location(db, existing.gp_gradilla_id)
+    g_number = rack.g_number if rack and rack.g_number else str(existing.gp_gradilla_id)
+    position_label = _format_position_label(existing.gp_row, existing.gp_col)
+
+    if sample.so_state == SAMPLE_ORDER_STATE_DESCARTADA:
+        return (
+            f"La muestra con código de barras '{barcode}' fue descartada. "
+            f"Se encontraba almacenada en gradilla {g_number} posición {position_label}."
+        )
+    return f"La muestra con código de barras '{barcode}' ya está almacenada en gradilla {g_number} posición {position_label}."
+
+
 async def _sample_work_group_ids(db: AsyncSession, sample: SamplesOrder) -> set[int]:
     """
     Retorna el conjunto de work_group_id de los estudios de la orden de la
     muestra cuyas pruebas se extraen de ESTE tubo (mismo grupo de sufijo de
-    tipo de muestra que su sample_type), para validar contra el
-    g_work_group_id de una gradilla.
+    tipo de muestra que su sample_type), para validar contra los grupos de
+    trabajo asignados a una gradilla.
     """
     from app.domains.samples.domain.models import SampleType
     from app.domains.testslabs.domain.models import TestsLab
@@ -94,15 +110,19 @@ async def _sample_work_group_ids(db: AsyncSession, sample: SamplesOrder) -> set[
 
 
 async def _validate_sample_work_group(db: AsyncSession, sample: SamplesOrder, g_id: int) -> None:
-    """Si la gradilla tiene g_work_group_id definido, exige que la muestra tenga al menos un estudio de ese grupo."""
-    from app.domains.seroteca.domain.models import Gradilla
+    """Exige que la muestra tenga al menos un estudio de alguno de los grupos de trabajo asignados a la gradilla."""
+    from app.domains.seroteca.domain.models import GradillaWorkGroup
 
-    rack = await db.get(Gradilla, g_id)
-    if not rack or not rack.g_work_group_id:
+    rack_wg_ids = set(
+        (await db.execute(
+            select(GradillaWorkGroup.gwg_work_group_id).where(GradillaWorkGroup.gwg_gradilla_id == g_id)
+        )).scalars().all()
+    )
+    if not rack_wg_ids:
         return  # gradilla sin restricción de grupo de trabajo
 
     sample_wgs = await _sample_work_group_ids(db, sample)
-    if rack.g_work_group_id not in sample_wgs:
+    if not (rack_wg_ids & sample_wgs):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"La muestra '{sample.so_barcode}' no tiene estudios para esa gradilla.",
@@ -252,7 +272,7 @@ async def auto_store_in_rack(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"La muestra con código de barras '{barcode}' ya está almacenada en la posición {existing.gp_id} (rack {existing.gp_gradilla_id}, fila {existing.gp_row}, col {existing.gp_col}).",
+            detail=await _describe_existing_storage(db, existing, sample, barcode),
         )
 
     await _validate_sample_work_group(db, sample, g_id)
@@ -294,7 +314,7 @@ async def manual_store_in_position(
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"La muestra con código de barras '{barcode}' ya está almacenada en la posición {existing.gp_id} (rack {existing.gp_gradilla_id}, fila {existing.gp_row}, col {existing.gp_col}).",
+            detail=await _describe_existing_storage(db, existing, sample, barcode),
         )
 
     target_pos = await GradillaPosicionRepository.get_by_id(db, gp_id)
