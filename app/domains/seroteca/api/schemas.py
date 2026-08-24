@@ -192,6 +192,16 @@ class SampleOrderBasic(BaseModel):
     work_groups: List[WorkGroupBasic] = Field(
         default=[], description="Grupo(s) de trabajo a los que corresponden los estudios de esta muestra."
     )
+    days_until_discard: Optional[int] = Field(
+        None,
+        description=(
+            "Días que faltan para el descarte de ESTA muestra, calculados desde la fecha de "
+            "ingreso de su orden más los días de almacenamiento configurados en la gradilla."
+        ),
+    )
+    about_to_discard: bool = Field(
+        False, description="True si a esta muestra le quedan entre 0 y 3 días para su descarte (y aún no fue descartada)."
+    )
 
     @computed_field
     @property

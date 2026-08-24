@@ -191,11 +191,48 @@ async def _attach_sample_work_groups(db: AsyncSession, rack: Gradilla) -> None:
         ]
 
 
+def _attach_sample_discard_info(rack: Gradilla) -> None:
+    """
+    Adjunta a cada muestra almacenada cuántos días le faltan para SU descarte
+    y si ya está por descartarse (<=3 días). Ahora que el descarte es por
+    muestra (no solo por gradilla completa), esta fecha límite se calcula
+    individualmente: fecha de ingreso de la orden de la muestra + los días de
+    almacenamiento configurados para la gradilla (g_discard_date - g_created_at),
+    en vez de usar la misma g_discard_date fija para todas las muestras.
+    """
+    samples = [pos.sample for pos in rack.positions if pos.sample is not None]
+    if not samples:
+        return
+
+    today = get_bogota_now().date()
+    storage_days: Optional[int] = None
+    if rack.g_discard_date and rack.g_created_at:
+        storage_days = (rack.g_discard_date.date() - rack.g_created_at.date()).days
+
+    for sample in samples:
+        o_date = sample.order.o_date if sample.order else None
+        days_until: Optional[int] = None
+        if o_date is not None and storage_days is not None:
+            sample_discard_date = o_date + timedelta(days=storage_days)
+            days_until = (sample_discard_date - today).days
+        elif rack.g_discard_date:
+            # Sin fecha de ingreso de la orden o de creación de la gradilla: usar g_discard_date directo
+            days_until = (rack.g_discard_date.date() - today).days
+
+        sample.days_until_discard = days_until
+        sample.about_to_discard = (
+            sample.so_state != SAMPLE_ORDER_STATE_DESCARTADA
+            and days_until is not None
+            and 0 <= days_until <= 3
+        )
+
+
 async def get_rack(db: AsyncSession, g_id: int) -> dict:
     rack = await GradillaRepository.get_by_id(db, g_id)
     if not rack:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
     await _attach_sample_work_groups(db, rack)
+    _attach_sample_discard_info(rack)
     return rack
 
 
