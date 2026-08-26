@@ -335,6 +335,25 @@ class SampleDiscardResponse(BaseModel):
     message: str
 
 
+class SamplesDiscardRequest(BaseModel):
+    so_ids: List[int] = Field(..., min_length=1, description="IDs (so_id) de las muestras a descartar dentro de la gradilla.")
+
+
+class SamplesDiscardResponse(BaseModel):
+    g_id: int
+    g_name: str
+    g_discarted: int = Field(..., description="0=No descartada, 1=Descartada por completo")
+    fully_discarded: bool = Field(..., description="True si al terminar no quedó ninguna muestra activa en la gradilla")
+    samples_discarded: int
+    discarded_sample_ids: List[int]
+    samples_pending: int
+    pending_samples: List[PendingSampleInfo]
+    samples_not_found: List[int] = Field(
+        default=[], description="so_id solicitados que no están almacenados (activos) en esta gradilla."
+    )
+    message: str
+
+
 # ── Tipos de Gradilla ─────────────────────────────────────────────────────────
 
 class TipoGradillaCreate(BaseModel):

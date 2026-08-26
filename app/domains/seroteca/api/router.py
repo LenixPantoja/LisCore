@@ -11,6 +11,7 @@ from app.domains.seroteca.api.schemas import (
     SerotecaCreate, SerotecaUpdate, SerotecaResponse, SerotecaPaginatedResponse,
     GradillaCreate, GradillaUpdate, GradillaResponse, GradillaWithPositionsResponse,
     GradillaPaginatedResponse, GradillaPosicionResponse, GradillaDiscardResponse, SampleDiscardResponse,
+    SamplesDiscardRequest, SamplesDiscardResponse,
     TipoGradillaCreate, TipoGradillaUpdate, TipoGradillaResponse, TipoGradillaPaginatedResponse,
     AutoStoreRequest, ManualStoreRequest,
 )
@@ -24,7 +25,7 @@ from app.domains.seroteca.application.use_cases.tracking_use_cases import (
 from app.domains.seroteca.application.use_cases.seroteca_use_cases import (
     create_seroteca, get_seroteca, list_serotecas, update_seroteca, delete_seroteca,
     create_rack, get_rack, list_racks, update_rack, delete_rack,
-    discard_rack, discard_rack_by_work_group, discard_sample,
+    discard_rack, discard_rack_by_work_group, discard_sample, discard_samples,
     create_tipo_gradilla, get_tipo_gradilla, list_tipos_gradilla, update_tipo_gradilla, delete_tipo_gradilla,
     generate_gradilla_sticker,
 )
@@ -274,6 +275,28 @@ async def discard_sample_endpoint(
     current_user: AppUser = Depends(get_current_user),
 ):
     return await discard_sample(db, g_id, so_id, current_user.usr_id)
+
+
+@router.post(
+    "/racks/{g_id}/discard/samples",
+    response_model=SamplesDiscardResponse,
+    summary="Descartar una lista de muestras de una gradilla",
+    description=(
+        "Descarta (so_state=4) una lista de muestras (por so_id) almacenadas en la "
+        "gradilla indicada, siempre que ya tengan todos sus estudios procesados. Las "
+        "que tengan estudios pendientes se OMITEN y se reportan en `pending_samples`, "
+        "sin bloquear el descarte de las demás. Los so_id que no correspondan a una "
+        "muestra activa de esta gradilla se reportan en `samples_not_found`."
+    ),
+    dependencies=[Depends(require_permission("Seroteca:DiscardRack"))],
+)
+async def discard_samples_endpoint(
+    g_id: int,
+    body: SamplesDiscardRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
+    return await discard_samples(db, g_id, body.so_ids, current_user.usr_id)
 
 
 # ── Tipos de Gradilla ─────────────────────────────────────────────────────────

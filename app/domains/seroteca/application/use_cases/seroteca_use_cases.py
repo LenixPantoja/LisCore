@@ -786,6 +786,110 @@ async def discard_sample(db: AsyncSession, g_id: int, so_id: int, user_id: int) 
     }
 
 
+async def discard_samples(db: AsyncSession, g_id: int, so_ids: list[int], user_id: int) -> dict:
+    """
+    Descarta una lista de muestras (por so_id) dentro de una gradilla, siempre
+    que ya tengan todos sus estudios procesados. Las que tengan estudios
+    pendientes se reportan en pending_samples sin bloquear el descarte de las
+    demás (mismo criterio que discard_rack). Los so_id solicitados que no
+    correspondan a una posición ocupada y activa de esta gradilla (no
+    pertenecen a ella, o ya estaban descartados) se reportan en
+    samples_not_found.
+    """
+    rack = await GradillaRepository.get_by_id_for_discard(db, g_id)
+    if not rack:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Rack not found")
+
+    positions_by_so_id = {
+        pos.sample.so_id: pos for pos in rack.positions if pos.gp_occupied and pos.sample is not None
+    }
+
+    requested_ids = list(dict.fromkeys(so_ids))  # dedupe, preserve order
+    samples_not_found: list[int] = []
+    target_positions = []
+    for so_id in requested_ids:
+        pos = positions_by_so_id.get(so_id)
+        if not pos or pos.sample.so_state == SAMPLE_ORDER_STATE_DESCARTADA:
+            samples_not_found.append(so_id)
+        else:
+            target_positions.append(pos)
+
+    if not target_positions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=(
+                f"Ninguna de las muestras solicitadas está almacenada (y activa) en la gradilla "
+                f"'{rack.g_name}': {samples_not_found}."
+            ),
+        )
+
+    pending_by_sample = await _get_pending_tests_by_sample(db, [pos.sample for pos in target_positions])
+
+    ready_positions = [pos for pos in target_positions if pos.sample.so_id not in pending_by_sample]
+    pending_samples = [
+        _pending_sample_info(pos, pending_by_sample)
+        for pos in target_positions
+        if pos.sample.so_id in pending_by_sample
+    ]
+
+    user_name = await _get_user_display_name(db, user_id)
+    location = rack.seroteca.location if rack.seroteca else None
+    loc_name = location.loc_name if location else "Sin ubicación"
+    loc_id = location.loc_id if location else None
+
+    now = get_bogota_now()
+    time_str = now.strftime("%I:%M:%S %p").lower()
+
+    discarded_sample_ids = await _discard_samples(
+        db, [pos.sample for pos in ready_positions], user_id, user_name, loc_id, loc_name, time_str
+    )
+
+    occupied_positions = [pos for pos in rack.positions if pos.gp_occupied and pos.sample is not None]
+    remaining_active = [pos for pos in occupied_positions if pos.sample.so_state != SAMPLE_ORDER_STATE_DESCARTADA]
+    fully_discarded = len(remaining_active) == 0
+    if fully_discarded and not rack.g_discarted:
+        rack.g_discarted = 1
+        rack.g_updated_at = get_bogota_now()
+
+    _add_trace(
+        db, user_id, OPERATION_MANAGE_GRADILLA,
+        f"Descarte de muestras seleccionadas - gradilla {rack.g_name}",
+        (
+            f"ID: {rack.g_id} | Número: {rack.g_number} | Solicitadas: {len(requested_ids)} "
+            f"| Descartadas: {len(discarded_sample_ids)} | Pendientes (omitidas): {len(pending_samples)} "
+            f"| No encontradas/ya descartadas: {len(samples_not_found)} | Gradilla completamente descartada: {fully_discarded}"
+        ),
+    )
+
+    await db.commit()
+    await db.refresh(rack)
+
+    if discarded_sample_ids and not pending_samples and not samples_not_found:
+        message = f"{len(discarded_sample_ids)} muestra(s) descartada(s) correctamente."
+    else:
+        parts = []
+        if discarded_sample_ids:
+            parts.append(f"{len(discarded_sample_ids)} descartada(s)")
+        if pending_samples:
+            parts.append(f"{len(pending_samples)} pendiente(s) por estudios sin procesar")
+        if samples_not_found:
+            parts.append(f"{len(samples_not_found)} no encontrada(s) o ya descartada(s) en esta gradilla")
+        message = ", ".join(parts) + "."
+
+    return {
+        "g_id": rack.g_id,
+        "g_name": rack.g_name,
+        "g_discarted": rack.g_discarted,
+        "fully_discarded": fully_discarded,
+        "samples_discarded": len(discarded_sample_ids),
+        "discarded_sample_ids": discarded_sample_ids,
+        "samples_pending": len(pending_samples),
+        "pending_samples": pending_samples,
+        "samples_not_found": samples_not_found,
+        "message": message,
+    }
+
+
 # ── Tipos de Gradilla ─────────────────────────────────────────────────────────
 
 async def create_tipo_gradilla(db: AsyncSession, data: dict) -> dict:
