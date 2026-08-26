@@ -241,6 +241,13 @@ class GradillaPosicionResponse(BaseModel):
     gp_stored_by_id: Optional[int]
     sample: Optional[SampleOrderBasic] = None
 
+    @computed_field
+    @property
+    def o_date(self) -> Optional[date]:
+        if self.sample and self.sample.order:
+            return self.sample.order.o_date
+        return None
+
     class Config:
         from_attributes = True
 
