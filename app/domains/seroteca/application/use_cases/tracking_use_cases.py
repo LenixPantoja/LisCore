@@ -17,6 +17,7 @@ from app.domains.samples.domain.constants import (
     SAMPLE_ORDER_STATE_ALMACENADA,
     SAMPLE_ORDER_STATE_DESCARTADA,
 )
+from app.domains.seroteca.domain.constants import SAMPLE_LOG_STATE_RETIRADA
 
 
 def _format_position_label(row: int, col: int) -> str:
@@ -347,7 +348,20 @@ async def release_position(
     db: AsyncSession,
     gp_id: int,
     user_id: Optional[int],
+    justification: str,
 ) -> dict:
+    # Capturar el so_id/posición ANTES de liberar: GradillaPosicionRepository.release_position
+    # limpia gp_sample_id, así que después de liberarla ya no hay forma de saber qué muestra era.
+    target = await GradillaPosicionRepository.get_by_id(db, gp_id)
+    if not target or not target.gp_occupied:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Position is already free or does not exist",
+        )
+    so_id = target.gp_sample_id
+    g_id = target.gp_gradilla_id
+    row, col = target.gp_row, target.gp_col
+
     pos = await GradillaPosicionRepository.release_position(db, gp_id)
     if not pos:
         raise HTTPException(
@@ -355,13 +369,22 @@ async def release_position(
             detail="Position is already free or does not exist",
         )
 
-    # Log the retrieval
-    if pos.gp_sample_id is not None:
+    if so_id is not None:
+        rack = await GradillaRepository.get_by_id_with_location(db, g_id)
+        g_number = rack.g_number if rack and rack.g_number else str(g_id)
+        location = rack.seroteca.location if rack and rack.seroteca else None
+        loc_name = location.loc_name if location else "Sin ubicación"
+        loc_id = location.loc_id if location else None
+        position_label = _format_position_label(row, col)
+
         await SampleLogRepository.create(db, {
-            "log_sample_order_id": pos.gp_sample_id,
-            "log_state": 3,  # Retirada
-            "log_location_id": None,
-            "log_observation": f"Retrieved from position {gp_id}",
+            "log_sample_order_id": so_id,
+            "log_state": SAMPLE_LOG_STATE_RETIRADA,
+            "log_location_id": loc_id,
+            "log_observation": (
+                f"Muestra retirada de gradilla [ {g_number} ] posicion [ {position_label} ] "
+                f"Localidad [ {loc_name} ]. Motivo: {justification}"
+            ),
             "log_user_id": user_id,
         })
         await db.commit()

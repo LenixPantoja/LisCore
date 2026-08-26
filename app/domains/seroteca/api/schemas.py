@@ -408,3 +408,7 @@ class AutoStoreRequest(BaseModel):
 
 class ManualStoreRequest(BaseModel):
     barcode: str = Field(..., description="Barcode (so_barcode) of the sample tube")
+
+
+class ReleasePositionRequest(BaseModel):
+    justification: str = Field(..., min_length=1, description="Motivo por el cual se retira la muestra de la posición.")

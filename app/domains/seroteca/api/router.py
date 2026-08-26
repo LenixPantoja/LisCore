@@ -13,7 +13,7 @@ from app.domains.seroteca.api.schemas import (
     GradillaPaginatedResponse, GradillaPosicionResponse, GradillaDiscardResponse, SampleDiscardResponse,
     SamplesDiscardRequest, SamplesDiscardResponse,
     TipoGradillaCreate, TipoGradillaUpdate, TipoGradillaResponse, TipoGradillaPaginatedResponse,
-    AutoStoreRequest, ManualStoreRequest,
+    AutoStoreRequest, ManualStoreRequest, ReleasePositionRequest,
 )
 from app.domains.seroteca.application.use_cases.tracking_use_cases import (
     log_sample_event,
@@ -394,10 +394,11 @@ async def manual_store(
 )
 async def release(
     gp_id: int,
+    body: ReleasePositionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: AppUser = Depends(get_current_user),
 ):
-    return await release_position(db, gp_id, current_user.usr_id)
+    return await release_position(db, gp_id, current_user.usr_id, body.justification)
 
 
 # ── Gradilla Sticker ──────────────────────────────────────────────────────────
