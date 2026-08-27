@@ -194,6 +194,7 @@ class OrderRepository:
         from sqlalchemy import update as sa_update, delete
         from app.domains.laboratories.domain.models import Laboratory
         from app.domains.billing.domain.models import InvoiceDetail
+        from app.domains.requests.domain.models import InboundOrderDetail
 
         order = await db.get(Order, o_id)
         if not order:
@@ -215,6 +216,20 @@ class OrderRepository:
                 sa_update(OrdersDetail)
                 .where(OrdersDetail.od_id.in_(cancelled_detail_ids))
                 .values(od_cancelled=1)
+                .execution_options(synchronize_session="fetch")
+            )
+
+            # Desvincular cualquier InboundOrdersDetails que referencie (iod_laboratory_id)
+            # los Laboratory que se van a borrar — si no, el DELETE falla por la FK
+            # fk_InboundOrdersDetails_iod_laboratory_id_Laboratories_l_id.
+            await db.execute(
+                sa_update(InboundOrderDetail)
+                .where(
+                    InboundOrderDetail.iod_laboratory_id.in_(
+                        select(Laboratory.l_id).where(Laboratory.l_order_detail_id.in_(cancelled_detail_ids))
+                    )
+                )
+                .values(iod_laboratory_id=None)
                 .execution_options(synchronize_session="fetch")
             )
 
