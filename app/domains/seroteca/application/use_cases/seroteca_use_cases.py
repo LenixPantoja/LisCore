@@ -145,6 +145,7 @@ async def create_rack(db: AsyncSession, data: dict, user_id: int | None = None) 
 
     from utils.Consecutives.consecutive_gradillas import generate_gradilla_number
     data["g_number"] = await generate_gradilla_number(db)
+    data["g_name"] = data["g_number"]
 
     result = await GradillaRepository.create(db, data)
     _add_trace(
@@ -189,6 +190,14 @@ async def _attach_sample_work_groups(db: AsyncSession, rack: Gradilla) -> None:
         sample.work_groups = [
             wg_by_id[wg_id] for wg_id in sorted(wg_ids_by_sample.get(sample.so_id, set())) if wg_id in wg_by_id
         ]
+
+
+async def get_next_gradilla_number(db: AsyncSession) -> dict:
+    """Get the next gradilla number (informative only - does not create a gradilla)."""
+    from utils.Consecutives.consecutive_gradillas import generate_gradilla_number
+
+    next_number = await generate_gradilla_number(db)
+    return {"next_gradilla_number": next_number}
 
 
 def _attach_sample_discard_info(rack: Gradilla) -> None:

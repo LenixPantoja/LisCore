@@ -13,7 +13,7 @@ from app.domains.seroteca.api.schemas import (
     GradillaPaginatedResponse, GradillaPosicionResponse, GradillaDiscardResponse, SampleDiscardResponse,
     SamplesDiscardRequest, SamplesDiscardResponse,
     TipoGradillaCreate, TipoGradillaUpdate, TipoGradillaResponse, TipoGradillaPaginatedResponse,
-    AutoStoreRequest, ManualStoreRequest, ReleasePositionRequest,
+    AutoStoreRequest, ManualStoreRequest, ReleasePositionRequest, NextGradillaNumberResponse,
 )
 from app.domains.seroteca.application.use_cases.tracking_use_cases import (
     log_sample_event,
@@ -24,7 +24,7 @@ from app.domains.seroteca.application.use_cases.tracking_use_cases import (
 )
 from app.domains.seroteca.application.use_cases.seroteca_use_cases import (
     create_seroteca, get_seroteca, list_serotecas, update_seroteca, delete_seroteca,
-    create_rack, get_rack, list_racks, update_rack, delete_rack,
+    create_rack, get_rack, list_racks, update_rack, delete_rack, get_next_gradilla_number,
     discard_rack, discard_rack_by_work_group, discard_sample, discard_samples,
     create_tipo_gradilla, get_tipo_gradilla, list_tipos_gradilla, update_tipo_gradilla, delete_tipo_gradilla,
     generate_gradilla_sticker,
@@ -170,6 +170,20 @@ async def list_racks_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     return await list_racks(db, s_id, skip, limit, search, discarted)
+
+
+@router.get(
+    "/racks/next-number",
+    response_model=NextGradillaNumberResponse,
+    dependencies=[Depends(require_permission("Seroteca:ManageRacks"))],
+)
+async def get_next_gradilla_number_endpoint(db: AsyncSession = Depends(get_db)):
+    """
+    Get the next gradilla number (last gradilla created today + 1, format DDMMAA-CONSECUTIVO).
+
+    Informative endpoint only - does not create a gradilla.
+    """
+    return await get_next_gradilla_number(db)
 
 
 @router.get(

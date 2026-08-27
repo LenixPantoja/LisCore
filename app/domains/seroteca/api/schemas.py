@@ -123,7 +123,6 @@ class SerotecaPaginatedResponse(BaseModel):
 # ── Gradillas ─────────────────────────────────────────────────────────────────
 
 class GradillaCreate(BaseModel):
-    g_name: str
     g_seroteca_id: int
     g_tipo_gradilla_id: Optional[int] = Field(None, description="ID del tipo de gradilla. Si se provee, rows/cols se heredan del template")
     work_group_ids: List[int] = Field(
@@ -397,6 +396,10 @@ class TipoGradillaPaginatedResponse(BaseModel):
     total: int
     skip: int
     limit: int
+
+
+class NextGradillaNumberResponse(BaseModel):
+    next_gradilla_number: str
 
 
 # ── Storage actions ───────────────────────────────────────────────────────────

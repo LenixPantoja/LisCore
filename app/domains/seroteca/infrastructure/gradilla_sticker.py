@@ -21,30 +21,22 @@ _ZPL_TEMPLATE = """^XA
 
 ^FO20,20
 ^AR,0,0
-^FDGRADILLA:^FS
+^FDCONSECUTIVO:^FS
 
-^FO180,20
+^FO250,20
 ^AR,0,0
 ^FD{consecutivo}^FS
 
 ^FO20,60
 ^AR,0,0
-^FDFECHA CREA:^FS
+^FDDIAS_DESCA:^FS
 
-^FO180,60
+^FO250,60
 ^AR,0,0
-^FD{fecha_creacion}^FS
-
-^FO20,100
-^AR,0,0
-^FDDESCARTE:^FS
-
-^FO180,100
-^AR,0,0
-^FD{fecha_descarte}^FS
+^FD{dias_descarte}^FS
 
 ^BY2,3,100
-^FO50,145
+^FO50,105
 ^BCN,50,Y,N,N
 ^FD{consecutivo}^FS
 
@@ -64,13 +56,14 @@ def _format_date(dt) -> str:
 def build_zpl(rack) -> str:
     """Build a ZPL string from a Gradilla model instance."""
     consecutivo = rack.g_number or "N/A"
-    fecha_creacion = _format_date(rack.g_created_at)
-    fecha_descarte = _format_date(rack.g_discard_date)
 
+    dias_descarte = "N/A"
+    if rack.g_discard_date and rack.g_created_at:
+        dias_descarte = str((rack.g_discard_date - rack.g_created_at).days)
+        dias_int=int(dias_descarte)+1
     return _ZPL_TEMPLATE.format(
         consecutivo=consecutivo,
-        fecha_creacion=fecha_creacion,
-        fecha_descarte=fecha_descarte,
+        dias_descarte=str(dias_int),
     )
 
 
