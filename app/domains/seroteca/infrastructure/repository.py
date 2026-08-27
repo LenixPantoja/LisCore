@@ -194,7 +194,10 @@ class GradillaRepository:
             select(Gradilla)
             .where(Gradilla.g_id == g_id)
             .options(
-                selectinload(Gradilla.positions).options(sample_loader),
+                selectinload(Gradilla.positions).options(
+                    sample_loader.selectinload(SamplesOrder.order),
+                    sample_loader.selectinload(SamplesOrder.sample_type),
+                ),
                 selectinload(Gradilla.seroteca).selectinload(Seroteca.location),
             )
         )

@@ -199,7 +199,7 @@ class SampleOrderBasic(BaseModel):
         ),
     )
     about_to_discard: bool = Field(
-        False, description="True si a esta muestra le quedan entre 0 y 3 días para su descarte (y aún no fue descartada)."
+        False, description="True si a esta muestra le queda 1 día o menos para su descarte (y aún no fue descartada)."
     )
 
     @computed_field
@@ -281,6 +281,14 @@ class GradillaResponse(BaseModel):
 
     @computed_field
     @property
+    def storage_days(self) -> Optional[int]:
+        """Días de almacenamiento de la gradilla: (g_discard_date - g_created_at) + 1. Es el mismo valor exigido por la validación de descarte y el que se imprime en el sticker (DIAS_DESCA)."""
+        if self.g_discard_date is None or self.g_created_at is None:
+            return None
+        return (self.g_discard_date - self.g_created_at).days + 1
+
+    @computed_field
+    @property
     def days_until_discard(self) -> Optional[int]:
         if self.g_discard_date is None:
             return None
@@ -290,11 +298,11 @@ class GradillaResponse(BaseModel):
     @computed_field
     @property
     def about_to_discard(self) -> bool:
-        """True solo si a la gradilla le quedan entre 0 y 3 días para su fecha de descarte (y aún no fue descartada)."""
+        """True solo si a la gradilla le queda 1 día o menos para su fecha de descarte (y aún no fue descartada)."""
         if self.g_discarted or self.g_discard_date is None:
             return False
         days = self.days_until_discard
-        return days is not None and 0 <= days <= 3
+        return days is not None and 0 <= days <= 1
 
     class Config:
         from_attributes = True

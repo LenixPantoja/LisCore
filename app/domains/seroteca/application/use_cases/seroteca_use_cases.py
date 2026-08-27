@@ -232,7 +232,7 @@ def _attach_sample_discard_info(rack: Gradilla) -> None:
         sample.about_to_discard = (
             sample.so_state != SAMPLE_ORDER_STATE_DESCARTADA
             and days_until is not None
-            and 0 <= days_until <= 3
+            and 0 <= days_until <= 1
         )
 
 
@@ -492,6 +492,39 @@ def _pending_sample_info(pos, pending_by_sample: dict[int, list[str]]) -> dict:
     }
 
 
+def _sample_display_label(sample) -> str:
+    """Identificador legible de la muestra para mensajes: NUMERO_ORDEN-SUFIJO (ej. 2608260032-2)."""
+    if sample.order and sample.sample_type and sample.sample_type.st_sufix is not None:
+        return f"{sample.order.o_number}-{sample.sample_type.st_sufix}"
+    if sample.order:
+        return sample.order.o_number
+    return sample.so_barcode or str(sample.so_id)
+
+
+def _validate_rack_discard_window(rack: Gradilla, samples: list) -> None:
+    """
+    Antes de permitir descartar, exige que ya haya pasado el tiempo mínimo de
+    almacenamiento configurado para la gradilla. Los días exigidos son
+    (g_discard_date - g_created_at) + 1, así que el primer día en que
+    realmente se puede descartar es el día SIGUIENTE a g_discard_date (no el
+    mismo día). Si la gradilla no tiene fecha de descarte configurada, no se
+    valida nada.
+    """
+    if not rack.g_discard_date or not rack.g_created_at or not samples:
+        return
+
+    today = get_bogota_now().date()
+    required_days = (rack.g_discard_date.date() - rack.g_created_at.date()).days + 1
+    elapsed_days = (today - rack.g_created_at.date()).days
+
+    if elapsed_days < required_days:
+        labels = ", ".join(_sample_display_label(sample) for sample in samples)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No se pueden descartar la(s) muestra(s) {labels} ya que no cumplen con la fecha de descarte.",
+        )
+
+
 async def _discard_samples(
     db: AsyncSession,
     samples: list,
@@ -539,6 +572,8 @@ async def discard_rack(db: AsyncSession, g_id: int, user_id: int) -> dict:
     occupied_positions = [pos for pos in rack.positions if pos.gp_occupied and pos.sample is not None]
     # Muestras que ya estaban descartadas de un intento parcial anterior: no se tocan ni se reportan
     active_positions = [pos for pos in occupied_positions if pos.sample.so_state != SAMPLE_ORDER_STATE_DESCARTADA]
+
+    _validate_rack_discard_window(rack, [pos.sample for pos in active_positions])
 
     pending_by_sample = await _get_pending_tests_by_sample(db, [pos.sample for pos in active_positions])
 
@@ -650,6 +685,8 @@ async def discard_rack_by_work_group(db: AsyncSession, g_id: int, work_group_id:
             detail=f"La gradilla '{rack.g_name}' no tiene muestras activas del grupo de trabajo '{work_group.wg_name}'.",
         )
 
+    _validate_rack_discard_window(rack, [pos.sample for pos in group_positions])
+
     ready_positions = [pos for pos in group_positions if pos.sample.so_id not in pending_by_sample]
     pending_samples = [
         _pending_sample_info(pos, pending_by_sample)
@@ -742,6 +779,8 @@ async def discard_sample(db: AsyncSession, g_id: int, so_id: int, user_id: int) 
             detail=f"La muestra '{sample.so_barcode}' ya fue descartada.",
         )
 
+    _validate_rack_discard_window(rack, [sample])
+
     pending_by_sample = await _get_pending_tests_by_sample(db, [sample])
     if sample.so_id in pending_by_sample:
         pending = pending_by_sample[sample.so_id]
@@ -831,6 +870,8 @@ async def discard_samples(db: AsyncSession, g_id: int, so_ids: list[int], user_i
                 f"'{rack.g_name}': {samples_not_found}."
             ),
         )
+
+    _validate_rack_discard_window(rack, [pos.sample for pos in target_positions])
 
     pending_by_sample = await _get_pending_tests_by_sample(db, [pos.sample for pos in target_positions])
 
