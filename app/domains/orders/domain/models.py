@@ -33,6 +33,7 @@ class Order(Base):
     o_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
     o_tariff_id = Column(Integer, ForeignKey("Tariffs.t_id"), nullable=True)
     o_cancelled = Column(Integer, default=0, nullable=False)
+    o_sample_name = Column(String(255), nullable=True)
 
     # Relaciones
     patient = relationship("Patient", foreign_keys=[o_his_id])

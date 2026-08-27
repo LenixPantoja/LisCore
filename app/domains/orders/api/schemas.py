@@ -30,6 +30,7 @@ class OrderBase(BaseModel):
     o_pat_mail: Optional[EmailStr] = None
     o_note: Optional[str] = None
     o_tariff_id: Optional[int] = None
+    o_sample_name: Optional[str] = None
 
 class OrderCreate(OrderBase):
     """Esquema para crear una orden con sus estudios solicitados."""
