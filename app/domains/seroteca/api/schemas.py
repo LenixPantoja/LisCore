@@ -194,12 +194,12 @@ class SampleOrderBasic(BaseModel):
     days_until_discard: Optional[int] = Field(
         None,
         description=(
-            "Días que faltan para el descarte de ESTA muestra, calculados desde la fecha de "
-            "ingreso de su orden más los días de almacenamiento configurados en la gradilla."
+            "Días que faltan para el descarte de ESTA muestra: fecha de ingreso de su orden + "
+            "(días de almacenamiento de la gradilla - 1), ya que el día de ingreso cuenta como día 1."
         ),
     )
     about_to_discard: bool = Field(
-        False, description="True si a esta muestra le queda 1 día o menos para su descarte (y aún no fue descartada)."
+        False, description="True si a esta muestra le queda 1 día o menos para su descarte, o si ya se pasó la fecha (y aún no fue descartada)."
     )
 
     @computed_field
@@ -298,11 +298,11 @@ class GradillaResponse(BaseModel):
     @computed_field
     @property
     def about_to_discard(self) -> bool:
-        """True solo si a la gradilla le queda 1 día o menos para su fecha de descarte (y aún no fue descartada)."""
+        """True si a la gradilla le queda 1 día o menos para su fecha de descarte, o si ya se pasó (y aún no fue descartada)."""
         if self.g_discarted or self.g_discard_date is None:
             return False
         days = self.days_until_discard
-        return days is not None and 0 <= days <= 1
+        return days is not None and days <= 1
 
     class Config:
         from_attributes = True

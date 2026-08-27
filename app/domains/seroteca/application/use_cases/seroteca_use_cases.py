@@ -202,12 +202,21 @@ async def get_next_gradilla_number(db: AsyncSession) -> dict:
 
 def _attach_sample_discard_info(rack: Gradilla) -> None:
     """
-    Adjunta a cada muestra almacenada cuántos días le faltan para SU descarte
-    y si ya está por descartarse (<=3 días). Ahora que el descarte es por
-    muestra (no solo por gradilla completa), esta fecha límite se calcula
-    individualmente: fecha de ingreso de la orden de la muestra + los días de
-    almacenamiento configurados para la gradilla (g_discard_date - g_created_at),
-    en vez de usar la misma g_discard_date fija para todas las muestras.
+    Adjunta a cada muestra almacenada cuántos días faltan para SU descarte y
+    si ya está por descartarse (<=1 día). La fecha límite es individual por
+    muestra: fecha de ingreso de su orden + los días de almacenamiento de la
+    gradilla (g_discard_date - g_created_at, SIN el +1 extra que sí usa el
+    gate real de descarte (_validate_rack_discard_window) — ese +1 es un día
+    de gracia adicional propio del gate, no aplica a esta proyección
+    informativa por muestra).
+
+    El conteo de días de almacenamiento empieza el MISMO día que se ingresa
+    la orden (ese día cuenta como día 1), no el día siguiente — por eso se
+    suma (storage_days - 1), no storage_days. Ej.: orden ingresada 26/08,
+    gradilla con 3 días de almacenamiento -> la muestra se descarta el 28/08
+    (26/08 = día 1, 27/08 = día 2, 28/08 = día 3), y about_to_discard es
+    True desde el 27/08 (1 día antes) en adelante, incluyendo si ya se pasó
+    la fecha (días_until negativo).
     """
     samples = [pos.sample for pos in rack.positions if pos.sample is not None]
     if not samples:
@@ -222,7 +231,7 @@ def _attach_sample_discard_info(rack: Gradilla) -> None:
         o_date = sample.order.o_date if sample.order else None
         days_until: Optional[int] = None
         if o_date is not None and storage_days is not None:
-            sample_discard_date = o_date + timedelta(days=storage_days)
+            sample_discard_date = o_date + timedelta(days=storage_days - 1)
             days_until = (sample_discard_date - today).days
         elif rack.g_discard_date:
             # Sin fecha de ingreso de la orden o de creación de la gradilla: usar g_discard_date directo
@@ -232,7 +241,7 @@ def _attach_sample_discard_info(rack: Gradilla) -> None:
         sample.about_to_discard = (
             sample.so_state != SAMPLE_ORDER_STATE_DESCARTADA
             and days_until is not None
-            and 0 <= days_until <= 1
+            and days_until <= 1
         )
 
 
