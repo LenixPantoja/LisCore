@@ -415,15 +415,7 @@ async def get_order_details_paginated_by_number(
     if not order:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada")
 
-    # 1.b Verificar que todas las muestras de la orden ya tengan tracking
-    #     (so_state distinto de 0 = "Muestra No Ingresada"). Si alguna sigue
-    #     en so_state=0, no se devuelve la información de la orden.
     samples = await OrderRepository.get_samples_by_order_id(db, order.o_id)
-    if any(sample.so_state == 0 for sample in samples):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="La orden tiene muestras sin tracking",
-        )
 
     # 2. Consultar laboratorios y pruebas paginados
     labs, total_labs = await OrderRepository.get_laboratories_paginated(
