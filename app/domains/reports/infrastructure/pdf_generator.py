@@ -312,70 +312,68 @@ def build_laboratory_pdf(
                     Paragraph("UNIDADES", s_th),
                     Paragraph("VALOR DE REFERENCIA", s_th),
                 ]
-                res_rows = [th_row]
-                # Compound results are collected separately so they can be rendered
-                # as standalone flowables after the table. Embedding them as table
-                # rows with SPAN prevents Table.split() from working when the
-                # compound text is taller than a full page, causing LayoutError.
-                pending_compounds: list[dict] = []
+                col_widths = [COL_W * 0.35, COL_W * 0.18, COL_W * 0.14, COL_W * 0.33]
+
+                header_tbl = Table([th_row], colWidths=col_widths)
+                header_tbl.setStyle(TableStyle([
+                    ("BACKGROUND",  (0, 0), (-1, -1), colors.transparent),
+                    ("TOPPADDING",  (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                    ("LINEBELOW",   (0, 0), (-1, -1), 0.3, colors.HexColor("#dbeafe")),
+                ]))
+                story.append(_RoundedFrame(header_tbl, radius=5, color=colors.HexColor("#bfdbfe")))
+
                 # Notas de validación (l_nota_validation): se renderizan debajo de
-                # los resultados compuestos, no dentro de la tabla de resultados.
+                # todos los resultados del estudio, no dentro de la tabla.
                 pending_notes: list[dict] = []
 
-                for row in study["rows"]:
+                # Cada examen se renderiza como su propia tabla de una fila, seguida
+                # inmediatamente de SU resultado compuesto (si tiene) — así el
+                # compuesto queda pegado a la prueba a la que pertenece, en vez de
+                # agruparse todos al final del estudio. Se usan flowables separados
+                # (no filas dentro de una sola tabla con SPAN) para que el compuesto
+                # pueda partirse entre páginas sin causar LayoutError cuando es más
+                # alto que una página completa.
+                for i, row in enumerate(study["rows"]):
                     ref_text = row["reference"]
                     alt_ref = (row.get("alternative_range_value") or "").strip()
                     if alt_ref:
                         ref_text = f"{ref_text}<br/>{alt_ref}"
-                    res_rows.append([
-                        Paragraph(row["test_name"], s_test),
-                        Paragraph(row["result"], s_res_bad if row["is_abnormal"] else s_res_ok),
-                        Paragraph(row["units"], s_unit),
-                        Paragraph(ref_text, s_ref),
-                    ])
+
+                    row_tbl = Table(
+                        [[
+                            Paragraph(row["test_name"], s_test),
+                            Paragraph(row["result"], s_res_bad if row["is_abnormal"] else s_res_ok),
+                            Paragraph(row["units"], s_unit),
+                            Paragraph(ref_text, s_ref),
+                        ]],
+                        colWidths=col_widths,
+                    )
+                    row_style = [
+                        ("TOPPADDING", (0, 0), (-1, -1), 5),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+                        ("LINEBELOW", (0, 0), (-1, -1), 0.3, colors.HexColor("#dbeafe")),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("BACKGROUND", (0, 0), (-1, -1), C_LIGHT if i % 2 == 0 else colors.transparent),
+                    ]
+                    row_tbl.setStyle(TableStyle(row_style))
+                    story.append(_RoundedFrame(row_tbl, radius=5, color=colors.HexColor("#bfdbfe")))
+
                     if row.get("result_comp"):
-                        pending_compounds.append({
-                            "result_comp": row["result_comp"],
-                            "alternative_range_value": row.get("alternative_range_value"),
-                        })
+                        comp_tbl = _build_comp_table(row["result_comp"], s_comp, COL_W - 8)
+                        if comp_tbl is not None:
+                            story.append(comp_tbl)
+                       
+                        story.append(Spacer(1, 6))
+
                     note_text = (row.get("note") or "").strip()
                     if note_text:
                         pending_notes.append({
                             "test_name": row["test_name"],
                             "note": note_text,
                         })
-
-                col_widths = [COL_W * 0.35, COL_W * 0.18, COL_W * 0.14, COL_W * 0.33]
-                res_tbl = Table(res_rows, colWidths=col_widths, repeatRows=1)
-
-                tbl_style = [
-                    ("BACKGROUND",  (0, 0), (-1, 0),  colors.transparent),
-                    ("TOPPADDING",  (0, 0), (-1, -1), 5),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("LINEBELOW",   (0, 0), (-1, -1), 0.3, colors.HexColor("#dbeafe")),
-                    ("VALIGN",      (0, 0), (-1, -1), "TOP"),
-                ]
-
-                # Alternating background on data rows
-                for i in range(1, len(res_rows)):
-                    if (i - 1) % 2 == 0:
-                        tbl_style.append(("BACKGROUND", (0, i), (-1, i), C_LIGHT))
-
-                res_tbl.setStyle(TableStyle(tbl_style))
-                story.append(_RoundedFrame(res_tbl, radius=5, color=colors.HexColor("#bfdbfe")))
-
-                # Compound results as standalone flowables so they split across pages
-                for comp in pending_compounds:
-                    comp_tbl = _build_comp_table(comp["result_comp"], s_comp, COL_W - 8)
-                    if comp_tbl is not None:
-                        story.append(comp_tbl)
-                    if comp.get("alternative_range_value"):
-                        story.append(Spacer(1, 4))
-                        story.append(Paragraph(
-                            _xml_escape(comp["alternative_range_value"]).replace("\n", "<br/>"),
-                            s_alt_ref,
-                        ))
 
                 # Notas de validación: van debajo de los resultados compuestos
                 for note_item in pending_notes:
