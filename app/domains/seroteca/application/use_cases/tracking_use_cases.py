@@ -131,15 +131,22 @@ async def _validate_sample_work_group(db: AsyncSession, sample: SamplesOrder, g_
 
 
 async def _get_sample_by_barcode(db: AsyncSession, barcode: str) -> SamplesOrder:
-    """Search by barcode. Tries exact match, then reconstructed legacy format {10digits}-{rest}."""
+    """Search by barcode. Tries exact match, then the dash-less form (real
+    so_barcode values are stored without dash, e.g. '01092600574'), then the
+    reconstructed legacy format {10digits}-{rest} (e.g. '0109260057-4')."""
     from sqlalchemy.orm import selectinload
 
     candidates = [barcode]
 
-    # If input is all digits and longer than 10, try legacy format: first 10 + "-" + rest
     clean = barcode.replace("-", "")
+    if clean != barcode:
+        candidates.append(clean)
+
+    # If input is all digits and longer than 10, try legacy format: first 10 + "-" + rest
     if clean.isdigit() and len(clean) > 10:
-        candidates.append(f"{clean[:10]}-{clean[10:]}")
+        legacy = f"{clean[:10]}-{clean[10:]}"
+        if legacy not in candidates:
+            candidates.append(legacy)
 
     for candidate in candidates:
         result = await db.execute(
@@ -189,28 +196,66 @@ async def log_sample_event(
         "log_user_id": user_id,
     })
 
-    # Obtener los estudios asociados a la orden de la muestra
+    # Obtener los estudios (y sus pruebas) asociados a la orden de la muestra
+    # que realmente se extraen de ESTE tubo (mismo grupo de sufijo de tipo de
+    # muestra que su sample_type — igual criterio que _get_pending_tests_by_sample
+    # y _sample_work_group_ids). Un estudio puede agrupar varias pruebas con
+    # samples_type_id distintos que comparten sufijo (ej. estudios de orina 24h:
+    # la prueba principal usa un st_id y "VOL24" usa otro), por eso no basta con
+    # comparar so_sample_type_id contra samples_type_id: hay que agrupar por
+    # sufijo para no dejar pruebas como VOL24 fuera del tracking de su tubo.
     from app.domains.orders.domain.models import OrdersDetail
-    from app.domains.studieslab.domain.models import StudiesLab
+    from app.domains.samples.domain.models import SampleType
+    from app.domains.testslabs.domain.models import TestsLab
+    from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
     from sqlalchemy.orm import selectinload
 
     studies = []
-    if sample.order:
-        stmt = (
-            select(OrdersDetail)
-            .where(OrdersDetail.od_order_id == sample.order.o_id)
-            .options(selectinload(OrdersDetail.study))
-        )
-        result = await db.execute(stmt)
-        order_details = result.scalars().all()
-        seen_study_ids = set()
-        for od in order_details:
-            if od.study and od.study.id not in seen_study_ids:
+    if sample.order and sample.so_sample_type_id:
+        all_st_rows = (await db.execute(select(SampleType))).scalars().all()
+        st_by_id = {st.st_id: st for st in all_st_rows}
+        st = st_by_id.get(sample.so_sample_type_id)
+        sfx = st.st_sufix if st and st.st_sufix is not None else sample.so_sample_type_id
+        related_st_ids = {
+            s.st_id for s in all_st_rows
+            if (s.st_sufix if s.st_sufix is not None else s.st_id) == sfx
+        } or {sample.so_sample_type_id}
+
+        tube_tests = (
+            await db.execute(
+                select(TestsLab.id, TestsLab.code, TestsLab.name)
+                .where(TestsLab.samples_type_id.in_(related_st_ids))
+            )
+        ).all()
+        tube_test_ids = {r.id for r in tube_tests}
+        test_info_by_id = {r.id: {"test_id": r.id, "test_code": r.code, "test_name": r.name} for r in tube_tests}
+
+        if tube_test_ids:
+            stmt = (
+                select(OrdersDetail)
+                .where(OrdersDetail.od_order_id == sample.order.o_id)
+                .options(
+                    selectinload(OrdersDetail.study).selectinload(StudiesLab.test_details)
+                )
+            )
+            result = await db.execute(stmt)
+            order_details = result.scalars().all()
+            seen_study_ids = set()
+            for od in order_details:
+                if not od.study or od.study.id in seen_study_ids:
+                    continue
+                study_test_ids = {
+                    std.tests_id for std in od.study.test_details
+                    if std.tests_id in tube_test_ids
+                }
+                if not study_test_ids:
+                    continue  # este estudio no tiene pruebas que salgan de este tubo
                 seen_study_ids.add(od.study.id)
                 studies.append({
                     "study_id": od.study.id,
                     "study_name": od.study.name,
                     "study_code": od.study.code,
+                    "tests": [test_info_by_id[tid] for tid in study_test_ids if tid in test_info_by_id],
                 })
 
     await db.commit()

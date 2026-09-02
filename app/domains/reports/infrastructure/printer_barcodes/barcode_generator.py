@@ -25,19 +25,19 @@ _ZPL_TEMPLATE = """\
 ^CI28
 ^LH0,0
 
-^FO35,10^A0N,20,20^FD{patient_full_name}^FS
-^FO35,30^A0N,20,20^FD{document_type} {identification}^FS
-^FO270,30^A0N,18,18^FDEDAD:{age_str}^FS
+^FO35,20^A0N,20,20^FD{patient_full_name}^FS
+^FO35,40^A0N,20,20^FD{document_type} {identification}^FS
+^FO270,40^A0N,18,18^FDEDAD:{age_str}^FS
 
 ^BY2,3,150
-^FO31,55^BCN,94,N,Y,N^FD{barcode_value}^FS
+^FO31,65^BCN,94,N,Y,N^FD{barcode_value}^FS
 
 ^FO368,70^A0B,18,18^FD{work_group_name}^FS
 ^FO4,35^A0B,22,22^FD{label_number}^FS
 
-^FO45,155^A0N,16,16^FD{tests_line}^FS
-^FO45,175^A0N,16,16^FD TM-{sample_type_name}^FS
-^FO200,195^A0N,15,15^FD {piso}^FS
+^FO45,165^A0N,16,16^FD{tests_line}^FS
+^FO45,185^A0N,16,16^FD TM-{sample_type_name}^FS
+^FO200,210^A0N,15,15^FD {piso}^FS
 
 ^PQ1
 ^XZ"""
