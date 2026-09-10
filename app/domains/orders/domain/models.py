@@ -25,11 +25,11 @@ class Order(Base):
     o_AppUser_id = Column(Integer, nullable=True) # Corresponde a Users
     o_enterprise_id = Column(Integer, ForeignKey("Enterprises.en_id"), nullable=True)
     o_scholarity = Column(Integer, ForeignKey("Schooling.id"), nullable=True)
-    o_order_state = Column(Integer, default=1)
+    o_order_state = Column(Integer, default=1, index=True)
     o_pat_num_whatsapp = Column(String(255), nullable=True)
     o_pat_mail = Column(String(255), nullable=True)
     o_note = Column(Text, nullable=True)
-    o_created_at = Column(DateTime, default=get_bogota_now)
+    o_created_at = Column(DateTime, default=get_bogota_now, index=True)
     o_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
     o_tariff_id = Column(Integer, ForeignKey("Tariffs.t_id"), nullable=True)
     o_cancelled = Column(Integer, default=0, nullable=False)
@@ -51,8 +51,8 @@ class OrdersDetail(Base):
     __tablename__ = "OrdersDetails"
 
     od_id = Column(Integer, primary_key=True, index=True)
-    od_order_id = Column(Integer, ForeignKey("Orders.o_id"))
-    od_study_id = Column(Integer, ForeignKey("StudiesLab.id"))
+    od_order_id = Column(Integer, ForeignKey("Orders.o_id"), index=True)
+    od_study_id = Column(Integer, ForeignKey("StudiesLab.id"), index=True)
     od_state = Column(Integer)
     od_cancelled = Column(Integer, default=0, nullable=False)
     od_print_date = Column(DateTime, nullable=True)

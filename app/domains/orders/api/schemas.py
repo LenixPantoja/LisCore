@@ -490,12 +490,15 @@ class OrderFilterRequest(BaseModel):
     - order_states: Lista de estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
     - work_group_ids: Lista de IDs de grupos de trabajo (Work_groups.wg_id)
     - study_ids: Lista de IDs de estudios (StudiesLab.id)
+    - skip / limit: Paginación del resultado.
     """
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     order_states: Optional[List[int]] = None
     work_group_ids: Optional[List[int]] = None
     study_ids: Optional[List[int]] = None
+    skip: int = Field(0, ge=0)
+    limit: int = Field(100, ge=1, le=500)
 
     @field_validator("start_date", "end_date", mode="before")
     @classmethod
@@ -536,6 +539,13 @@ class OrderFilterItemResponse(BaseModel):
     o_number: str
     pt_name: str = Field(..., description="Nombre completo del paciente: Nombre1 Nombre2 Apellido1 Apellido2")
     pt_number_document: str
+
+
+class OrderFilterPaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[OrderFilterItemResponse]
 
     class Config:
         from_attributes = True

@@ -1181,18 +1181,22 @@ async def filter_orders(
     order_states: Optional[list[int]] = None,
     work_group_ids: Optional[list[int]] = None,
     study_ids: Optional[list[int]] = None,
-) -> list[dict]:
+    skip: int = 0,
+    limit: int = 100,
+) -> dict:
     """
-    Filtra órdenes por múltiples criterios y retorna una lista plana
+    Filtra órdenes por múltiples criterios y retorna un resultado paginado
     con los campos especificados: o_id, o_number, pt_name, pt_number_document.
     """
-    orders = await OrderRepository.get_filtered_orders(
+    orders, total = await OrderRepository.get_filtered_orders(
         db,
         start_date=start_date,
         end_date=end_date,
         order_states=order_states,
         work_group_ids=work_group_ids,
         study_ids=study_ids,
+        skip=skip,
+        limit=limit,
     )
 
     result = []
@@ -1217,4 +1221,4 @@ async def filter_orders(
             "pt_number_document": pt_number_document,
         })
 
-    return result
+    return {"total": total, "skip": skip, "limit": limit, "items": result}

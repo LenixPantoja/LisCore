@@ -11,7 +11,7 @@ from app.domains.orders.api.schemas import (
     NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
     OrderCreatedResponse, OrderEditRequest, OrderEditResponse,
     GraficoEvolutivoResponse, CancelStudiesRequest, CancelStudiesResponse,
-    OrderFilterRequest, OrderFilterItemResponse,
+    OrderFilterRequest, OrderFilterPaginatedResponse,
 )
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
@@ -143,7 +143,7 @@ async def get_full_order_by_id(id: int, db: AsyncSession = Depends(get_db)):
     """
     return await use_cases.get_full_order_details_by_id(db, id)
 
-@router.post("/filter", response_model=List[OrderFilterItemResponse],
+@router.post("/filter", response_model=OrderFilterPaginatedResponse,
              dependencies=[Depends(require_permission("Orders:List"))])
 async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get_db)):
     """
@@ -154,8 +154,10 @@ async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get
     - Estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
     - Grupos de trabajo (lista de IDs de Work_groups)
     - Estudios (lista de IDs de StudiesLab)
+    - skip / limit: Paginación (limit por defecto 100, máximo 500).
 
-    Retorna una lista plana con: o_id, o_number, pt_name, pt_number_document.
+    Retorna un resultado paginado (total, skip, limit, items), donde cada
+    item trae: o_id, o_number, pt_name, pt_number_document.
     """
     return await use_cases.filter_orders(
         db,
@@ -164,4 +166,6 @@ async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get
         order_states=data.order_states,
         work_group_ids=data.work_group_ids,
         study_ids=data.study_ids,
+        skip=data.skip,
+        limit=data.limit,
     )

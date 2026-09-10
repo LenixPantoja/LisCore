@@ -118,10 +118,13 @@ class OrderRepository:
         order_states: Optional[list[int]] = None,
         work_group_ids: Optional[list[int]] = None,
         study_ids: Optional[list[int]] = None,
-    ) -> list[Order]:
+        skip: int = 0,
+        limit: int = 100,
+    ) -> Tuple[Sequence[Order], int]:
         """
         Filtra órdenes por fecha/hora (o_created_at), estado, grupo de trabajo
-        y estudios. Retorna una lista plana de Order con patient cargado.
+        y estudios. Retorna una lista plana de Order con patient cargado,
+        paginada, junto con el total de resultados que coinciden con el filtro.
         La relación con OrdersDetail → StudiesLab se usa para filtrar por
         work_group_ids y study_ids.
         """
@@ -167,11 +170,15 @@ class OrderRepository:
             # Evitar duplicados cuando una orden tiene múltiples OrdersDetails
             query = query.distinct()
 
-        # Ordenar por o_id descendente
-        query = query.order_by(Order.o_id.desc())
+        # Conteo total antes de paginar
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        # Ordenar por o_id descendente y paginar
+        query = query.order_by(Order.o_id.desc()).offset(skip).limit(limit)
 
         result = await db.execute(query)
-        return list(result.scalars().all())
+        return list(result.scalars().all()), total
 
     @staticmethod
     async def cancel_studies(
