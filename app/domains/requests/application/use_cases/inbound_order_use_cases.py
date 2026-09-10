@@ -118,7 +118,14 @@ async def create_order_from_inbound(
             detail=f"InboundOrder con ID {payload.inbound_order_id} no encontrado.",
         )
 
-    # 2. Cargar los detalles seleccionados con su relación de estudio
+    # 2. Cargar los detalles seleccionados con su relación de estudio.
+    #    with_for_update() bloquea estas filas hasta el commit: si dos
+    #    solicitudes concurrentes intentan crear una orden para los mismos
+    #    InboundOrderDetail (p.ej. doble clic o un reintento de Centralink),
+    #    la segunda espera a que la primera confirme y entonces sí ve
+    #    iod_state=Ejecutada y falla con el 400 de abajo, en vez de crear una
+    #    orden duplicada — sin este lock, ambas leen "no ejecutado" al mismo
+    #    tiempo y las dos terminan creando su propia orden.
     from sqlalchemy.orm import selectinload as _selectinload
     result = await db.execute(
         select(InboundOrderDetail)
@@ -127,6 +134,7 @@ async def create_order_from_inbound(
             InboundOrderDetail.iod_inboundOrder_id == payload.inbound_order_id,
         )
         .options(_selectinload(InboundOrderDetail.study))
+        .with_for_update()
     )
     selected_details = result.scalars().all()
 

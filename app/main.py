@@ -3,12 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from app.api.router import api_router
 from app.core.config import settings
+from app.core.middleware import add_process_time_header
 from app.lifespan import lifespan
 
 app = FastAPI(lifespan=lifespan)
 
+app.middleware("http")(add_process_time_header)
+
 app.add_middleware(
-    TrustedHostMiddleware, 
+    TrustedHostMiddleware,
     allowed_hosts=settings.ALLOWED_HOSTS
 )
 app.add_middleware(
