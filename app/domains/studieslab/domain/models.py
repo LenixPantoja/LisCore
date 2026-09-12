@@ -7,8 +7,8 @@ class StudiesTestDetail(Base):
     __tablename__ = "StudiesTestDetail"
 
     id = Column(Integer, primary_key=True, index=True)
-    studies_id = Column(Integer, ForeignKey("StudiesLab.id"))
-    tests_id = Column(Integer, ForeignKey("TestsLab.id"))
+    studies_id = Column(Integer, ForeignKey("StudiesLab.id"), index=True)
+    tests_id = Column(Integer, ForeignKey("TestsLab.id"), index=True)
     work_group_id = Column(Integer, ForeignKey("Work_groups.wg_id"))
     order_print = Column(Integer)
     is_required = Column(Boolean, default=False)

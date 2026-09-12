@@ -9,7 +9,7 @@ class Laboratory(Base):
 
     l_id = Column(Integer, primary_key=True, index=True)
     l_order_detail_id = Column(Integer, ForeignKey("OrdersDetails.od_id"), index=True)
-    l_test_id = Column(Integer, ForeignKey("TestsLab.id"))
+    l_test_id = Column(Integer, ForeignKey("TestsLab.id"), index=True)
     l_result = Column(String(255), nullable=True)
     l_result_num = Column(Numeric, nullable=True)
     l_result_comp = Column(Text, nullable=True)

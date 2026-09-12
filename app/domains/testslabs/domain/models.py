@@ -81,7 +81,7 @@ class TestslabFormatComplete(Base):
     __tablename__ = "TestslabFormatComplete"
 
     tfc_id = Column(Integer, primary_key=True, autoincrement=True, index=True)
-    tfc_testslab_id = Column(Integer, ForeignKey("TestsLab.id", ondelete="CASCADE"), nullable=False)
+    tfc_testslab_id = Column(Integer, ForeignKey("TestsLab.id", ondelete="CASCADE"), nullable=False, index=True)
     tfc_format_complete_id = Column(Integer, ForeignKey("FormatComplete.fc_id", ondelete="CASCADE"), nullable=False)
     tfc_is_default = Column(Boolean, nullable=False, default=False)
     tfc_order_index = Column(Integer, nullable=False, default=0)
@@ -99,7 +99,7 @@ class RangeReference(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     range_type = Column(String(50), nullable=True)
-    test_id = Column(Integer, ForeignKey("TestsLab.id"), nullable=True)
+    test_id = Column(Integer, ForeignKey("TestsLab.id"), nullable=True, index=True)
     gender = Column(String(10), nullable=True)
     age_type = Column(String(10), nullable=True)
     min_age = Column(Integer, nullable=True)
@@ -119,7 +119,7 @@ class ReferenceValue(Base):
     __tablename__ = "ReferencesValues"
 
     id = Column(Integer, primary_key=True, index=True)
-    ranges_references_id = Column(Integer, ForeignKey("RangesReferences.id"), nullable=True)
+    ranges_references_id = Column(Integer, ForeignKey("RangesReferences.id"), nullable=True, index=True)
     min_value = Column(Numeric, nullable=True)
     max_values = Column(Numeric, nullable=True)
     text_value = Column(Text, nullable=True)
