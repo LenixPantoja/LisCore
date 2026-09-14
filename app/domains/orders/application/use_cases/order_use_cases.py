@@ -12,7 +12,6 @@ from app.shared.utils.range_evaluator import (
     evaluate_reference_range,
     bulk_fetch_ranges,
     evaluate_reference_range_sync,
-    list_reference_values_for_patient,
 )
 from utils.minio_client import get_graphic_url
 from app.domains.testslabs.infrastructure.testslab_format_complete_repository import (
@@ -459,18 +458,16 @@ async def get_order_details_paginated_by_number(
         lab.__dict__["range_type"] = range_type
         lab.__dict__["value_range_reference_min"] = float(ref_min) if ref_min is not None else None
         lab.__dict__["value_range_reference_max"] = float(ref_max) if ref_max is not None else None
-        lab.__dict__["list_references_values"] = list_reference_values_for_patient(
-            test_ranges, patient_dob, patient_sex
-        )
 
         if lab.l_result_graphic:
             lab.l_result_graphic = get_graphic_url(lab.l_result_graphic)
 
-        lab.__dict__["formats_complete"] = [
-            link.format_complete.fc_name
-            for link in formats_by_test.get(lab.l_test_id, [])
-            if link.format_complete
-        ]
+        if lab.test is not None:
+            lab.test.__dict__["formats_complete"] = [
+                link.format_complete.fc_name
+                for link in formats_by_test.get(lab.l_test_id, [])
+                if link.format_complete
+            ]
 
         enriched_labs.append(lab)
 

@@ -212,44 +212,81 @@ class LaboratoryPreliminaryResponse(BaseModel):
         from_attributes = True
 
 
-class ReferenceValueEntry(BaseModel):
-    range_type: Optional[str] = None
-    gender: Optional[str] = None
-    age_type: Optional[str] = None
-    min_age: Optional[int] = None
-    max_age: Optional[int] = None
-    min_value: Optional[float] = None
-    max_value: Optional[float] = None
-    text_value: Optional[str] = None
+class OrderDetailLeanResponse(BaseModel):
+    """order_detail dentro de un laboratorio, solo con los campos que usa el front."""
+    od_state: Optional[str] = None  # Serializado como nombre del estado
+    od_order_id: int
+    study: Optional[BasicStudiesLabResponse] = None
+
+    @field_validator('od_state', mode='before')
+    @classmethod
+    def convert_od_state(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, int):
+            return ORDER_DETAIL_STATES.get(v, str(v))
+        return v
+
+    class Config:
+        from_attributes = True
+
+
+class LabTestSummaryResponse(BaseModel):
+    """test dentro de un laboratorio, solo con los campos que usa el front."""
+    code: str
+    name: str
+    units: Optional[str] = None
+    samples_type_id: Optional[int] = None
+    male_value_min: Optional[float] = None
+    male_value_max: Optional[float] = None
+    female_value_min: Optional[float] = None
+    female_value_max: Optional[float] = None
+    formats_complete: List[str] = []
+
+    class Config:
+        from_attributes = True
+
+
+class LaboratoryPreliminaryLeanResponse(BaseModel):
+    """Resultado preliminar dentro de un laboratorio, solo con los campos que usa el front."""
+    lp_id: int
+    lp_secuence: int
+    lp_result: Optional[str] = None
+    lp_date_preliminary: Optional[str] = None
+    lp_state: int
+
+    @field_validator('lp_date_preliminary', mode='before')
+    @classmethod
+    def format_datetime_with_ampm(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v
+        return v.strftime("%Y-%m-%d %I:%M:%S %p")
+
+    class Config:
+        from_attributes = True
 
 
 class LaboratoryResponse(BaseModel):
     l_id: int
     l_order_detail_id: Optional[int] = None
-    l_test_id: Optional[int] = None
     l_result: Optional[str] = None
     l_result_num: Optional[float] = None
     l_result_comp: Optional[str] = None
     l_result_graphic: Optional[str] = None
     l_nota_validation: Optional[str] = None
     l_state: Optional[str] = None  # Serializado como nombre del estado
-    l_date_transmited: Optional[datetime] = None
-    l_date_validatie: Optional[datetime] = None
-    l_user_validation_id: Optional[int] = None
-    a_analyzer_result_id: Optional[int] = None
-    l_created_at: datetime
-    l_updated_at: datetime
 
     # Campos de rango de referencia (calculados al consultar, no almacenados en BD)
     range_type: Optional[str] = None
     value_range_reference_min: Optional[float] = None
     value_range_reference_max: Optional[float] = None
-    list_references_values: List[ReferenceValueEntry] = []
 
-    order_detail: Optional[BasicOrdersDetailResponse] = None
-    test: Optional[TestsLabResponse] = None
+    order_detail: Optional[OrderDetailLeanResponse] = None
+    test: Optional[LabTestSummaryResponse] = None
     user_validation: Optional[UserValidationResponse] = None
-    preliminaries: List["LaboratoryPreliminaryResponse"] = []
+    preliminaries: List[LaboratoryPreliminaryLeanResponse] = []
 
     @field_validator('l_state', mode='before')
     @classmethod
@@ -275,9 +312,32 @@ class OrderDetailsTestsPaginated(BaseModel):
     limit: int
     items: List[TestsLabResponse]
 
+class OrderDetailsSummaryResponse(BaseModel):
+    """order en la raíz de /by-number/{o_number}/details, solo con los campos que usa el front."""
+    o_id: int
+    o_number: str
+    o_age: Optional[str] = None
+    o_date: date
+
+    class Config:
+        from_attributes = True
+
+class PatientDetailsSummaryResponse(BaseModel):
+    """patient en la raíz de /by-number/{o_number}/details, solo con los campos que usa el front."""
+    pt_id: int
+    pt_firts_name: str
+    pt_middle_name: Optional[str] = None
+    pt_last_name: str
+    pt_second_last_name: str
+    pt_sex_type: Optional[int] = None
+    pt_Number_document: str
+
+    class Config:
+        from_attributes = True
+
 class OrderDetailsPaginatedResponse(BaseModel):
-    order: OrderResponse
-    patient: PatientResponse
+    order: OrderDetailsSummaryResponse
+    patient: PatientDetailsSummaryResponse
     laboratories: OrderDetailsLabsPaginated
     tests: OrderDetailsTestsPaginated
     samples: List["SamplesOrderResponse"] = []
