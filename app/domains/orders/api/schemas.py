@@ -237,10 +237,6 @@ class LabTestSummaryResponse(BaseModel):
     name: str
     units: Optional[str] = None
     samples_type_id: Optional[int] = None
-    male_value_min: Optional[float] = None
-    male_value_max: Optional[float] = None
-    female_value_min: Optional[float] = None
-    female_value_max: Optional[float] = None
     formats_complete: List[str] = []
 
     class Config:
@@ -271,6 +267,7 @@ class LaboratoryPreliminaryLeanResponse(BaseModel):
 class LaboratoryResponse(BaseModel):
     l_id: int
     l_order_detail_id: Optional[int] = None
+    l_test_id: Optional[int] = None
     l_result: Optional[str] = None
     l_result_num: Optional[float] = None
     l_result_comp: Optional[str] = None
