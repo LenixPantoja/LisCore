@@ -50,7 +50,13 @@ from utils.timezone import get_bogota_now
 from utils.trace import register_trace
 from app.domains.traces.constants import OPERATION_CREATE_ORDER
 
-async def create_order(db: AsyncSession, data: dict):
+async def create_order(db: AsyncSession, data: dict, commit: bool = True):
+    """
+    `commit=False` deja la orden creada pero sin confirmar (solo flush), para que
+    el llamador la incluya en una transacción más grande y confirme todo junto
+    (ver create_order_from_inbound: evita que la orden/factura queden creadas de
+    forma permanente si un paso posterior falla o el request se cancela).
+    """
     studies_ids = data.pop("studies", [])
     if not studies_ids:
         raise HTTPException(status_code=400, detail="Debe solicitar al menos un estudio.")
@@ -295,8 +301,9 @@ async def create_order(db: AsyncSession, data: dict):
                 order_id=order.o_id
             )
 
-        await db.commit()
-        await db.refresh(order)
+        if commit:
+            await db.commit()
+            await db.refresh(order)
         return order
 
     except IntegrityError as e:

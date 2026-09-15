@@ -17,7 +17,10 @@ from app.domains.requests.infrastructure.repository import (
     InboundOrderDetailRepository,
 )
 from app.domains.requests.domain.models import InboundOrderDetail
-from app.domains.requests.domain.constants import INBOUND_ORDER_DETAIL_STATE_EJECUTADA
+from app.domains.requests.domain.constants import (
+    INBOUND_ORDER_DETAIL_STATE_EJECUTADA,
+    INBOUND_ORDER_DETAIL_STATE_CON_ERROR,
+)
 from app.domains.traces.constants import OPERATION_CREATE_ORDER
 from utils.trace import register_trace
 
@@ -213,56 +216,86 @@ async def create_order_from_inbound(
         "studies": study_ids,
     }
 
-    # 4. Crear la orden (genera número, detalles, laboratorios, muestras, factura)
-    order = await create_order(db, order_data)
+    # IDs planos capturados antes de intentar crear la orden: si algo falla más
+    # abajo se necesitan para marcar iod_state=Con Error, y tras un rollback los
+    # objetos ORM de selected_details quedan expirados.
+    selected_ids = [d.iod_id for d in selected_details]
 
-    # Traza específica: qué usuario registró esta orden a partir del InboundOrder
-    await register_trace(
-        db=db,
-        operation_type=OPERATION_CREATE_ORDER,
-        operation_description=f"Creación de orden Centralink {order.o_number}",
-        usr_id=user_id,
-        order_id=order.o_id,
-        notes=f"Solicitud entrante: {inbound.io_number_request} (InboundOrder ID: {inbound.io_id}) | Detalles ejecutados: {len(selected_details)}",
-    )
+    try:
+        # 4. Crear la orden (genera número, detalles, laboratorios, muestras, factura)
+        #    commit=False: la orden queda solo en flush, no confirmada todavía. Si se
+        #    confirmara aquí y algo falla más abajo (o el request se cancela por un
+        #    timeout/reintento de Centralink), la orden y su factura quedarían creadas
+        #    de forma permanente pero sin marcar los InboundOrderDetail como
+        #    ejecutados — dejándolos disponibles para un reintento que crea una
+        #    segunda orden duplicada (con su propia factura). Con commit=False todo
+        #    se confirma junto en el único db.commit() de más abajo: o se crea la
+        #    orden completa y queda enlazada al InboundOrder, o no se crea nada.
+        order = await create_order(db, order_data, commit=False)
 
-    # 5. Mapear Laboratories creados a cada InboundOrderDetail
-    #    Un InboundOrderDetail → un estudio (iod_study_id)
-    #    Para cada estudio se crea al menos un OrdersDetail y sus Laboratories
-    from sqlalchemy.orm import selectinload as _selectinload
-    from app.domains.laboratories.domain.models import Laboratory as LabModel
-    from app.domains.orders.domain.models import OrdersDetail as ODModel
+        # Traza específica: qué usuario registró esta orden a partir del InboundOrder
+        await register_trace(
+            db=db,
+            operation_type=OPERATION_CREATE_ORDER,
+            operation_description=f"Creación de orden Centralink {order.o_number}",
+            usr_id=user_id,
+            order_id=order.o_id,
+            notes=f"Solicitud entrante: {inbound.io_number_request} (InboundOrder ID: {inbound.io_id}) | Detalles ejecutados: {len(selected_details)}",
+        )
 
-    labs_result = await db.execute(
-        select(LabModel)
-        .join(ODModel, LabModel.l_order_detail_id == ODModel.od_id)
-        .where(ODModel.od_order_id == order.o_id)
-        .options(_selectinload(LabModel.order_detail))
-    )
-    all_labs: list = labs_result.scalars().all()
+        # 5. Mapear Laboratories creados a cada InboundOrderDetail
+        #    Un InboundOrderDetail → un estudio (iod_study_id)
+        #    Para cada estudio se crea al menos un OrdersDetail y sus Laboratories
+        from sqlalchemy.orm import selectinload as _selectinload
+        from app.domains.laboratories.domain.models import Laboratory as LabModel
+        from app.domains.orders.domain.models import OrdersDetail as ODModel
 
-    # Agrupar laboratories por study_id: {study_id: [LabModel, ...]}
-    labs_by_study: dict[int, list] = {}
-    for lab in all_labs:
-        study_id = lab.order_detail.od_study_id if lab.order_detail else None
-        if study_id is not None:
-            labs_by_study.setdefault(study_id, []).append(lab)
+        labs_result = await db.execute(
+            select(LabModel)
+            .join(ODModel, LabModel.l_order_detail_id == ODModel.od_id)
+            .where(ODModel.od_order_id == order.o_id)
+            .options(_selectinload(LabModel.order_detail))
+        )
+        all_labs: list = labs_result.scalars().all()
 
-    # 6. Actualizar los InboundOrderDetail: estado Ejecutada + guardar o_id + iod_laboratory_id
-    updated_ids: list[int] = []
-    for detail in selected_details:
-        detail.iod_state = INBOUND_ORDER_DETAIL_STATE_EJECUTADA
-        detail.iod_order_id = order.o_id
+        # Agrupar laboratories por study_id: {study_id: [LabModel, ...]}
+        labs_by_study: dict[int, list] = {}
+        for lab in all_labs:
+            study_id = lab.order_detail.od_study_id if lab.order_detail else None
+            if study_id is not None:
+                labs_by_study.setdefault(study_id, []).append(lab)
 
-        # Asignar el primer laboratory del estudio correspondiente
-        study_labs = labs_by_study.get(detail.iod_study_id, [])
-        if study_labs:
-            detail.iod_laboratory_id = study_labs[0].l_id
+        # 6. Actualizar los InboundOrderDetail: estado Ejecutada + guardar o_id + iod_laboratory_id
+        updated_ids: list[int] = []
+        for detail in selected_details:
+            detail.iod_state = INBOUND_ORDER_DETAIL_STATE_EJECUTADA
+            detail.iod_order_id = order.o_id
 
-        db.add(detail)
-        updated_ids.append(detail.iod_id)
+            # Asignar el primer laboratory del estudio correspondiente
+            study_labs = labs_by_study.get(detail.iod_study_id, [])
+            if study_labs:
+                detail.iod_laboratory_id = study_labs[0].l_id
 
-    await db.commit()
+            db.add(detail)
+            updated_ids.append(detail.iod_id)
+
+        await db.commit()
+    except Exception:
+        # Cualquier falla desde la creación de la orden en adelante: como todo
+        # se confirma junto (commit=False arriba), aquí no queda ninguna orden
+        # huérfana — el rollback descarta la orden/factura a medio crear. Se
+        # marca el detalle como "Con Error" (en vez de dejarlo pendiente) para
+        # que quede visible que el intento falló, en lugar de reintentar en
+        # silencio sin que nadie se entere.
+        await db.rollback()
+        from sqlalchemy import update as sa_update
+        await db.execute(
+            sa_update(InboundOrderDetail)
+            .where(InboundOrderDetail.iod_id.in_(selected_ids))
+            .values(iod_state=INBOUND_ORDER_DETAIL_STATE_CON_ERROR)
+        )
+        await db.commit()
+        raise
 
     return CreateOrderFromInboundResponse(
         o_id=order.o_id,
