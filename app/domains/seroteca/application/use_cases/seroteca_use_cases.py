@@ -513,21 +513,37 @@ def _sample_display_label(sample) -> str:
 def _validate_rack_discard_window(rack: Gradilla, samples: list) -> None:
     """
     Antes de permitir descartar, exige que ya haya pasado el tiempo mínimo de
-    almacenamiento configurado para la gradilla. Los días exigidos son
-    (g_discard_date - g_created_at) + 1, así que el primer día en que
-    realmente se puede descartar es el día SIGUIENTE a g_discard_date (no el
-    mismo día). Si la gradilla no tiene fecha de descarte configurada, no se
-    valida nada.
+    almacenamiento para CADA muestra, contado desde la fecha de ingreso de SU
+    propia orden (sample.order.o_date) — no desde la creación de la gradilla,
+    ya que una misma gradilla puede recibir muestras de órdenes ingresadas en
+    días distintos (una gradilla se llena a lo largo de varios días).
+
+    Usa el mismo cálculo que _attach_sample_discard_info (o_date +
+    (storage_days - 1), donde storage_days = g_discard_date - g_created_at de
+    la gradilla) para que esta validación coincida siempre con la fecha de
+    descarte que se muestra en el detalle de la muestra. Si una muestra no
+    tiene orden/fecha asociada, se usa g_discard_date de la gradilla como
+    respaldo (mismo fallback que la función informativa).
     """
     if not rack.g_discard_date or not rack.g_created_at or not samples:
         return
 
+    storage_days = (rack.g_discard_date.date() - rack.g_created_at.date()).days
     today = get_bogota_now().date()
-    required_days = (rack.g_discard_date.date() - rack.g_created_at.date()).days + 1
-    elapsed_days = (today - rack.g_created_at.date()).days
 
-    if elapsed_days < required_days:
-        labels = ", ".join(_sample_display_label(sample) for sample in samples)
+    not_ready = []
+    for sample in samples:
+        o_date = sample.order.o_date if sample.order else None
+        sample_discard_date = (
+            o_date + timedelta(days=storage_days - 1)
+            if o_date is not None
+            else rack.g_discard_date.date()
+        )
+        if today < sample_discard_date:
+            not_ready.append(sample)
+
+    if not_ready:
+        labels = ", ".join(_sample_display_label(sample) for sample in not_ready)
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"No se pueden descartar la(s) muestra(s) {labels} ya que no cumplen con la fecha de descarte.",

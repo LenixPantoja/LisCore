@@ -4,7 +4,10 @@ from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from app.api.router import api_router
 from app.core.config import settings
 from app.core.middleware import add_process_time_header
+from app.core.logging_config import setup_sql_logging
 from app.lifespan import lifespan
+
+setup_sql_logging()
 
 app = FastAPI(lifespan=lifespan)
 

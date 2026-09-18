@@ -15,3 +15,6 @@ s3/data/
 
 # Evitar empaquetados pesados
 *.tar
+
+# Logs generados en runtime
+logs/

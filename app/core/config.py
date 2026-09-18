@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     DB_MAX_OVERFLOW: int = 20
     DB_POOL_RECYCLE: int = 3600
 
+    # Log de queries SQL a archivo (logs/sql_queries.log). Apagado por defecto:
+    # loguear cada query tiene costo y no debe quedar prendido en producción.
+    SQL_LOG_ENABLED: bool = False
+
     # Timezone
     TIME_ZONE: str = "America/Bogota"
 
