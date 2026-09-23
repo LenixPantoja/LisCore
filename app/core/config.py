@@ -54,6 +54,7 @@ class Settings(BaseSettings):
     WHATSAPP_BASE_URL: str = "http://localhost:11300"
     WHATSAPP_INSTANCE_ID: str = ""
     WHATSAPP_API_KEY: str = ""
+    WHATSAPP_DEFAULT_COUNTRY_CODE: str = ""
 
     # Email - Gmail SMTP (App Password)
     GMAIL_SENDER: str = ""
