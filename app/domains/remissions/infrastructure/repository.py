@@ -25,6 +25,7 @@ from app.domains.remissions.domain.constants import (
     ORDER_DETAIL_STATE_PENDING_RESAMPLE,
 )
 from app.domains.orders.domain.models import Order, OrdersDetail
+from app.domains.orders.domain.constants import ORDER_DETAIL_STATE_DESCARTADO
 from app.domains.samples.domain.models import SamplesOrder
 from utils.timezone import get_bogota_now
 
@@ -529,6 +530,11 @@ class RemissionRepository:
         la orden completa — así, cargar el PDF de un laboratorio no afecta el
         estado de un estudio remitido a otro laboratorio distinto.
 
+        Los estudios (OrdersDetail) en estado Descartado/Cancelado no se
+        consideran remitidos: se excluyen del listado anidado y, si una orden
+        solo tenía estudios remitidos cancelados, la orden completa queda
+        fuera del resultado.
+
         `search` filtra por o_number, pt_Number_document o nombre de estudio
         (StudiesLab.name), con coincidencia parcial insensible a mayúsculas.
 
@@ -549,6 +555,7 @@ class RemissionRepository:
             .where(
                 StudiesLab.external_lab_id.isnot(None),
                 StudiesLab.external_lab_id != 1,
+                OrdersDetail.od_state != ORDER_DETAIL_STATE_DESCARTADO,
             )
             .distinct()
         )
@@ -641,6 +648,7 @@ class RemissionRepository:
                 OrdersDetail.od_order_id.in_(order_ids),
                 StudiesLab.external_lab_id.isnot(None),
                 StudiesLab.external_lab_id != 1,
+                OrdersDetail.od_state != ORDER_DETAIL_STATE_DESCARTADO,
             )
         )
         if external_lab_id is not None:
@@ -685,7 +693,8 @@ class RemissionRepository:
         Retorna los od_id de los OrdersDetails de una orden cuyo estudio está
         configurado como remitido a un laboratorio de referencia externo real
         (excluye el centinela 'LOCAL'). Si se indica external_lab_id, solo
-        retorna los od_id remitidos a ESE laboratorio específico.
+        retorna los od_id remitidos a ESE laboratorio específico. Excluye
+        los estudios en estado Descartado/Cancelado.
         """
         from app.domains.studieslab.domain.models import StudiesLab
 
@@ -696,6 +705,7 @@ class RemissionRepository:
                 OrdersDetail.od_order_id == order_id,
                 StudiesLab.external_lab_id.isnot(None),
                 StudiesLab.external_lab_id != 1,
+                OrdersDetail.od_state != ORDER_DETAIL_STATE_DESCARTADO,
             )
             .distinct()
         )
