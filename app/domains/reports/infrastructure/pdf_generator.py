@@ -30,8 +30,8 @@ from app.shared.utils.range_evaluator import SEX_TYPE_IDS_MALE, SEX_TYPE_IDS_FEM
 # ─────────────────────────────────────────────
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 WATERMARK_PNG = str(TEMPLATES_DIR / "marca_agua.png")
-LOGO_PNG = str(TEMPLATES_DIR / "marca_agua.png")  # Usamos la misma imagen como logo
-LOGO_BLUE_PNG = str(TEMPLATES_DIR / "marca_agua.png")
+LOGO_PNG = str(TEMPLATES_DIR / "MedFam.jfif")  # Usamos la misma imagen como logo
+LOGO_BLUE_PNG = str(TEMPLATES_DIR / "Unibac.jfif")
 
 
 class _RoundedFrame(Flowable):
