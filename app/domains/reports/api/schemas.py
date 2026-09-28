@@ -39,6 +39,49 @@ class LaboratoryReportResponse(BaseModel):
     patient_name: str
 
 
+# --- Datos estructurados de resultados (para plantillas externas) ---
+
+class LaboratoryReportParametros(BaseModel):
+    NOMBRE_PACIENTE: str
+    DOCUMENTO_PACIENTE: str
+    EMPRESA: str
+    MUNICIPIO: str
+    SERVICIO: str
+    NUMERO_ORDEN: str
+    EDAD: str
+    GENERO: str
+    FECHA_INGRESO_ORDEN: str
+
+
+class LaboratoryReportValidador(BaseModel):
+    USUARIO_VALIDADOR: str
+    FIRMA_BACTERIOLOGO: Optional[str] = None
+
+
+class LaboratoryReportPrueba(BaseModel):
+    NOMBRE_PRUEBA: str
+    RESULTADO_PRUEBA: str
+    VALOR_REFERENCIA: str
+    RANGO_ALTERNATIVO: Optional[str] = None
+    RESULTADO_COMPUESTO_PRUEBA: Optional[str] = None
+    NOTAS_VALIDACION_PRUEBA: Optional[str] = None
+    GRAFICA: Optional[str] = None
+
+
+class LaboratoryReportEstudio(BaseModel):
+    GRUPO_TRABAJO: str
+    NOMBRE_ESTUDIO: str
+    METODO: str
+    FECHA_VALIDACION_ESTUDIO: Optional[str] = None
+    VALIDADORES: List[LaboratoryReportValidador] = []
+    pruebas: List[LaboratoryReportPrueba] = []
+
+
+class LaboratoryReportDataResponse(BaseModel):
+    parametros: LaboratoryReportParametros
+    estudios: List[LaboratoryReportEstudio] = []
+
+
 # --- Dashboard / Estadísticas ---
 
 class OrderStateCount(BaseModel):

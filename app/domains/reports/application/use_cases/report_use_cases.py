@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.laboratories.domain.models import Laboratory
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
+from app.domains.testslabs.domain.models import TestsLab
 from app.domains.enterprises.domain.models import Enterprise
 from app.domains.patients.domain.models import Patient
 from app.domains.reports.infrastructure.pdf_generator import (
@@ -17,16 +18,32 @@ from app.domains.reports.infrastructure.pdf_generator import (
     pdf_to_base64,
     merge_pdfs,
     _full_name,
+    _group_by_study,
+    _resolve_sex,
+    _signature_group_last_flags,
 )
 from app.shared.utils.range_evaluator import evaluate_reference_range
 
 
-async def generate_laboratory_report(
+async def _load_order_and_validated_labs(
     db: AsyncSession,
     order_id: int,
     include_results: bool = True,
     study_ids: Optional[list[int]] = None,
-) -> dict:
+) -> tuple[Order, Any, list, dict[int, list[dict]]]:
+    """
+    Carga la orden + paciente y, si include_results, los laboratorios de
+    estudios completamente validados (considerando pruebas requeridas/no
+    requeridas — ver comentario del paso 3 más abajo), con sus rangos de
+    referencia evaluados y el mapa de firmas por estudio ya construido.
+
+    Es la lógica compartida entre el PDF de resultados
+    (generate_laboratory_report) y el endpoint de datos estructurados para
+    plantillas (generate_laboratory_report_data): ambos deben mostrar
+    exactamente los mismos estudios/pruebas validados y las mismas firmas.
+
+    Retorna (order, patient, validated_labs, signatures_map).
+    """
     # 1. Cargar la orden con paciente y empresa
     result = await db.execute(
         select(Order)
@@ -66,7 +83,7 @@ async def generate_laboratory_report(
             )
             .filter(OrdersDetail.od_order_id == order_id)
             .options(
-                selectinload(Laboratory.test),
+                selectinload(Laboratory.test).selectinload(TestsLab.technique),
                 selectinload(Laboratory.user_validation),
                 selectinload(Laboratory.order_detail)
                 .selectinload(OrdersDetail.study)
@@ -189,6 +206,19 @@ async def generate_laboratory_report(
                     "usr_document_number": user.usr_document_number or "",
                 })
 
+    return order, patient, validated_labs, signatures_map
+
+
+async def generate_laboratory_report(
+    db: AsyncSession,
+    order_id: int,
+    include_results: bool = True,
+    study_ids: Optional[list[int]] = None,
+) -> dict:
+    order, patient, validated_labs, signatures_map = await _load_order_and_validated_labs(
+        db, order_id, include_results=include_results, study_ids=study_ids
+    )
+
     # 6. Cargar PDFs anexos
     from app.domains.annexes.domain.models import AnnexedResult
     from utils.minio_client import download_annexed_pdf
@@ -250,3 +280,111 @@ async def generate_validated_laboratory_report(
         )
 
     return await generate_laboratory_report(db, order_id, include_results=True, study_ids=study_ids)
+
+
+async def generate_laboratory_report_data(
+    db: AsyncSession, order_id: int, study_ids: Optional[list[int]] = None
+) -> dict:
+    """
+    Punto de entrada de /api/reports/laboratory-results/report-data: retorna
+    los mismos resultados validados que /api/reports/laboratory-results (ver
+    generate_validated_laboratory_report) pero como datos estructurados
+    ("parametros" + "estudios") en vez de un PDF, pensados para alimentar un
+    motor de plantillas externo.
+
+    Reutiliza exactamente la misma carga/filtrado de estudios validados y el
+    mismo mapa de firmas que el PDF (_load_order_and_validated_labs), y el
+    mismo agrupador por estudio (_group_by_study) que arma cada fila de
+    resultado — incluyendo el resultado compuesto (l_result_comp) y el
+    nombre de objeto de la gráfica (l_result_graphic) tal cual los usa el
+    PDF — así que ambos endpoints muestran siempre los mismos estudios,
+    pruebas y validadores. La única diferencia es que aquí las firmas y las
+    gráficas se resuelven a URLs presignadas de MinIO en vez de descargarse
+    como imagen para incrustar en el documento.
+    """
+    from utils.minio_client import get_signature_url, get_graphic_url
+
+    order, patient, validated_labs, signatures_map = await _load_order_and_validated_labs(
+        db, order_id, include_results=True, study_ids=study_ids
+    )
+
+    is_female, sex_label = _resolve_sex(patient)
+
+    parametros = {
+        "NOMBRE_PACIENTE": _full_name(patient),
+        "DOCUMENTO_PACIENTE": patient.pt_Number_document if patient else "—",
+        "EMPRESA": order.enterprise.en_name if order.enterprise else "—",
+        "MUNICIPIO": (patient.city.city_name if patient and patient.city else None) or "—",
+        "SERVICIO": order.service.name if order.service else "—",
+        "NUMERO_ORDEN": order.o_number or "—",
+        "EDAD": order.o_age or "—",
+        "GENERO": sex_label,
+        "FECHA_INGRESO_ORDEN": order.o_date.strftime("%d/%m/%Y") if order.o_date else "—",
+    }
+
+    # Método por estudio: técnica de la primera prueba del estudio que tenga
+    # una (TestsLab.technique). No existe un campo de método a nivel de
+    # estudio, así que se deriva de sus pruebas, igual que el resto de datos
+    # de "estudios" se deriva de los laboratorios agrupados.
+    method_by_study: dict[int, str] = {}
+    for lab in validated_labs:
+        study_id = lab.order_detail.od_study_id if lab.order_detail else None
+        if study_id is None or study_id in method_by_study:
+            continue
+        if lab.test and lab.test.technique and lab.test.technique.name:
+            method_by_study[study_id] = lab.test.technique.name
+
+    estudios: list[dict] = []
+    for wg_group in _group_by_study(validated_labs, is_female):
+        # Igual que en el PDF (build_laboratory_pdf): si varios estudios
+        # consecutivos del mismo grupo de trabajo fueron validados por
+        # exactamente el mismo bacteriólogo (o el mismo conjunto de
+        # bacteriólogos), la firma no se repite en cada uno — solo el
+        # último estudio de esa racha trae VALIDADORES con la firma.
+        last_of_group = _signature_group_last_flags(wg_group["studies"], signatures_map)
+
+        for idx, study in enumerate(wg_group["studies"]):
+            validadores = []
+            if last_of_group[idx]:
+                for sig_info in signatures_map.get(study["id"], []):
+                    validador = {"USUARIO_VALIDADOR": sig_info["user_name"]}
+                    sig_url = get_signature_url(sig_info["usr_Signature"])
+                    if sig_url:
+                        validador["FIRMA_BACTERIOLOGO"] = sig_url
+                    validadores.append(validador)
+
+            pruebas = []
+            for row in study["rows"]:
+                units = row["units"] or ""
+                resultado = row["result"] or ""
+                referencia = row["reference"] or ""
+                prueba = {
+                    "NOMBRE_PRUEBA": row["test_name"],
+                    "RESULTADO_PRUEBA": resultado,
+                    "VALOR_REFERENCIA": f"{referencia} {units}".strip() if referencia else "",
+                }
+                alt_range = (row.get("alternative_range_value") or "").strip()
+                if alt_range:
+                    prueba["RANGO_ALTERNATIVO"] = alt_range
+                if row.get("result_comp"):
+                    prueba["RESULTADO_COMPUESTO_PRUEBA"] = row["result_comp"]
+                if row.get("note"):
+                    prueba["NOTAS_VALIDACION_PRUEBA"] = row["note"]
+                graphic_url = get_graphic_url(row.get("graphic_object_name"))
+                if graphic_url:
+                    prueba["GRAFICA"] = graphic_url
+                pruebas.append(prueba)
+
+            estudios.append({
+                "GRUPO_TRABAJO": wg_group["wg_name"],
+                "NOMBRE_ESTUDIO": study["name"],
+                "METODO": method_by_study.get(study["id"], ""),
+                "FECHA_VALIDACION_ESTUDIO": (
+                    study["validation_date"].strftime("%d/%m/%Y %H:%M")
+                    if study.get("validation_date") else None
+                ),
+                "VALIDADORES": validadores,
+                "pruebas": pruebas,
+            })
+
+    return {"parametros": parametros, "estudios": estudios}

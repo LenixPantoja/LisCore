@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_permission
 from app.domains.reports.api.schemas import (
     LaboratoryReportRequest, LaboratoryReportResponse,
+    LaboratoryReportDataResponse,
     DashboardStatsResponse,
     KpisResponse,
     KpiOrdersByWorkGroupResponse,
@@ -60,6 +61,31 @@ async def generate_laboratory_report(
     db: AsyncSession = Depends(get_db),
 ):
     return await use_cases.generate_validated_laboratory_report(db, request.order_id, request.study_ids)
+
+
+@router.post(
+    "/laboratory-results/report-data",
+    response_model=LaboratoryReportDataResponse,
+    response_model_exclude_none=True,
+    status_code=status.HTTP_200_OK,
+    summary="Datos estructurados de resultados de laboratorio para plantillas",
+    description=(
+        "Recibe el ID de una orden y retorna, en JSON, los mismos resultados que "
+        "/laboratory-results (solo estudios completamente validados, con la misma "
+        "lógica de pruebas requeridas/no requeridas) pero como datos estructurados "
+        "en vez de un PDF: un objeto `parametros` con los datos del paciente/orden "
+        "y una lista `estudios`, cada uno con sus `pruebas`, resultado compuesto "
+        "(si aplica) y sus `VALIDADORES`. Las firmas y las gráficas de resultado se "
+        "entregan como URLs presignadas de MinIO (mismos buckets que usa el PDF), "
+        "listas para consumir desde una plantilla externa."
+    ),
+    dependencies=[Depends(require_permission("Reports:GenerateReport"))],
+)
+async def generate_laboratory_report_data(
+    request: LaboratoryReportRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    return await use_cases.generate_laboratory_report_data(db, request.order_id, request.study_ids)
 
 
 @router.post(

@@ -283,15 +283,7 @@ def build_laboratory_pdf(
             # ── Precompute signature groups ──
             # Consecutive studies sharing the exact same set of validators
             # will share a single signature block rendered after the last study.
-            _wg_study_list = wg_group["studies"]
-            def _sig_key(s):
-                sigs = (signatures_map or {}).get(s["id"], [])
-                return frozenset(s["user_name"] for s in sigs) if sigs else None
-            _sig_keys = [_sig_key(s) for s in _wg_study_list]
-            _last_of_group = [
-                (i == len(_sig_keys) - 1) or (_sig_keys[i] != _sig_keys[i + 1])
-                for i in range(len(_sig_keys))
-            ]
+            _last_of_group = _signature_group_last_flags(wg_group["studies"], signatures_map)
 
             for idx, study in enumerate(wg_group["studies"]):
                 study_hdr = Table(
@@ -631,6 +623,34 @@ def build_laboratory_pdf(
     doc.build(story, onFirstPage=_draw_page, onLaterPages=_draw_page)
 
     return buf.getvalue()
+
+
+# ─────────────────────────────────────────────
+# Agrupación de firmas por validador repetido
+# ─────────────────────────────────────────────
+def _signature_group_last_flags(
+    studies: list[dict], signatures_map: dict | None
+) -> list[bool]:
+    """
+    Dada la lista de estudios de un mismo grupo de trabajo (en el mismo orden
+    en que se van a mostrar) y el mapa de firmas por estudio, retorna un
+    booleano por estudio indicando si es el ÚLTIMO de una racha consecutiva
+    de estudios validados por exactamente el mismo conjunto de validadores.
+
+    Se usa para no repetir la misma firma en cada estudio cuando un mismo
+    bacteriólogo validó varios estudios seguidos: solo el último estudio de
+    la racha "carga" la firma (tanto en el PDF como en el JSON de datos
+    estructurados), los anteriores quedan sin firma propia.
+    """
+    def _sig_key(s):
+        sigs = (signatures_map or {}).get(s["id"], [])
+        return frozenset(sig["user_name"] for sig in sigs) if sigs else None
+
+    sig_keys = [_sig_key(s) for s in studies]
+    return [
+        (i == len(sig_keys) - 1) or (sig_keys[i] != sig_keys[i + 1])
+        for i in range(len(sig_keys))
+    ]
 
 
 # ─────────────────────────────────────────────
