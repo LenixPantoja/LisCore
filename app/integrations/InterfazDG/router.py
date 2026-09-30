@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.integrations.InterfazDG.service import InterfazDGService
 from app.integrations.InterfazDG.use_cases import registrar_solicitud_dg
+from app.integrations.InterfazDG.request_logger import log_solicitud_request
 
 router = APIRouter()
 _service = InterfazDGService()
@@ -58,6 +59,10 @@ async def recibir_solicitud(
     db: AsyncSession = Depends(get_db),
 ) -> Response:
     raw_body = await request.body()
+
+    # Se guarda lo recibido tal cual, sin importar si luego se puede parsear
+    # o registrar correctamente — queda en logs/Solicitudes{DDMMYYYY}.log.
+    log_solicitud_request(raw_body)
 
     if not raw_body:
         acuse = _build_acuse(
