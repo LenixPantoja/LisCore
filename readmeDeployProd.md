@@ -121,6 +121,8 @@ scp -r dist admon@192.168.200.8:/home/admon/front/deploy/
 dir lis_core_api_prod.tar
 ```
 
+Fatima
+scp lis_core_api_prod.tar root@169.58.134.253:~/liscorePabon/Backend/
 ### Copiar el archivo .tar al servidor Linux
 
 ```powershell
