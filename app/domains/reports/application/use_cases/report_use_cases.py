@@ -217,17 +217,13 @@ async def _load_order_and_validated_labs(
     return order, patient, validated_labs, signatures_map
 
 
-async def generate_laboratory_report(
-    db: AsyncSession,
-    order_id: int,
-    include_results: bool = True,
-    study_ids: Optional[list[int]] = None,
-) -> dict:
-    order, patient, validated_labs, signatures_map = await _load_order_and_validated_labs(
-        db, order_id, include_results=include_results, study_ids=study_ids
-    )
-
-    # 6. Cargar PDFs anexos
+async def _load_annex_pdfs(db: AsyncSession, order_id: int) -> list[bytes]:
+    """
+    Carga los PDFs anexos (AnnexedResult) de una orden, en el orden en que
+    se subieron, listos para fusionar al final del PDF principal de
+    resultados. Compartido entre el flujo local (reportlab) y la v2 que
+    delega el renderizado a un servicio externo.
+    """
     from app.domains.annexes.domain.models import AnnexedResult
     from utils.minio_client import download_annexed_pdf
 
@@ -243,6 +239,21 @@ async def generate_laboratory_report(
         pdf_data = download_annexed_pdf(ann.ar_file)
         if pdf_data:
             annex_pdfs.append(pdf_data)
+    return annex_pdfs
+
+
+async def generate_laboratory_report(
+    db: AsyncSession,
+    order_id: int,
+    include_results: bool = True,
+    study_ids: Optional[list[int]] = None,
+) -> dict:
+    order, patient, validated_labs, signatures_map = await _load_order_and_validated_labs(
+        db, order_id, include_results=include_results, study_ids=study_ids
+    )
+
+    # 6. Cargar PDFs anexos
+    annex_pdfs = await _load_annex_pdfs(db, order_id)
 
     # 7. Generar PDF principal
     pdf_bytes = build_laboratory_pdf(order, patient, validated_labs, signatures_map)
@@ -406,3 +417,49 @@ async def generate_laboratory_report_data(
         })
 
     return {"parametros": parametros, "grupos_trabajo": grupos_trabajo}
+
+
+async def generate_laboratory_report_v2(
+    db: AsyncSession,
+    order_id: int,
+    renderer_host: str,
+    study_ids: Optional[list[int]] = None,
+) -> dict:
+    """
+    Punto de entrada de /api/v2/reports/laboratory-results: funciona igual que
+    /api/reports/laboratory-results (ver generate_validated_laboratory_report
+    — mismos estudios validados, mismos PDFs anexos fusionados al final), pero
+    en vez de armar el PDF localmente con reportlab arma los mismos datos
+    estructurados que /laboratory-results/report-data (parametros +
+    grupos_trabajo, ver generate_laboratory_report_data) y se los envía al
+    servicio externo de renderizado de PDF, que corre en el mismo host que
+    este backend (puerto PDF_RENDERER_PORT) y responde con el PDF ya armado
+    en crudo.
+    """
+    from app.integrations.pdf_renderer.client import pdf_renderer_client
+
+    report_data = await generate_laboratory_report_data(db, order_id, study_ids)
+    annex_pdfs = await _load_annex_pdfs(db, order_id)
+
+    try:
+        pdf_bytes = await pdf_renderer_client.render(renderer_host, report_data)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Error al generar el PDF de resultados: {exc}",
+        )
+
+    if annex_pdfs:
+        pdf_bytes = merge_pdfs(pdf_bytes, annex_pdfs)
+    b64 = pdf_to_base64(pdf_bytes)
+
+    parametros = report_data["parametros"]
+    order_number = parametros.get("NUMERO_ORDEN") or "orden"
+    patient_doc = parametros.get("DOCUMENTO_PACIENTE") or "paciente"
+
+    return {
+        "filename": f"resultado_{order_number}_{patient_doc}.pdf",
+        "base64_pdf": b64,
+        "order_number": order_number,
+        "patient_name": parametros.get("NOMBRE_PACIENTE") or "—",
+    }

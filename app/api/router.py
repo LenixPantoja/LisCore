@@ -15,6 +15,7 @@ from app.domains.locations.api.router import router as locations_router
 from app.domains.cities.api.router import router as cities_router
 from app.domains.laboratories.api.router import router as laboratories_router
 from app.domains.reports.api.router import router as reports_router
+from app.domains.reports.api.router_v2 import router as reports_v2_router
 from app.domains.billing.api.router import router as billing_router
 from app.domains.requests.api.router import router as requests_router
 from app.integrations.InterfazDG.router import router as interfaz_dg_router
@@ -44,6 +45,7 @@ api_router.include_router(locations_router, prefix="/locations", tags=["Location
 api_router.include_router(cities_router, prefix="/cities", tags=["Cities"])
 api_router.include_router(laboratories_router, prefix="/laboratories", tags=["Laboratories"])
 api_router.include_router(reports_router, prefix="/reports", tags=["Reports"])
+api_router.include_router(reports_v2_router, prefix="/v2/reports", tags=["Reports v2"])
 api_router.include_router(billing_router, prefix="/billing", tags=["Billing"])
 api_router.include_router(requests_router, prefix="/inbound-orders", tags=["Inbound Orders"])
 api_router.include_router(interfaz_dg_router, prefix="/Dinamica/Laboratorio", tags=["InterfazDG"])
