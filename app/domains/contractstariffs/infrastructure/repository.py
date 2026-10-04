@@ -253,19 +253,27 @@ class ContractTariffRepository:
             selectinload(TariffDetail.studie)
         )
 
-        # Join with StudiesLab for filtering
+        # Join with StudiesLab for filtering (una sola vez, aunque se
+        # combinen search y active, para no duplicar el JOIN).
+        needs_studies_join = bool(search) or active is not None
+        if needs_studies_join:
+            query = query.join(StudiesLab)
+
         if search:
-            query = query.join(StudiesLab).filter(
-                StudiesLab.name.ilike(f"%{search}%") | StudiesLab.code.ilike(f"%{search}%")
+            # Busca por nombre, código de estudio o código CUPS.
+            query = query.filter(
+                or_(
+                    StudiesLab.name.ilike(f"%{search}%"),
+                    StudiesLab.code.ilike(f"%{search}%"),
+                    StudiesLab.cups_code.ilike(f"%{search}%"),
+                )
             )
 
         if active is not None:
-            query = query.join(StudiesLab).filter(StudiesLab.active == active)
+            query = query.filter(StudiesLab.active == active)
 
-        # Count total
-        count_query = select(func.count()).select_from(TariffDetail).filter(
-            TariffDetail.td_tariff_id == tariff_id
-        )
+        # Count total (respetando los mismos filtros que la página de resultados)
+        count_query = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_query)).scalar() or 0
 
         # Paginated results

@@ -24,6 +24,14 @@ from app.domains.reports.infrastructure.pdf_generator import (
 )
 from app.shared.utils.range_evaluator import evaluate_reference_range
 
+# Nombres de objeto fijos del bucket 'resources' de MinIO (logos y marca de
+# agua institucionales, los mismos para todas las órdenes).
+RESOURCE_OBJECT_NAMES = {
+    "LOGO1": "Logo1.png",
+    "LOGO2": "Logo2.png",
+    "MARCA_DE_AGUA": "marca_de_agua.png",
+}
+
 
 async def _load_order_and_validated_labs(
     db: AsyncSession,
@@ -302,7 +310,7 @@ async def generate_laboratory_report_data(
     gráficas se resuelven a URLs presignadas de MinIO en vez de descargarse
     como imagen para incrustar en el documento.
     """
-    from utils.minio_client import get_signature_url, get_graphic_url
+    from utils.minio_client import get_signature_url, get_graphic_url, get_resource_url
 
     order, patient, validated_labs, signatures_map = await _load_order_and_validated_labs(
         db, order_id, include_results=True, study_ids=study_ids
@@ -320,6 +328,11 @@ async def generate_laboratory_report_data(
         "EDAD": order.o_age or "—",
         "GENERO": sex_label,
         "FECHA_INGRESO_ORDEN": order.o_date.strftime("%d/%m/%Y") if order.o_date else "—",
+        # Logos y marca de agua fijos del sistema, tomados del bucket
+        # 'resources' de MinIO (ver RESOURCE_OBJECT_NAMES más abajo).
+        "LOGO1": get_resource_url(RESOURCE_OBJECT_NAMES["LOGO1"]),
+        "LOGO2": get_resource_url(RESOURCE_OBJECT_NAMES["LOGO2"]),
+        "MARCA_DE_AGUA": get_resource_url(RESOURCE_OBJECT_NAMES["MARCA_DE_AGUA"]),
     }
 
     # Método por estudio: técnica de la primera prueba del estudio que tenga
@@ -334,7 +347,7 @@ async def generate_laboratory_report_data(
         if lab.test and lab.test.technique and lab.test.technique.name:
             method_by_study[study_id] = lab.test.technique.name
 
-    estudios: list[dict] = []
+    grupos_trabajo: list[dict] = []
     for wg_group in _group_by_study(validated_labs, is_female):
         # Igual que en el PDF (build_laboratory_pdf): si varios estudios
         # consecutivos del mismo grupo de trabajo fueron validados por
@@ -343,6 +356,7 @@ async def generate_laboratory_report_data(
         # último estudio de esa racha trae VALIDADORES con la firma.
         last_of_group = _signature_group_last_flags(wg_group["studies"], signatures_map)
 
+        estudios: list[dict] = []
         for idx, study in enumerate(wg_group["studies"]):
             validadores = []
             if last_of_group[idx]:
@@ -376,7 +390,6 @@ async def generate_laboratory_report_data(
                 pruebas.append(prueba)
 
             estudios.append({
-                "GRUPO_TRABAJO": wg_group["wg_name"],
                 "NOMBRE_ESTUDIO": study["name"],
                 "METODO": method_by_study.get(study["id"], ""),
                 "FECHA_VALIDACION_ESTUDIO": (
@@ -387,4 +400,9 @@ async def generate_laboratory_report_data(
                 "pruebas": pruebas,
             })
 
-    return {"parametros": parametros, "estudios": estudios}
+        grupos_trabajo.append({
+            "GRUPO_TRABAJO": wg_group["wg_name"],
+            "estudios": estudios,
+        })
+
+    return {"parametros": parametros, "grupos_trabajo": grupos_trabajo}

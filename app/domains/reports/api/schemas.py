@@ -51,6 +51,9 @@ class LaboratoryReportParametros(BaseModel):
     EDAD: str
     GENERO: str
     FECHA_INGRESO_ORDEN: str
+    LOGO1: Optional[str] = None
+    LOGO2: Optional[str] = None
+    MARCA_DE_AGUA: Optional[str] = None
 
 
 class LaboratoryReportValidador(BaseModel):
@@ -69,7 +72,6 @@ class LaboratoryReportPrueba(BaseModel):
 
 
 class LaboratoryReportEstudio(BaseModel):
-    GRUPO_TRABAJO: str
     NOMBRE_ESTUDIO: str
     METODO: str
     FECHA_VALIDACION_ESTUDIO: Optional[str] = None
@@ -77,9 +79,14 @@ class LaboratoryReportEstudio(BaseModel):
     pruebas: List[LaboratoryReportPrueba] = []
 
 
+class LaboratoryReportGrupoTrabajo(BaseModel):
+    GRUPO_TRABAJO: str
+    estudios: List[LaboratoryReportEstudio] = []
+
+
 class LaboratoryReportDataResponse(BaseModel):
     parametros: LaboratoryReportParametros
-    estudios: List[LaboratoryReportEstudio] = []
+    grupos_trabajo: List[LaboratoryReportGrupoTrabajo] = []
 
 
 # --- Dashboard / Estadísticas ---

@@ -129,6 +129,28 @@ def get_signature_url(object_name: str | None) -> Optional[str]:
         return None
 
 
+def get_resource_url(object_name: str | None) -> Optional[str]:
+    """
+    Dado el nombre de objeto, genera una URL presignada GET desde el bucket
+    'resources' (recursos fijos del sistema: logos, marca de agua, etc.).
+    Retorna None si object_name está vacío o si ocurre un error.
+    """
+    if not object_name:
+        return None
+    try:
+        client = get_minio_client()
+        url = client.presigned_get_object(
+            settings.MINIO_RESOURCES_BUCKET,
+            object_name,
+            expires=timedelta(hours=settings.MINIO_PRESIGNED_EXPIRES_HOURS),
+        )
+        return url
+    except S3Error:
+        return None
+    except Exception:
+        return None
+
+
 def build_signature_object_name(usr_id: int, extension: str = "png") -> str:
     """
     Genera un nombre de objeto estándar para la firma de un usuario.

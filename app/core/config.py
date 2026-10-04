@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     MINIO_GRAPHICS_BUCKET: str
     MINIO_SIGNATURES_BUCKET: str
     MINIO_ANNEXE_RESULT_BUCKET: str = "annexedResult"
+    MINIO_RESOURCES_BUCKET: str = "resources"
     MINIO_PRESIGNED_EXPIRES_HOURS: int
 
     # WhatsApp - Evolution API
