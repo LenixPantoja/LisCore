@@ -721,6 +721,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
         "state_label": state_label,
         "state_class": state_class,
         "is_abnormal": is_abnormal,
+        "range_type": lab.__dict__.get("_ref_type"),
         "note": lab.l_nota_validation or "",
         "graphic_object_name": lab.l_result_graphic or None,
         "result_comp": lab.l_result_comp or "",

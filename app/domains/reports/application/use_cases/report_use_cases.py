@@ -23,6 +23,7 @@ from app.domains.reports.infrastructure.pdf_generator import (
     _signature_group_last_flags,
 )
 from app.shared.utils.range_evaluator import evaluate_reference_range
+from app.domains.testslabs.domain.constants import RANGE_TYPE_NORMAL, RANGE_TYPE_CRITICO
 
 # Nombres de objeto fijos del bucket 'resources' de MinIO (logos y marca de
 # agua institucionales, los mismos para todas las órdenes).
@@ -32,18 +33,50 @@ RESOURCE_OBJECT_NAMES = {
     "MARCA_DE_AGUA": "marca_de_agua.png",
 }
 
+# Colores en hex (no nombres como "red"/"green": el parser HTML de
+# JasperReports los interpreta de forma más confiable) para RESULTADO_PRUEBA.
+_RANGE_TYPE_COLOR = {
+    RANGE_TYPE_CRITICO: "#FF0000",
+    RANGE_TYPE_NORMAL: "#008000",
+}
+
+
+def _format_resultado_html(resultado: str, range_type: Optional[str]) -> str:
+    """
+    Formatea RESULTADO_PRUEBA para un campo que ahora interpreta HTML:
+    - Escapa '<' y '>' del valor (ej. "<0.5 ng/mL" -> "&lt;0.5 ng/mL"), ya que
+      un '<' suelto puede romper el render o desaparecer.
+    - Si range_type es CRITICO o NORMAL, envuelve el valor ya escapado en
+      <font color="..."> con el color hex correspondiente.
+    - Para cualquier otro caso (ACEPTABLE, sin rango evaluado, resultado
+      textual, etc.) se deja el valor escapado tal cual, sin etiqueta — color
+      por defecto (negro).
+    """
+    escaped = resultado.replace("<", "&lt;").replace(">", "&gt;")
+    color = _RANGE_TYPE_COLOR.get(range_type)
+    if color:
+        return f'<font color="{color}">{escaped}</font>'
+    return escaped
+
 
 async def _load_order_and_validated_labs(
     db: AsyncSession,
     order_id: int,
     include_results: bool = True,
     study_ids: Optional[list[int]] = None,
+    filter_validated: bool = True,
 ) -> tuple[Order, Any, list, dict[int, list[dict]]]:
     """
-    Carga la orden + paciente y, si include_results, los laboratorios de
-    estudios completamente validados (considerando pruebas requeridas/no
-    requeridas — ver comentario del paso 3 más abajo), con sus rangos de
-    referencia evaluados y el mapa de firmas por estudio ya construido.
+    Carga la orden + paciente y, si include_results, los laboratorios de la
+    orden, con sus rangos de referencia evaluados y el mapa de firmas por
+    estudio ya construido.
+
+    Si filter_validated=True (default), solo incluye estudios completamente
+    validados (considerando pruebas requeridas/no requeridas — ver comentario
+    del paso 3 más abajo). Si filter_validated=False, incluye TODOS los
+    laboratorios de la orden (o de study_ids si se indica) tal cual están,
+    sin filtrar por estado — misma idea que generate_laboratory_report_raw,
+    para variantes "raw" que no exigen validación previa.
 
     Es la lógica compartida entre el PDF de resultados
     (generate_laboratory_report) y el endpoint de datos estructurados para
@@ -125,39 +158,44 @@ async def _load_order_and_validated_labs(
                 )
             labs_by_study = {sid: labs for sid, labs in labs_by_study.items() if sid in requested}
 
-        required_tests_by_study: dict[int, set[int]] = {}
-        if labs_by_study:
-            std_result = await db.execute(
-                select(StudiesTestDetail).where(
-                    StudiesTestDetail.studies_id.in_(labs_by_study.keys()),
-                    StudiesTestDetail.is_required == True,
+        if filter_validated:
+            required_tests_by_study: dict[int, set[int]] = {}
+            if labs_by_study:
+                std_result = await db.execute(
+                    select(StudiesTestDetail).where(
+                        StudiesTestDetail.studies_id.in_(labs_by_study.keys()),
+                        StudiesTestDetail.is_required == True,
+                    )
                 )
-            )
-            for std in std_result.scalars().all():
-                required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
+                for std in std_result.scalars().all():
+                    required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
 
-        states_with_results = {LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO}
+            states_with_results = {LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO}
 
-        validated_labs = []
-        for study_id, study_labs in labs_by_study.items():
-            required_test_ids = required_tests_by_study.get(study_id, set())
-            labs_by_test = {
-                lab.l_test_id: lab.l_state for lab in study_labs if lab.l_test_id is not None
-            }
+            validated_labs = []
+            for study_id, study_labs in labs_by_study.items():
+                required_test_ids = required_tests_by_study.get(study_id, set())
+                labs_by_test = {
+                    lab.l_test_id: lab.l_state for lab in study_labs if lab.l_test_id is not None
+                }
 
-            if required_test_ids:
-                # Solo las pruebas requeridas determinan si el estudio está listo
-                study_ready = all(
-                    labs_by_test.get(tid, 0) in states_with_results for tid in required_test_ids
-                )
-            else:
-                # Sin pruebas requeridas definidas: todas deben estar validadas
-                study_ready = bool(study_labs) and all(
-                    lab.l_state in states_with_results for lab in study_labs
-                )
+                if required_test_ids:
+                    # Solo las pruebas requeridas determinan si el estudio está listo
+                    study_ready = all(
+                        labs_by_test.get(tid, 0) in states_with_results for tid in required_test_ids
+                    )
+                else:
+                    # Sin pruebas requeridas definidas: todas deben estar validadas
+                    study_ready = bool(study_labs) and all(
+                        lab.l_state in states_with_results for lab in study_labs
+                    )
 
-            if study_ready:
-                validated_labs.extend(study_labs)
+                if study_ready:
+                    validated_labs.extend(study_labs)
+        else:
+            # Raw: todos los laboratorios de la orden (o del subconjunto
+            # study_ids), sin exigir que el estudio esté completamente validado.
+            validated_labs = [lab for study_labs in labs_by_study.values() for lab in study_labs]
 
         # 4. Evaluar rangos de referencia y adjuntarlos a cada lab
         patient_dob = getattr(patient, "pt_date_of_birth", None)
@@ -302,7 +340,10 @@ async def generate_validated_laboratory_report(
 
 
 async def generate_laboratory_report_data(
-    db: AsyncSession, order_id: int, study_ids: Optional[list[int]] = None
+    db: AsyncSession,
+    order_id: int,
+    study_ids: Optional[list[int]] = None,
+    filter_validated: bool = True,
 ) -> dict:
     """
     Punto de entrada de /api/reports/laboratory-results/report-data: retorna
@@ -310,6 +351,11 @@ async def generate_laboratory_report_data(
     generate_validated_laboratory_report) pero como datos estructurados
     ("parametros" + "estudios") en vez de un PDF, pensados para alimentar un
     motor de plantillas externo.
+
+    Si filter_validated=False, incluye todos los resultados de la orden sin
+    exigir que el estudio esté completamente validado (ver
+    _load_order_and_validated_labs) — usado por la variante "raw" de la v2
+    (/api/v2/reports/laboratory-results/raw).
 
     Reutiliza exactamente la misma carga/filtrado de estudios validados y el
     mismo mapa de firmas que el PDF (_load_order_and_validated_labs), y el
@@ -324,7 +370,7 @@ async def generate_laboratory_report_data(
     from utils.minio_client import get_signature_url, get_graphic_url, get_resource_url
 
     order, patient, validated_labs, signatures_map = await _load_order_and_validated_labs(
-        db, order_id, include_results=True, study_ids=study_ids
+        db, order_id, include_results=True, study_ids=study_ids, filter_validated=filter_validated
     )
 
     is_female, sex_label = _resolve_sex(patient)
@@ -385,7 +431,7 @@ async def generate_laboratory_report_data(
                 referencia = row["reference"] or ""
                 prueba = {
                     "NOMBRE_PRUEBA": row["test_name"],
-                    "RESULTADO_PRUEBA": resultado,
+                    "RESULTADO_PRUEBA": _format_resultado_html(resultado, row.get("range_type")),
                     "VALOR_REFERENCIA": f"{referencia} {units}".strip() if referencia else "",
                 }
                 alt_range = (row.get("alternative_range_value") or "").strip()
@@ -424,6 +470,7 @@ async def generate_laboratory_report_v2(
     order_id: int,
     renderer_host: str,
     study_ids: Optional[list[int]] = None,
+    filter_validated: bool = True,
 ) -> dict:
     """
     Punto de entrada de /api/v2/reports/laboratory-results: funciona igual que
@@ -435,10 +482,17 @@ async def generate_laboratory_report_v2(
     servicio externo de renderizado de PDF, que corre en el mismo host que
     este backend (puerto PDF_RENDERER_PORT) y responde con el PDF ya armado
     en crudo.
+
+    Si filter_validated=False (usado por /api/v2/reports/laboratory-results/raw),
+    arma esos mismos datos SIN filtrar por estudios completamente validados —
+    misma idea que /api/reports/laboratory-results/raw, pero vía el
+    renderizador externo en vez de reportlab.
     """
     from app.integrations.pdf_renderer.client import pdf_renderer_client
 
-    report_data = await generate_laboratory_report_data(db, order_id, study_ids)
+    report_data = await generate_laboratory_report_data(
+        db, order_id, study_ids, filter_validated=filter_validated
+    )
     annex_pdfs = await _load_annex_pdfs(db, order_id)
 
     try:

@@ -1,7 +1,7 @@
 """
 Router v2 del dominio de reportes.
 
-Por ahora expone únicamente la v2 de /laboratory-results, que delega el
+Expone la v2 de /laboratory-results (y su variante /raw), que delegan el
 renderizado del PDF a un servicio externo en vez de generarlo localmente
 con reportlab (ver app/integrations/pdf_renderer/client.py).
 """
@@ -42,4 +42,31 @@ async def generate_laboratory_report_v2(
     renderer_host = http_request.url.hostname or "localhost"
     return await use_cases.generate_laboratory_report_v2(
         db, request.order_id, renderer_host, request.study_ids
+    )
+
+
+@router.post(
+    "/laboratory-results/raw",
+    response_model=LaboratoryReportResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Generar PDF de resultados de laboratorio sin filtrar por validación (v2 — renderizado externo)",
+    description=(
+        "Igual que POST /laboratory-results (v2): arma los mismos datos "
+        "estructurados que /api/reports/laboratory-results/report-data y se los "
+        "envía al servicio externo de renderizado de PDF (POST "
+        "http://<host-de-este-backend>:PDF_RENDERER_PORT/api/reports/resultado-laboratorio). "
+        "A diferencia de esa, NO filtra por estudios completamente validados — "
+        "muestra todos los resultados registrados tal cual están (misma idea que "
+        "/api/reports/laboratory-results/raw, pero vía el renderizador externo)."
+    ),
+    dependencies=[Depends(require_permission("Reports:GenerateReport"))],
+)
+async def generate_laboratory_report_v2_raw(
+    request: LaboratoryReportRequest,
+    http_request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    renderer_host = http_request.url.hostname or "localhost"
+    return await use_cases.generate_laboratory_report_v2(
+        db, request.order_id, renderer_host, request.study_ids, filter_validated=False
     )
