@@ -16,34 +16,6 @@ from pypdf import PdfReader, PdfWriter
 LABELARY_URL = "http://api.labelary.com/v1/printers/8dpmm/labels/4x2/0/"
 LABELARY_TIMEOUT = 15
 
-_ZPL_TEMPLATE = """^XA
-^LH0,0
-
-^FO20,20
-^AR,0,0
-^FDCONSECUTIVO:^FS
-
-^FO250,20
-^AR,0,0
-^FD{consecutivo}^FS
-
-^FO20,60
-^AR,0,0
-^FDDIAS_DESCA:^FS
-
-^FO250,60
-^AR,0,0
-^FD{dias_descarte}^FS
-
-^BY2,3,100
-^FO50,105
-^BCN,50,Y,N,N
-^FD{consecutivo}^FS
-
-^PQ1
-^XZ"""
-
-
 def _format_date(dt) -> str:
     """Format a datetime as DD/MM/YYYY"""
     if dt is None:
@@ -53,15 +25,16 @@ def _format_date(dt) -> str:
     return str(dt)
 
 
-def build_zpl(rack) -> str:
-    """Build a ZPL string from a Gradilla model instance."""
+def build_zpl(rack, template: str) -> str:
+    """Build a ZPL string from a Gradilla model instance and a ZPL template
+    (leída de la tabla barcodes, label_type='GRADILLA' — ver BarcodeRepository)."""
     consecutivo = rack.g_number or "N/A"
 
     dias_descarte = "N/A"
     if rack.g_discard_date and rack.g_created_at:
         dias_descarte = str((rack.g_discard_date - rack.g_created_at).days)
         dias_int=int(dias_descarte)+1
-    return _ZPL_TEMPLATE.format(
+    return template.format(
         consecutivo=consecutivo,
         dias_descarte=str(dias_int),
     )
@@ -89,17 +62,18 @@ def pdf_to_base64(pdf_bytes: bytes) -> str:
     return base64.b64encode(pdf_bytes).decode("utf-8")
 
 
-def generate_sticker(rack) -> dict:
+def generate_sticker(rack, template: str) -> dict:
     """
     Generate a sticker (ZPL + PDF base64) for a gradilla.
-    
+
     Args:
         rack: Gradilla ORM model instance
-    
+        template: plantilla ZPL activa (label_type='GRADILLA')
+
     Returns:
         dict with keys: zpl_code, base64_pdf, gradilla_number, gradilla_id
     """
-    zpl = build_zpl(rack)
+    zpl = build_zpl(rack, template)
     pdf_bytes = zpl_to_pdf(zpl)
     pdf_b64 = pdf_to_base64(pdf_bytes)
 

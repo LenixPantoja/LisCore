@@ -1007,9 +1007,14 @@ async def delete_tipo_gradilla(db: AsyncSession, tg_id: int) -> dict:
 
 async def generate_gradilla_sticker(db: AsyncSession, g_id: int) -> dict:
     from app.domains.seroteca.infrastructure.gradilla_sticker import generate_sticker
+    from app.domains.barcodes.infrastructure.repository import (
+        BarcodeRepository,
+        LABEL_TYPE_GRADILLA,
+    )
 
     rack = await GradillaRepository.get_by_id(db, g_id)
     if not rack:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gradilla not found")
 
-    return generate_sticker(rack)
+    template = await BarcodeRepository.get_active_template(db, LABEL_TYPE_GRADILLA)
+    return generate_sticker(rack, template)

@@ -16,36 +16,10 @@ from pypdf import PdfReader, PdfWriter
 LABELARY_URL = "http://api.labelary.com/v1/printers/8dpmm/labels/2x1/0/"
 LABELARY_TIMEOUT = 15  # seconds
 
-# ── ZPL template ────────────────────────────────────────────────────────────
-# ^CI28 activa la interpretación UTF-8 en el intérprete ZPL, necesaria para
-# que tildes y la Ñ se impriman correctamente (sin esto, el firmware asume
-# la codepage por defecto de la impresora y las salidas se ven corruptas).
-_ZPL_TEMPLATE = """\
-^XA
-^CI28
-^LH0,0
-
-^FO35,20^A0N,20,20^FD{patient_full_name}^FS
-^FO35,40^A0N,20,20^FD{document_type} {identification}^FS
-^FO270,40^A0N,18,18^FDEDAD:{age_str}^FS
-
-^BY2,3,150
-^FO31,65^BCN,94,N,Y,N^FD{barcode_value}^FS
-
-^FO368,70^A0B,18,18^FD{work_group_name}^FS
-^FO4,35^A0B,22,22^FD{label_number}^FS
-
-^FO45,165^A0N,16,16^FD{tests_line}^FS
-^FO45,185^A0N,16,16^FD TM-{sample_type_name}^FS
-^FO200,210^A0N,15,15^FD {piso}^FS
-
-^PQ1
-^XZ"""
-
-
-def build_zpl(sticker: dict) -> str:
-    """Build a ZPL string from a sticker data dict."""
-    return _ZPL_TEMPLATE.format(
+def build_zpl(sticker: dict, template: str) -> str:
+    """Build a ZPL string from a sticker data dict and a ZPL template (leída
+    de la tabla barcodes, label_type='MUESTRA' — ver BarcodeRepository)."""
+    return template.format(
         patient_full_name=sticker["patient_full_name"],
         document_type=sticker.get("document_type", ""),
         identification=sticker["identification"],
@@ -93,7 +67,7 @@ def _merge_pdfs(pdf_bytes_list: List[bytes]) -> bytes:
     return buf.getvalue()
 
 
-def build_stickers_result(stickers: List[dict]) -> tuple[bytes, List[str]]:
+def build_stickers_result(stickers: List[dict], template: str) -> tuple[bytes, List[str]]:
     """Generate a merged PDF and ZPL codes for all stickers.
 
     Calls the Labelary API once per sticker, merges the resulting PDFs,
@@ -102,7 +76,7 @@ def build_stickers_result(stickers: List[dict]) -> tuple[bytes, List[str]]:
     Returns:
         (merged_pdf_bytes, zpl_codes)
     """
-    zpl_list = [build_zpl(s) for s in stickers]
+    zpl_list = [build_zpl(s, template) for s in stickers]
     pdf_list: List[bytes] = []
     for i, zpl in enumerate(zpl_list):
         pdf_list.append(zpl_to_pdf(zpl))

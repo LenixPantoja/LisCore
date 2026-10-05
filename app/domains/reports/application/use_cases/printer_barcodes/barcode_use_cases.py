@@ -36,6 +36,10 @@ from app.domains.reports.infrastructure.printer_barcodes.barcode_generator impor
     build_stickers_result,
     pdf_to_base64,
 )
+from app.domains.barcodes.infrastructure.repository import (
+    BarcodeRepository,
+    LABEL_TYPE_MUESTRA,
+)
 
 
 async def _resolve_piso(db: AsyncSession, order: Order) -> str:
@@ -351,7 +355,8 @@ async def generate_barcode_stickers(
         )
 
     # 9. Build PDF via Labelary and return
-    pdf_bytes, zpl_list = await asyncio.to_thread(build_stickers_result, stickers)
+    template = await BarcodeRepository.get_active_template(db, LABEL_TYPE_MUESTRA)
+    pdf_bytes, zpl_list = await asyncio.to_thread(build_stickers_result, stickers, template)
     b64 = pdf_to_base64(pdf_bytes)
 
     filename = f"stickers_{order.o_number}_{identification.replace(' ', '_')}.pdf"
