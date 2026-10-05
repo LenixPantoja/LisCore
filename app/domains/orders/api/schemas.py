@@ -32,6 +32,16 @@ class OrderBase(BaseModel):
     o_tariff_id: Optional[int] = None
     o_sample_name: Optional[str] = None
 
+    @field_validator("o_pat_mail", mode="before")
+    @classmethod
+    def _blank_email_to_none(cls, v):
+        # El correo y el celular del paciente no son obligatorios: si el
+        # front envía "" (campo vacío) en vez de omitir el campo, EmailStr lo
+        # rechazaría como email inválido — se trata igual que None.
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
+
 class OrderCreate(OrderBase):
     """Esquema para crear una orden con sus estudios solicitados."""
     o_date: Optional[date] = None  # Se asigna automáticamente si no se envía
@@ -49,6 +59,13 @@ class OrderUpdate(BaseModel):
     o_pat_num_whatsapp: Optional[str] = None
     o_pat_mail: Optional[EmailStr] = None
     o_note: Optional[str] = None
+
+    @field_validator("o_pat_mail", mode="before")
+    @classmethod
+    def _blank_email_to_none(cls, v):
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
 class OrderResponse(OrderBase):
     o_id: int
