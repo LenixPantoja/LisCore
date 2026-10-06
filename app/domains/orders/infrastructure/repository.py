@@ -194,7 +194,8 @@ class OrderRepository:
         - Deletes Laboratory records linked to those OrdersDetails.
         - Sets invd_value = 0 and invd_total = 0 on matching InvoicesDetail rows.
 
-        If ALL studies of the order end up cancelled, sets Order.o_cancelled = 1.
+        If ALL studies of the order end up cancelled, sets Order.o_cancelled = 1
+        and Order.o_order_state = ORDER_STATE_ANULADA.
 
         Returns a dict with cancelled_detail_ids and order_cancelled flag.
         """
@@ -269,10 +270,15 @@ class OrderRepository:
         remaining_active = remaining_result.scalar() or 0
         all_cancelled = remaining_active == 0
 
+        order_update_values: dict = {"o_cancelled": 1 if all_cancelled else 0}
+        if all_cancelled:
+            from app.domains.orders.domain.constants import ORDER_STATE_ANULADA
+            order_update_values["o_order_state"] = ORDER_STATE_ANULADA
+
         await db.execute(
             sa_update(Order)
             .where(Order.o_id == o_id)
-            .values(o_cancelled=1 if all_cancelled else 0)
+            .values(**order_update_values)
             .execution_options(synchronize_session="fetch")
         )
 

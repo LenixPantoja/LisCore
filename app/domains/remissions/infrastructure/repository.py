@@ -556,6 +556,7 @@ class RemissionRepository:
                 StudiesLab.external_lab_id.isnot(None),
                 StudiesLab.external_lab_id != 1,
                 OrdersDetail.od_state != ORDER_DETAIL_STATE_DESCARTADO,
+                OrdersDetail.od_cancelled == 0,
             )
             .distinct()
         )
@@ -649,6 +650,7 @@ class RemissionRepository:
                 StudiesLab.external_lab_id.isnot(None),
                 StudiesLab.external_lab_id != 1,
                 OrdersDetail.od_state != ORDER_DETAIL_STATE_DESCARTADO,
+                OrdersDetail.od_cancelled == 0,
             )
         )
         if external_lab_id is not None:
@@ -706,6 +708,7 @@ class RemissionRepository:
                 StudiesLab.external_lab_id.isnot(None),
                 StudiesLab.external_lab_id != 1,
                 OrdersDetail.od_state != ORDER_DETAIL_STATE_DESCARTADO,
+                OrdersDetail.od_cancelled == 0,
             )
             .distinct()
         )
