@@ -414,7 +414,7 @@ async def get_order_details_paginated_by_number(
     skip_tests: int = 0,
     limit_tests: int = 100,
     l_state: Optional[int] = None,
-    work_group_id: Optional[int] = None,
+    work_group_ids: Optional[list[int]] = None,
 ):
     # 1. Obtener orden principal
     order = await OrderRepository.get_order_by_number(db, o_number)
@@ -425,7 +425,7 @@ async def get_order_details_paginated_by_number(
 
     # 2. Consultar laboratorios y pruebas paginados
     labs, total_labs = await OrderRepository.get_laboratories_paginated(
-        db, order.o_id, skip_labs, limit_labs, l_state=l_state, work_group_id=work_group_id
+        db, order.o_id, skip_labs, limit_labs, l_state=l_state, work_group_ids=work_group_ids
     )
     tests, total_tests = await OrderRepository.get_tests_paginated(db, order.o_id, skip_tests, limit_tests)
 

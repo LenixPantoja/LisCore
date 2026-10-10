@@ -391,7 +391,7 @@ class OrderRepository:
         skip: int = 0,
         limit: int = 100,
         l_state: Optional[int] = None,
-        work_group_id: Optional[int] = None,
+        work_group_ids: Optional[list[int]] = None,
     ):
         from app.domains.laboratories.domain.models import Laboratory
         from app.domains.orders.domain.models import OrdersDetail
@@ -408,8 +408,8 @@ class OrderRepository:
         )
         if l_state is not None:
             count_stmt = count_stmt.where(Laboratory.l_state == l_state)
-        if work_group_id is not None:
-            count_stmt = count_stmt.where(StudiesLab.work_groups_id == work_group_id)
+        if work_group_ids:
+            count_stmt = count_stmt.where(StudiesLab.work_groups_id.in_(work_group_ids))
         total = (await db.execute(count_stmt)).scalar() or 0
 
         # JOIN StudiesLab and StudiesTestDetail to apply ordering by order_of_print / order_print.
@@ -433,8 +433,8 @@ class OrderRepository:
         )
         if l_state is not None:
             query = query.where(Laboratory.l_state == l_state)
-        if work_group_id is not None:
-            query = query.where(StudiesLab.work_groups_id == work_group_id)
+        if work_group_ids:
+            query = query.where(StudiesLab.work_groups_id.in_(work_group_ids))
 
         result = await db.execute(
             query.order_by(

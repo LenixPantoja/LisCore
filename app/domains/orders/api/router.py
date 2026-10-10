@@ -1,5 +1,5 @@
 from datetime import date
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_permission, get_current_user
 from app.domains.users.infrastructure.models import AppUser
 from app.domains.orders.api.schemas import (
-    OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse, 
+    OrderCreate, OrderUpdate, OrderResponse, OrderPaginatedResponse,
     NextOrderNumberResponse, OrderDetailsPaginatedResponse, OrderFullDetailsResponse,
     OrderCreatedResponse, OrderEditRequest, OrderEditResponse,
     GraficoEvolutivoResponse, CancelStudiesRequest, CancelStudiesResponse,
@@ -16,6 +16,30 @@ from app.domains.orders.api.schemas import (
 from app.domains.orders.application.use_cases import order_use_cases as use_cases
 
 router = APIRouter()
+
+
+def _parse_int_list(raw: Optional[list[str]]) -> Optional[list[int]]:
+    """
+    Convierte valores de query param a una lista de int, aceptando tanto
+    lista separada por comas (?param=1,2,3) como el parámetro repetido
+    (?param=1&param=2), o una mezcla de ambos.
+    """
+    if not raw:
+        return None
+    ids: list[int] = []
+    for item in raw:
+        for piece in item.split(","):
+            piece = piece.strip()
+            if not piece:
+                continue
+            try:
+                ids.append(int(piece))
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=f"Valor inválido '{piece}': se esperaba una lista de IDs numéricos.",
+                )
+    return ids or None
 
 @router.post("/", response_model=OrderCreatedResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_permission("Orders:Create"))])
@@ -124,15 +148,16 @@ async def get_order_details_paginated(
     skip_tests: int = Query(0, ge=0),
     limit_tests: int = Query(100, ge=1, le=500),
     l_state: Optional[int] = Query(None, description="Filtrar analitos por estado de laboratorio (0=Sin Resultados, 1=Pendiente, 2=Con Resultados, 3=Validada, 4=Laboratorio Impreso, 5=Descartado)"),
-    work_group_id: Optional[int] = Query(None, description="Filtrar analitos por grupo de trabajo del estudio"),
+    work_group_id: Optional[list[str]] = Query(None, description="Filtrar analitos por uno o varios grupos de trabajo del estudio. Acepta lista separada por comas (?work_group_id=1,2,3) y/o el parámetro repetido (?work_group_id=1&work_group_id=2)."),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Get an order by number with its paginated laboratories and tests.
     """
+    work_group_ids = _parse_int_list(work_group_id)
     return await use_cases.get_order_details_paginated_by_number(
         db, o_number, skip_labs, limit_labs, skip_tests, limit_tests,
-        l_state=l_state, work_group_id=work_group_id,
+        l_state=l_state, work_group_ids=work_group_ids,
     )
 
 @router.get("/{id}/full", response_model=OrderFullDetailsResponse,
