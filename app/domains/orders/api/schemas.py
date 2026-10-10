@@ -332,6 +332,7 @@ class OrderDetailsSummaryResponse(BaseModel):
     o_number: str
     o_age: Optional[str] = None
     o_date: date
+    o_note: Optional[str] = None
 
     class Config:
         from_attributes = True
