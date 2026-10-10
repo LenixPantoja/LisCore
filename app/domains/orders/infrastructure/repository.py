@@ -118,15 +118,17 @@ class OrderRepository:
         order_states: Optional[list[int]] = None,
         work_group_ids: Optional[list[int]] = None,
         study_ids: Optional[list[int]] = None,
+        headquarter_ids: Optional[list[int]] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> Tuple[Sequence[Order], int]:
         """
-        Filtra órdenes por fecha/hora (o_created_at), estado, grupo de trabajo
-        y estudios. Retorna una lista plana de Order con patient cargado,
+        Filtra órdenes por fecha/hora (o_created_at), estado, grupo de trabajo,
+        estudios y sede. Retorna una lista plana de Order con patient cargado,
         paginada, junto con el total de resultados que coinciden con el filtro.
         La relación con OrdersDetail → StudiesLab se usa para filtrar por
-        work_group_ids y study_ids.
+        work_group_ids y study_ids. headquarter_ids filtra directo por
+        Order.o_headquarter_id (sede en la que se ingresó la orden).
         """
         from app.domains.patients.domain.models import Patient
         from app.domains.studieslab.domain.models import StudiesLab
@@ -154,6 +156,10 @@ class OrderRepository:
         # Filtro de estados
         if order_states:
             query = query.filter(Order.o_order_state.in_(order_states))
+
+        # Filtro de sede (columna directa en Order, sin JOIN)
+        if headquarter_ids:
+            query = query.filter(Order.o_headquarter_id.in_(headquarter_ids))
 
         # Filtros de grupo de trabajo y/o estudio requieren JOIN con OrdersDetails → StudiesLab
         needs_detail_join = bool(work_group_ids or study_ids)

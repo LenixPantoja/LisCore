@@ -564,6 +564,7 @@ class OrderFilterRequest(BaseModel):
     - order_states: Lista de estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
     - work_group_ids: Lista de IDs de grupos de trabajo (Work_groups.wg_id)
     - study_ids: Lista de IDs de estudios (StudiesLab.id)
+    - headquarter_ids: Lista de IDs de sede (Order.o_headquarter_id)
     - skip / limit: Paginación del resultado.
     """
     start_date: Optional[datetime] = None
@@ -571,6 +572,7 @@ class OrderFilterRequest(BaseModel):
     order_states: Optional[List[int]] = None
     work_group_ids: Optional[List[int]] = None
     study_ids: Optional[List[int]] = None
+    headquarter_ids: Optional[List[int]] = None
     skip: int = Field(0, ge=0)
     limit: int = Field(100, ge=1, le=500)
 

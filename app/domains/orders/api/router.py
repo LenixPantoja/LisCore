@@ -154,6 +154,7 @@ async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get
     - Estados de la orden (1=Ingresada, 2=Pendiente, 3=Con Resultados, 4=Validada, 5=Impresa, 6=Cerrada, 7=Anulada)
     - Grupos de trabajo (lista de IDs de Work_groups)
     - Estudios (lista de IDs de StudiesLab)
+    - Sedes (lista de IDs de sede, Order.o_headquarter_id)
     - skip / limit: Paginación (limit por defecto 100, máximo 500).
 
     Retorna un resultado paginado (total, skip, limit, items), donde cada
@@ -166,6 +167,7 @@ async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get
         order_states=data.order_states,
         work_group_ids=data.work_group_ids,
         study_ids=data.study_ids,
+        headquarter_ids=data.headquarter_ids,
         skip=data.skip,
         limit=data.limit,
     )
