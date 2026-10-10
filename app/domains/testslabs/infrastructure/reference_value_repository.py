@@ -1,6 +1,7 @@
 from typing import List, Optional, Sequence, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.domains.testslabs.domain.models import ReferenceValue
 
@@ -37,6 +38,9 @@ class ReferenceValueRepository:
             return None
         for key, value in data.items():
             setattr(instance, key, value)
+            # SQLAlchemy omite columnas "sin cambios" comparando con ==, y Decimal("0.0") == Decimal("0"):
+            # sin esto, editar 0 → 0.0 (o 5 → 5.00) no se guarda y se pierde la cantidad de decimales.
+            flag_modified(instance, key)
         await db.commit()
         await db.refresh(instance)
         return instance
