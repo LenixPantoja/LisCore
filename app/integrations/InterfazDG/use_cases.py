@@ -17,6 +17,7 @@ from app.domains.patients.domain.models import Patient
 from app.domains.patients.infrastructure.repository import PatientRepository
 from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_patient
 from app.core.security import get_password_hash
+from app.domains.requests.domain.models import InboundOrder, InboundOrderDetail
 from app.domains.requests.infrastructure.repository import InboundOrderRepository
 from app.integrations.InterfazDG.models import DGSolicitudExamenes
 
@@ -35,15 +36,24 @@ async def registrar_solicitud_dg(
     - Si el paciente no existe en el sistema, lo crea con los datos del XML.
     - La homologacion de estudios se realiza via InterfacesRest/InterfacesRestDetail
       usando el enterprise_id y el codigo del examen enviado por el HIS (IDEXAMEN).
+    - Anti-duplicados por io_number_request (ORDCONSEC): si ya existe un
+      InboundOrder con el mismo io_number_request Y exactamente los mismos
+      estudios homologados, NO se registra de nuevo — se rechaza con 422
+      (evita duplicados por reintentos del HIS, p.ej. por timeout esperando
+      el acuse). Si el io_number_request ya existe pero con estudios
+      distintos, se registra igual como una solicitud nueva.
     - Retorna el io_id del InboundOrder creado.
 
     Raises:
-        HTTPException 422 si faltan datos requeridos en el XML.
+        HTTPException 422 si faltan datos requeridos en el XML, o si la
+            solicitud (mismo io_number_request + mismos estudios) ya estaba
+            registrada.
         HTTPException 404 si algun estudio no tiene homologacion configurada.
     """
     dg = solicitud.datos_generales
     dp = solicitud.datos_paciente
     do = solicitud.datos_orden
+    ord_consec = dg.ord_consec if dg else None
 
     # --- 1. Buscar empresa por NIT y obtener la interfaz configurada ---
     enterprise_id: Optional[int] = None
@@ -184,6 +194,31 @@ async def registrar_solicitud_dg(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="El XML no contiene examenes validos para registrar.",
         )
+
+    # --- 4.1 Verificar duplicado: mismo io_number_request Y mismos estudios ---
+    #     Se compara por conjunto de iod_study_id ya homologados, no por el
+    #     codigo HIS crudo, para que la comparacion sea exacta aunque cambie
+    #     el orden en que vienen los examenes en el XML.
+    if ord_consec:
+        incoming_study_ids = {d["iod_study_id"] for d in detail_data_list}
+        existing_details_result = await db.execute(
+            select(InboundOrderDetail.iod_inboundOrder_id, InboundOrderDetail.iod_study_id)
+            .join(InboundOrder, InboundOrder.io_id == InboundOrderDetail.iod_inboundOrder_id)
+            .where(InboundOrder.io_number_request == ord_consec)
+        )
+        existing_study_ids_by_order: dict[int, set[int]] = {}
+        for existing_io_id, existing_study_id in existing_details_result.all():
+            existing_study_ids_by_order.setdefault(existing_io_id, set()).add(existing_study_id)
+
+        for existing_io_id, existing_study_ids in existing_study_ids_by_order.items():
+            if existing_study_ids == incoming_study_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail=(
+                        f"La solicitud con orden HIS '{ord_consec}' ya fue registrada "
+                        f"previamente con los mismos estudios (InboundOrder ID: {existing_io_id})."
+                    ),
+                )
 
     # --- 5. Homologar servicio (GESERCODIGO -> Services.code -> Services.id) ---
     service_id: Optional[int] = None
