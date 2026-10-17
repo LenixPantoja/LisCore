@@ -616,6 +616,7 @@ class OrderFilterItemResponse(BaseModel):
     o_number: str
     pt_name: str = Field(..., description="Nombre completo del paciente: Nombre1 Nombre2 Apellido1 Apellido2")
     pt_number_document: str
+    o_priority: Optional[int] = None
 
 
 class OrderFilterPaginatedResponse(BaseModel):

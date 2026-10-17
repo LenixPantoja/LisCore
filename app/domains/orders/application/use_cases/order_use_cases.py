@@ -1191,7 +1191,8 @@ async def filter_orders(
 ) -> dict:
     """
     Filtra órdenes por múltiples criterios y retorna un resultado paginado
-    con los campos especificados: o_id, o_number, pt_name, pt_number_document.
+    con los campos especificados: o_id, o_number, pt_name, pt_number_document,
+    o_priority.
     """
     orders, total = await OrderRepository.get_filtered_orders(
         db,
@@ -1225,6 +1226,7 @@ async def filter_orders(
             "o_number": order.o_number,
             "pt_name": pt_name,
             "pt_number_document": pt_number_document,
+            "o_priority": order.o_priority,
         })
 
     return {"total": total, "skip": skip, "limit": limit, "items": result}
