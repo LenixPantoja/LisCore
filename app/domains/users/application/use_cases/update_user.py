@@ -36,6 +36,9 @@ async def execute(
 
     if update_data.get("usr_password"):
         update_data["usr_password"] = get_password_hash(update_data["usr_password"])
+        # Un reseteo de contraseña por un admin también es una clave temporal:
+        # se vuelve a exigir el cambio en el próximo login.
+        update_data["usr_must_change_password"] = True
 
     if signature_bytes:
         object_name = build_signature_object_name(user_id, signature_extension)

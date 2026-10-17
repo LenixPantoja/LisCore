@@ -26,6 +26,9 @@ async def execute(
 
     user_data = dict(user_data)
     user_data["usr_password"] = get_password_hash(user_data["usr_password"])
+    # La contraseña asignada al crear el usuario es temporal: se exige
+    # cambiarla en el primer login (ver /users/change-password).
+    user_data["usr_must_change_password"] = True
 
     new_user = await user_repo.create(db, user_data)
 

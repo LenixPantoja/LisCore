@@ -7,11 +7,12 @@ class Settings(BaseSettings):
     APP_NAME: str = "CorelisDB"
 
     # CORS
-    CORS_ORIGINS: List[str] = ["http://localhost:4200", "http://localhost:3000", "http://localhost:8080","http://192.168.200.8:8080"]
+    CORS_ORIGINS: List[str] = ["http://localhost:4200", "http://localhost:3000", "http://localhost:8080","http://192.168.200.8:8080", "http://169.58.134.253:8080"]
     ALLOWED_HOSTS: List[str] = [
         "localhost", 
         "127.0.0.1", 
         "192.168.200.8",
+        "169.58.134.253",
         "*"
     ]
 

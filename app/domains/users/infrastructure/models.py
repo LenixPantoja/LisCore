@@ -49,6 +49,7 @@ class AppUser(Base):
     usr_is_active = Column(Boolean, default=True)
     usr_mail = Column(String(255), unique=True, index=True)
     usr_is_Locked = Column(Boolean, default=False)
+    usr_must_change_password = Column(Boolean, default=False, nullable=False)
     usr_Signature = Column(Text, nullable=True)
     usr_created_at = Column(DateTime, default=get_bogota_now)
     usr_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)

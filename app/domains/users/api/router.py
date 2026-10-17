@@ -4,19 +4,20 @@ from fastapi import APIRouter, Depends, status, Query, Form, File, UploadFile, H
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
 from app.domains.users.api.schemas import (
     UserResponse, UserPaginatedResponse, UserUpdate, UserLogin, LoginResponse,
     PermissionCreate, PermissionUpdate, PermissionResponse, PermissionModuleTreeResponse, RolePermissionAssign,
     RolCreate, RolUpdate, RolResponse, RolWithPermissionsResponse, UserCreate, UserCreateResponse, UserDetailResponse,
-    RefreshTokenRequest, RefreshTokenResponse,
+    RefreshTokenRequest, RefreshTokenResponse, ChangePasswordRequest, ChangePasswordResponse,
 )
 from app.domains.users.application.use_cases import (
     list_users, get_user, update_user, login_user,
     list_permissions, list_permissions_tree, create_permission, update_permission, delete_permission, role_permissions,
-    list_roles, create_role, get_role, update_role, create_user, refresh_token,
+    list_roles, create_role, get_role, update_role, create_user, refresh_token, change_own_password,
 )
 from app.domains.users.infrastructure.repository import UserRepository, PermissionRepository
+from app.domains.users.infrastructure.models import AppUser
 
 router = APIRouter()
 
@@ -160,6 +161,22 @@ async def login_for_access_token(form_data: UserLogin, db: AsyncSession = Depend
 @router.post("/refresh", response_model=RefreshTokenResponse)
 async def refresh_access_token(body: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
     return await refresh_token.execute(db, body.refresh_token)
+
+
+@router.post("/change-password", response_model=ChangePasswordResponse)
+async def change_password(
+    body: ChangePasswordRequest,
+    current_user: AppUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Permite al usuario autenticado cambiar su propia contraseña (requiere la
+    contraseña actual). Usado tanto para el cambio voluntario como para el
+    cambio obligatorio de la clave temporal en el primer login
+    (LoginResponse.must_change_password).
+    """
+    await change_own_password.execute(db, current_user, body.current_password, body.new_password)
+    return {"detail": "Contraseña actualizada correctamente."}
 
 
 # ── Permissions ──────────────────────────────────────────────────────────────

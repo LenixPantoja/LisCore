@@ -45,4 +45,5 @@ async def execute(user_repo: UserRepository, db: AsyncSession, login_data: dict)
         "usr_login": user.usr_login,
         "usr_full_name": full_name,
         "usr_rol_name": user.role.r_name if user.role else None,
+        "must_change_password": user.usr_must_change_password,
     }
