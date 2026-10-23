@@ -22,6 +22,7 @@ class Order(Base):
     o_service_id = Column(Integer, ForeignKey("Services.id"), nullable=True)
     o_diagnoses_id = Column(Integer, ForeignKey("Diagnoses.diag_id"), nullable=True)
     o_headquarter_id = Column(Integer, nullable=True, index=True) # Falta FK formal si no existe tabla headquarters mapeada
+    o_hq_consecutive = Column(Integer, nullable=True)  # Consecutivo de la orden dentro de su sede (1..999999999)
     o_AppUser_id = Column(Integer, nullable=True) # Corresponde a Users
     o_enterprise_id = Column(Integer, ForeignKey("Enterprises.en_id"), nullable=True)
     o_scholarity = Column(Integer, ForeignKey("Schooling.id"), nullable=True)

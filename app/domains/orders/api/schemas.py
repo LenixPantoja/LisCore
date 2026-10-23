@@ -69,6 +69,7 @@ class OrderUpdate(BaseModel):
 
 class OrderResponse(OrderBase):
     o_id: int
+    o_hq_consecutive: Optional[int] = None
     o_print_date: Optional[datetime] = None
     o_mail_sent: int
     o_whatsapp_sent: int
@@ -122,6 +123,7 @@ class OrderCreatedResponse(BaseModel):
     """Response returned immediately after a successful order creation."""
     o_id: int
     o_number: str
+    o_hq_consecutive: Optional[int] = None
     o_date: Optional[date] = None
     o_his_id: int
     o_enterprise_id: Optional[int] = None
@@ -330,6 +332,7 @@ class OrderDetailsSummaryResponse(BaseModel):
     """order en la raíz de /by-number/{o_number}/details, solo con los campos que usa el front."""
     o_id: int
     o_number: str
+    o_hq_consecutive: Optional[int] = None
     o_age: Optional[str] = None
     o_date: date
     o_note: Optional[str] = None

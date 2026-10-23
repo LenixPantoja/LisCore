@@ -70,7 +70,10 @@ def compute_order_state_from_studies(
     all_with_results = True
 
     for study_id, tests_map in study_labs.items():
-        required_ids = required_tests_by_study.get(study_id) or set(tests_map.keys())
+        # Solo cuentan las pruebas requeridas que existen en la orden: una prueba
+        # marcada como requerida después de crear la orden no tiene laboratorio
+        # y no debe bloquear el estado.
+        required_ids = (required_tests_by_study.get(study_id, set()) & tests_map.keys()) or set(tests_map.keys())
 
         if not all(tests_map.get(tid, 0) in LAB_STATES_VALIDATED_OR_BEYOND for tid in required_ids):
             all_validated = False

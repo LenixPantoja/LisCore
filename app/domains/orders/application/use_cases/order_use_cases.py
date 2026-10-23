@@ -27,6 +27,7 @@ from app.domains.orders.domain.constants import (
     ORDER_DETAIL_STATE_INGRESADO,
 )
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS
+from app.domains.orders.domain.order_state_logic import LAB_STATES_WITH_RESULTS
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.samples.domain.constants import SAMPLE_ORDER_STATE_NO_INGRESADA
 from app.domains.laboratories.domain.models import Laboratory
@@ -45,6 +46,7 @@ from app.domains.billing.domain.constants import (
 from app.domains.Headquarters.domain.models import Headquarter
 from app.domains.contractstariffs.domain.models import TariffDetail, ContractTariff, Contract
 from utils.Consecutives.consecutive_orders import generate_order_number
+from utils.Consecutives.consecutive_headquarters import generate_headquarter_consecutive
 from utils.Consecutives.consecutive_invoices import generate_invoice_number
 from utils.timezone import get_bogota_now
 from utils.trace import register_trace
@@ -88,6 +90,11 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
             data["o_date"] = get_bogota_now().date()
         # Generamos el número de orden automáticamente ignorando el del request
         data["o_number"] = await generate_order_number(db, data.get("o_date"))
+        # Consecutivo propio de la sede (bloquea la fila de la sede hasta el commit)
+        data["o_hq_consecutive"] = (
+            await generate_headquarter_consecutive(db, data["o_headquarter_id"])
+            if data.get("o_headquarter_id") else None
+        )
         # Estado inicial de la orden: Ingresada
         data["o_order_state"] = ORDER_STATE_INGRESADA
         data["o_cancelled"] = 0
@@ -320,6 +327,9 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
         
         if "so_barcode" in error_msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Conflicto de duplicidad en el código de barras de la muestra. El consecutivo falló.")
+
+        if "uq_orders_hq_consecutive" in error_msg:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Conflicto de duplicidad en el consecutivo de la sede. Intente nuevamente.")
 
         if "o_scholarity" in error_msg:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El nivel de escolaridad especificado no es válido.")
@@ -658,14 +668,17 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
     STUDY_STATE_PENDIENTE = "Pendiente"
     STUDY_STATE_CON_RESULTADOS = "Con Resultados"
     STUDY_STATE_SIN_RESULTADOS = "Sin Resultados"
-    STATES_WITH_RESULTS = { 3, 4}  # Con Resultados, Validada, Impreso
+    STATES_WITH_RESULTS = LAB_STATES_WITH_RESULTS  # Con Resultados, Validada, Impreso, Descartado
 
     for study_id, entry in study_map.items():
-        required_test_ids = required_tests_by_study.get(study_id, set())
         study_labs = entry["laboratories"]
         labs_by_test: dict[int, int] = {
             lab.l_test_id: lab.l_state for lab in study_labs if lab.l_test_id is not None
         }
+        # Solo cuentan las pruebas requeridas que existen en la orden: si la
+        # configuración del estudio cambió después de crearla, una prueba
+        # requerida nueva no debe dejar el estudio "Pendiente" para siempre.
+        required_test_ids = required_tests_by_study.get(study_id, set()) & labs_by_test.keys()
 
         if not required_test_ids:
             # No required tests defined: use lab states as-is

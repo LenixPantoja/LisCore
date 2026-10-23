@@ -31,6 +31,7 @@ def build_zpl(sticker: dict, template: str) -> str:
         tests_line=sticker["tests_line"],
         sample_type_name=sticker.get("sample_type_name", ""),
         piso=sticker.get("piso", ""),
+        consecutivo=sticker.get("hq_consecutive", ""),
     )
 
 

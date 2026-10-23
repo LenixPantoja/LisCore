@@ -30,6 +30,7 @@ from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.samples.domain.models import SamplesOrder, SampleType
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.masters.domain.models import WorkGroup
+from app.domains.Headquarters.domain.models import Headquarter
 from app.domains.patients.domain.models import Patient
 from app.domains.requests.domain.models import InboundOrder, InboundOrderDetail
 from app.domains.reports.infrastructure.printer_barcodes.barcode_generator import (
@@ -62,6 +63,23 @@ async def _resolve_piso(db: AsyncSession, order: Order) -> str:
 
     service = order.service
     return (getattr(service, "name", None) or "") if service else ""
+
+
+async def _resolve_hq_consecutive(db: AsyncSession, order: Order) -> str:
+    """
+    Consecutivo de sede para el sticker, con formato {prefix}-{o_hq_consecutive}
+    (ej. UB1-125). Si la sede no tiene prefijo se usa solo el número; si la
+    orden no tiene consecutivo de sede (órdenes antiguas o sin sede) retorna "".
+    """
+    if order.o_hq_consecutive is None:
+        return ""
+    prefix = None
+    if order.o_headquarter_id:
+        result = await db.execute(
+            select(Headquarter.prefix).where(Headquarter.id == order.o_headquarter_id)
+        )
+        prefix = (result.scalar() or "").strip()
+    return f"{prefix}-{order.o_hq_consecutive}" if prefix else str(order.o_hq_consecutive)
 
 
 async def generate_barcode_stickers(
@@ -231,6 +249,7 @@ async def generate_barcode_stickers(
         if enterprise else "-"
     )
     piso = await _resolve_piso(db, order)
+    hq_consecutive = await _resolve_hq_consecutive(db, order)
 
     age_str = "-"
     if patient and getattr(patient, "pt_date_of_birth", None):
@@ -318,6 +337,7 @@ async def generate_barcode_stickers(
                 "tests_line": tests_line,
                 "sample_type_name": sample_type_name,
                 "piso": piso,
+                "hq_consecutive": hq_consecutive,
             })
         else:
             # Multiple work groups share the same sample type → merge into one sticker.
@@ -345,6 +365,7 @@ async def generate_barcode_stickers(
                 "tests_line": tests_line,
                 "sample_type_name": sample_type_name,
                 "piso": piso,
+                "hq_consecutive": hq_consecutive,
             })
 
     if not stickers:

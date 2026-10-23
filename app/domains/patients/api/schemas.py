@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import date, datetime
 
@@ -12,7 +12,8 @@ class PatientBase(BaseModel):
     pt_firts_name: str
     pt_middle_name: Optional[str] = None
     pt_last_name: str
-    pt_second_last_name: str
+    # Opcional: si llega null o no viene se guarda "" (la columna es NOT NULL).
+    pt_second_last_name: Optional[str] = ""
     pt_sex_type: Optional[int] = None
     pt_phone_number: Optional[str] = None
     pt_mail: Optional[str] = None
@@ -24,6 +25,11 @@ class PatientBase(BaseModel):
     pt_enterprise_id: Optional[int] = None
     pt_Document_Type_id: Optional[int] = None
     pt_city_id: Optional[int] = None
+
+    @field_validator("pt_second_last_name", mode="before")
+    @classmethod
+    def _second_last_name_none_to_empty(cls, v):
+        return "" if v is None else v
 
 class PatientCreate(PatientBase):
     pt_password: Optional[str] = None
@@ -46,6 +52,11 @@ class PatientUpdate(BaseModel):
     pt_Document_Type_id: Optional[int] = None
     pt_city_id: Optional[int] = None
     pt_password: Optional[str] = None
+
+    @field_validator("pt_second_last_name", mode="before")
+    @classmethod
+    def _second_last_name_none_to_empty(cls, v):
+        return "" if v is None else v
 
 class PatientResponse(PatientBase):
     pt_id: int
