@@ -2,7 +2,7 @@ from typing import List, Optional, Tuple, Sequence
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func
-from app.domains.masters.domain.models import Country, Department, City, DocumentType, SexType, AfiliationType, Regime, Service, TypeLiability, Classification, Technique, WorkGroup, ReferralLocation, Diagnosis
+from app.domains.masters.domain.models import Country, Department, City, DocumentType, SexType, AfiliationType, Regime, Service, TypeLiability, Classification, Technique, WorkGroup, ReferralLocation, Diagnosis, ValidationNote
 from datetime import date
 
 class MastersRepository:
@@ -157,6 +157,30 @@ class MastersRepository:
         total = (await db.execute(count_stmt)).scalar() or 0
 
         result = await db.execute(query.offset(skip).limit(limit).order_by(Diagnosis.diag_id.asc()))
+        return result.scalars().all(), total
+
+    @staticmethod
+    async def get_active_validation_notes_paginated(
+        db: AsyncSession,
+        skip: int,
+        limit: int,
+        search: Optional[str] = None,
+    ) -> Tuple[Sequence[ValidationNote], int]:
+        """Notas de validación activas (vn_active = 1), buscando por código o texto."""
+        query = select(ValidationNote).filter(ValidationNote.vn_active == 1)
+        if search:
+            from sqlalchemy import or_
+            query = query.filter(
+                or_(
+                    ValidationNote.vn_code.ilike(f"%{search}%"),
+                    ValidationNote.vn_description.ilike(f"%{search}%"),
+                )
+            )
+
+        count_stmt = select(func.count()).select_from(query.subquery())
+        total = (await db.execute(count_stmt)).scalar() or 0
+
+        result = await db.execute(query.offset(skip).limit(limit).order_by(ValidationNote.vn_code.asc()))
         return result.scalars().all(), total
     @staticmethod
     async def get_all_document_types(db: AsyncSession) -> List[DocumentType]:

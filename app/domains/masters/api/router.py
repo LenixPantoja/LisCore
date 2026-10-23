@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
 from app.domains.masters.api.schemas import (
     CountryResponse, CountryPaginatedResponse,
     DepartmentResponse, DepartmentPaginatedResponse,
@@ -12,7 +12,8 @@ from app.domains.masters.api.schemas import (
     AfiliationTypeResponse, RegimeResponse, ServiceResponse, ServicePaginatedResponse, TypeLiabilityResponse, ClassificationResponse,
     TechniqueCreate, TechniqueUpdate, TechniqueResponse, WorkGroupCreate, WorkGroupUpdate, WorkGroupResponse,
     ReferralLocationCreate, ReferralLocationUpdate, ReferralLocationResponse,
-    DiagnosisResponse, DiagnosisPaginatedResponse, SchoolingResponse
+    DiagnosisResponse, DiagnosisPaginatedResponse, SchoolingResponse,
+    ValidationNotePaginatedResponse,
 )
 from app.domains.masters.application.use_cases import (
     get_countries, get_departments_by_country, get_cities_by_department, get_document_types,
@@ -194,6 +195,21 @@ async def read_diagnoses(
             dependencies=[Depends(require_permission("Masters:Read"))])
 async def read_diagnosis(id: int, db: AsyncSession = Depends(get_db)):
     return await crud.get_item_by_id(db, Diagnosis, id)
+
+# --- Validation Notes ---
+@router.get("/validation-notes", response_model=ValidationNotePaginatedResponse,
+            dependencies=[Depends(get_current_user)])
+async def read_validation_notes(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+    search: Optional[str] = Query(None, description="Busca por código o por texto de la nota"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Lista las notas de validación activas (vn_active = 1) con paginación.
+    """
+    items, total = await MastersRepository.get_active_validation_notes_paginated(db, skip, limit, search)
+    return {"total": total, "skip": skip, "limit": limit, "items": items}
 
 # --- Schooling ---
 @router.get("/schooling", response_model=List[SchoolingResponse],

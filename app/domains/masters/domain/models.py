@@ -1,6 +1,7 @@
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, Date, DateTime, Text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from utils.timezone import get_bogota_now
 
 class Country(Base):
     __tablename__ = "Countries"
@@ -141,3 +142,15 @@ class Schooling(Base):
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(255))
     description = Column(String(255))
+
+
+class ValidationNote(Base):
+    """Notas predefinidas para la validación de resultados. vn_active: 1 activo, 0 inactivo."""
+    __tablename__ = "validation_notes"
+
+    vn_id = Column(Integer, primary_key=True, index=True)
+    vn_code = Column(String(50), nullable=False, unique=True, index=True)
+    vn_description = Column(Text, nullable=False)
+    vn_active = Column(Integer, nullable=False, default=1)
+    vn_created_at = Column(DateTime, default=get_bogota_now)
+    vn_updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)

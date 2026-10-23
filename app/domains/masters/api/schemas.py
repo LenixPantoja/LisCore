@@ -69,6 +69,22 @@ class DiagnosisPaginatedResponse(BaseModel):
     limit: int
     items: List[DiagnosisResponse]
 
+# --- Validation Notes ---
+class ValidationNoteResponse(BaseModel):
+    vn_id: int
+    vn_code: str
+    vn_description: str
+    vn_active: int
+
+    class Config:
+        from_attributes = True
+
+class ValidationNotePaginatedResponse(BaseModel):
+    total: int
+    skip: int
+    limit: int
+    items: List[ValidationNoteResponse]
+
 # --- Schooling ---
 class SchoolingResponse(BaseModel):
     id: int
