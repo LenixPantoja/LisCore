@@ -1,5 +1,6 @@
 import logging
 
+from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,6 +58,30 @@ async def _provision(
             label, origin_id, login,
         )
         return None
+
+
+async def sync_login(db: AsyncSession, origin_id: int, access_type: int, new_login: str | None) -> None:
+    """
+    Mantiene el login del portal igual al documento del paciente / NIT de la
+    empresa cuando estos cambian. No hace commit: deja el cambio pendiente en la
+    sesión para que se confirme junto con la actualización del paciente/empresa.
+
+    Lanza 400 si el nuevo login ya pertenece a otro usuario del portal, para no
+    guardar el cambio a medias.
+    """
+    if not new_login:
+        return
+    arp_user = await AppResultsPageRepository.get_by_origin(db, origin_id, access_type)
+    if not arp_user or arp_user.arp_user_login == new_login:
+        return
+
+    taken = await AppResultsPageRepository.get_by_login(db, new_login)
+    if taken and taken.arp_user_id != arp_user.arp_user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"El login {new_login} ya está en uso en el portal de resultados por otro usuario.",
+        )
+    arp_user.arp_user_login = new_login
 
 
 async def provision_for_patient(db: AsyncSession, patient) -> AppResultsPage | None:

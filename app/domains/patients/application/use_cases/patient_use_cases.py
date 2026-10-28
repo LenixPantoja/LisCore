@@ -4,7 +4,8 @@ from app.domains.patients.domain.rules import calculate_age
 from app.domains.patients.domain.models import Patient
 from app.domains.traces.constants import OPERATION_EDIT_DEMOGRAPHICS
 from app.domains.traces.models import AppTrace
-from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_patient
+from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_patient, sync_login
+from app.domains.app_results_page.domain.constants import ACCESS_TYPE_PATIENT
 from app.core.security import get_password_hash
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -112,6 +113,11 @@ async def update_patient(db: AsyncSession, pt_id: int, data: dict, user_id: int 
         # Si se envía una nueva contraseña, hashearla antes de guardar
         if data.get("pt_password"):
             data["pt_password"] = get_password_hash(data["pt_password"])
+
+        # Si cambia el documento, actualizar también el login del portal de
+        # resultados (se confirma en el mismo commit de la actualización)
+        if data.get("pt_Number_document") and data["pt_Number_document"] != patient.pt_Number_document:
+            await sync_login(db, patient.pt_id, ACCESS_TYPE_PATIENT, data["pt_Number_document"])
 
         # --- Perform update ---
         updated = await PatientRepository.update(db, pt_id, data)

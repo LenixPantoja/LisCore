@@ -2,6 +2,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.enterprises.infrastructure.repository import EnterpriseRepository
 from app.core.security import get_password_hash
 from fastapi import HTTPException, status
+from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import sync_login
+from app.domains.app_results_page.domain.constants import ACCESS_TYPE_ENTERPRISE
 
 async def execute(db: AsyncSession, enterprise_id: int, update_data: dict):
     # 1. Verificar si la empresa existe
@@ -38,5 +40,10 @@ async def execute(db: AsyncSession, enterprise_id: int, update_data: dict):
     if update_data.get("en_password"):
         update_data["en_password"] = get_password_hash(update_data["en_password"])
 
-    # 4. Realizar la actualización
+    # 4. Si cambia el NIT, actualizar también el login del portal de resultados
+    #    (se confirma en el mismo commit de la actualización)
+    if update_data.get("en_nit") and update_data["en_nit"] != enterprise.en_nit:
+        await sync_login(db, enterprise.en_id, ACCESS_TYPE_ENTERPRISE, update_data["en_nit"])
+
+    # 5. Realizar la actualización
     return await EnterpriseRepository.update(db, enterprise, update_data)
