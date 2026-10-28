@@ -28,6 +28,7 @@ INBOUND_DETAIL_STATE_PENDIENTE = 0
 async def registrar_solicitud_dg(
     db: AsyncSession,
     solicitud: DGSolicitudExamenes,
+    servicio_desde_gee: bool = False,
 ) -> int:
     """
     Crea un InboundOrder e InboundOrderDetails a partir de una DGSolicitudExamenes.
@@ -221,9 +222,14 @@ async def registrar_solicitud_dg(
                 )
 
     # --- 5. Homologar servicio (GESERCODIGO -> Services.code -> Services.id) ---
+    #     En DinamicaFT (servicio_desde_gee=True), si no viene GESERCODIGO se
+    #     usa GEECODIGO/GEENOMBRE.
     service_id: Optional[int] = None
     servicio_codigo = do.geser_codigo if do else None
     servicio_nombre = do.geser_nombre if do else None
+    if servicio_desde_gee and not servicio_codigo and do:
+        servicio_codigo = do.servicio_codigo
+        servicio_nombre = do.servicio_nombre
     if servicio_codigo:
         res_svc = await db.execute(
             select(Service).where(Service.code == servicio_codigo)

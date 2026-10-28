@@ -1,9 +1,11 @@
 """
 Log diario de las solicitudes crudas recibidas por la InterfazDG
-(/api/Dinamica/Laboratorio/RegistrarSolicitud).
+(/api/Dinamica/Laboratorio/RegistrarSolicitud y
+/api/DinamicaFT/Laboratorio/RegistrarSolicitud).
 
 Cada request se agrega al archivo del día, con nombre
-logs/Solicitudes{DDMMYYYY}.log (ej. Solicitudes30092026.log), independiente
+logs/{prefijo}{DDMMYYYY}.log (ej. Solicitudes30092026.log o
+SolicitudesFT30092026.log), independiente
 de si luego el XML se pudo parsear/registrar o no — así queda registro de
 lo que el HIS efectivamente envió para poder depurar cualquier caso.
 """
@@ -37,7 +39,7 @@ def _decode_raw_body(raw_body: bytes) -> str:
         return raw_body.decode("latin-1", errors="replace")
 
 
-def log_solicitud_request(raw_body: bytes) -> None:
+def log_solicitud_request(raw_body: bytes, prefix: str = "Solicitudes") -> None:
     """
     Agrega el cuerpo crudo recibido al log diario de solicitudes.
 
@@ -47,7 +49,7 @@ def log_solicitud_request(raw_body: bytes) -> None:
     try:
         LOG_DIR.mkdir(exist_ok=True)
         now = get_bogota_now()
-        filename = f"Solicitudes{now.strftime('%d%m%Y')}.log"
+        filename = f"{prefix}{now.strftime('%d%m%Y')}.log"
         log_path = LOG_DIR / filename
 
         body_text = _decode_raw_body(raw_body) if raw_body else "(cuerpo vacío)"

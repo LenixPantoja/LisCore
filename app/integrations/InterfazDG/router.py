@@ -1,8 +1,14 @@
 """
 Router de la InterfazDG.
 
-Expone el endpoint para recibir solicitudes de exámenes de laboratorio
-en formato XML (UTF-16) desde el HIS y responde con el acuse de recibido.
+Expone los endpoints para recibir solicitudes de exámenes de laboratorio
+en formato XML desde el HIS y responde con el acuse de recibido:
+
+- router    -> /api/Dinamica/Laboratorio/RegistrarSolicitud
+- router_ft -> /api/DinamicaFT/Laboratorio/RegistrarSolicitud
+
+Ambos reciben el mismo XML (DocumentElement) y comparten el procesamiento;
+solo cambia el archivo de log diario donde se guarda lo recibido.
 """
 import xml.etree.ElementTree as ET
 
@@ -16,7 +22,24 @@ from app.integrations.InterfazDG.use_cases import registrar_solicitud_dg
 from app.integrations.InterfazDG.request_logger import log_solicitud_request
 
 router = APIRouter()
+router_ft = APIRouter()
 _service = InterfazDGService()
+
+_ENDPOINT_DOC = dict(
+    summary="Recibir solicitud de exámenes de laboratorio (XML)",
+    description=(
+        "Recibe el XML de solicitud de exámenes enviado por el HIS en formato "
+        "InterfazDG (DocumentElement, UTF-8 o UTF-16). Parsea el XML, registra el "
+        "InboundOrder con sus detalles y responde con un XML de acuse de recibido "
+        "(MensajeResultado)."
+    ),
+    response_class=Response,
+    status_code=status.HTTP_200_OK,
+    responses={
+        200: {"content": {"application/xml": {}}, "description": "Acuse de recibido XML"},
+        422: {"content": {"application/xml": {}}, "description": "XML inválido o datos incompletos"},
+    },
+)
 
 
 def _build_acuse(exito: bool, mensaje: str, mensaje_interno: str = "") -> str:
@@ -39,30 +62,31 @@ def _build_acuse(exito: bool, mensaje: str, mensaje_interno: str = "") -> str:
     return '<?xml version="1.0" encoding="utf-16"?>\n' + ET.tostring(root, encoding="unicode")
 
 
-@router.post(
-    "/RegistrarSolicitud",
-    summary="Recibir solicitud de exámenes de laboratorio (XML)",
-    description=(
-        "Recibe el XML de solicitud de exámenes enviado por el HIS en formato "
-        "InterfazDG (DocumentElement / UTF-16). Parsea el XML, registra el InboundOrder "
-        "con sus detalles y responde con un XML de acuse de recibido (MensajeResultado)."
-    ),
-    response_class=Response,
-    status_code=status.HTTP_200_OK,
-    responses={
-        200: {"content": {"application/xml": {}}, "description": "Acuse de recibido XML"},
-        422: {"content": {"application/xml": {}}, "description": "XML inválido o datos incompletos"},
-    },
-)
+@router.post("/RegistrarSolicitud", **_ENDPOINT_DOC)
 async def recibir_solicitud(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
+    return await _procesar_solicitud(request, db, log_prefix="Solicitudes")
+
+
+@router_ft.post("/RegistrarSolicitud", **_ENDPOINT_DOC)
+async def recibir_solicitud_ft(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    # DinamicaFT no envía GESERCODIGO: el servicio se homologa con GEECODIGO
+    return await _procesar_solicitud(request, db, log_prefix="SolicitudesFT", servicio_desde_gee=True)
+
+
+async def _procesar_solicitud(
+    request: Request, db: AsyncSession, log_prefix: str, servicio_desde_gee: bool = False
+) -> Response:
     raw_body = await request.body()
 
     # Se guarda lo recibido tal cual, sin importar si luego se puede parsear
-    # o registrar correctamente — queda en logs/Solicitudes{DDMMYYYY}.log.
-    log_solicitud_request(raw_body)
+    # o registrar correctamente — queda en logs/{log_prefix}{DDMMYYYY}.log.
+    log_solicitud_request(raw_body, prefix=log_prefix)
 
     if not raw_body:
         acuse = _build_acuse(
@@ -92,7 +116,7 @@ async def recibir_solicitud(
 
     # 2. Registrar en el sistema
     try:
-        inbound_id = await registrar_solicitud_dg(db, solicitud)
+        inbound_id = await registrar_solicitud_dg(db, solicitud, servicio_desde_gee=servicio_desde_gee)
     except Exception as exc:  # noqa: BLE001
         detail = getattr(exc, "detail", str(exc))
         acuse = _build_acuse(
