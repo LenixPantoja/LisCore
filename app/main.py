@@ -9,7 +9,12 @@ from app.lifespan import lifespan
 
 setup_sql_logging()
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(
+    lifespan=lifespan,
+    docs_url="/docs" if settings.DOCS_ENABLED else None,
+    redoc_url="/redoc" if settings.REDOC_ENABLED else None,
+    openapi_url="/openapi.json" if (settings.DOCS_ENABLED or settings.REDOC_ENABLED) else None,
+)
 
 app.middleware("http")(add_process_time_header)
 

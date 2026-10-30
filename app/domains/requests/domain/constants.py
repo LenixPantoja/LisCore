@@ -18,3 +18,8 @@ INBOUND_ORDER_DETAIL_STATE_CON_RESULTADOS = 2
 INBOUND_ORDER_DETAIL_STATE_ENVIADA = 3
 INBOUND_ORDER_DETAIL_STATE_RECIBIDA = 4
 INBOUND_ORDER_DETAIL_STATE_CON_ERROR = 5
+
+# Prefijo que /api/DinamicaFT/Laboratorio/RegistrarSolicitud antepone al
+# IDOrigen en InboundOrder.io_origin (ej. "FT-1"), para identificar al crear la
+# orden que la solicitud llegó por esa ruta.
+INBOUND_ORIGIN_PREFIX_DINAMICA_FT = "FT-"

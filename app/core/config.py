@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # loguear cada query tiene costo y no debe quedar prendido en producción.
     SQL_LOG_ENABLED: bool = False
 
+    # Documentación de la API. Se controla desde el .env para poder apagarla en
+    # producción: DOCS_ENABLED -> Swagger (/docs), REDOC_ENABLED -> ReDoc (/redoc).
+    # Si ambas están apagadas también se oculta el esquema /openapi.json.
+    DOCS_ENABLED: bool = True
+    REDOC_ENABLED: bool = True
+
     # Timezone
     TIME_ZONE: str = "America/Bogota"
 

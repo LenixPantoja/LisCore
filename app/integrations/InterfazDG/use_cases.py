@@ -3,6 +3,7 @@ Caso de uso: registrar solicitud de examenes recibida via InterfazDG.
 
 Orquesta la busqueda de entidades del dominio y la creacion del InboundOrder.
 """
+from dataclasses import dataclass
 from datetime import datetime, date
 from typing import Optional
 
@@ -17,6 +18,7 @@ from app.domains.patients.domain.models import Patient
 from app.domains.patients.infrastructure.repository import PatientRepository
 from app.domains.app_results_page.application.use_cases.app_results_page_use_cases import provision_for_patient
 from app.core.security import get_password_hash
+from app.domains.requests.domain.constants import INBOUND_ORIGIN_PREFIX_DINAMICA_FT
 from app.domains.requests.domain.models import InboundOrder, InboundOrderDetail
 from app.domains.requests.infrastructure.repository import InboundOrderRepository
 from app.integrations.InterfazDG.models import DGSolicitudExamenes
@@ -25,10 +27,41 @@ from app.integrations.InterfazDG.models import DGSolicitudExamenes
 INBOUND_DETAIL_STATE_PENDIENTE = 0
 
 
+@dataclass(frozen=True)
+class OpcionesInterfazDG:
+    """
+    Reglas propias de cada ruta de la InterfazDG. Por defecto se comporta como
+    /api/Dinamica/Laboratorio/RegistrarSolicitud.
+
+    - servicio_desde_gee: si no viene GESERCODIGO, homologar el servicio con
+      GEECODIGO/GEENOMBRE.
+    - tipo_doc_por_id_dinamica: GPATIPDOC es el ID de Dinamica, se homologa
+      directo con DocumentsTypes.dt_id_dinamica (y no primero por dt_code).
+    - ciudad_defecto: codigo postal (Cities.postal_code) a usar cuando
+      GPACIUDAD no viene o no se encuentra; el pais se toma de esa ciudad.
+    - prefijo_origen: se antepone al IDOrigen en InboundOrder.io_origin para
+      identificar la ruta al crear la orden (DinamicaFT pasa las observaciones
+      de los examenes a las notas de la orden).
+    """
+    servicio_desde_gee: bool = False
+    tipo_doc_por_id_dinamica: bool = False
+    ciudad_defecto: Optional[str] = None
+    prefijo_origen: str = ""
+
+
+# /api/DinamicaFT/Laboratorio/RegistrarSolicitud
+OPCIONES_DINAMICA_FT = OpcionesInterfazDG(
+    servicio_desde_gee=True,
+    tipo_doc_por_id_dinamica=True,
+    ciudad_defecto="52001",  # Pasto
+    prefijo_origen=INBOUND_ORIGIN_PREFIX_DINAMICA_FT,
+)
+
+
 async def registrar_solicitud_dg(
     db: AsyncSession,
     solicitud: DGSolicitudExamenes,
-    servicio_desde_gee: bool = False,
+    opciones: OpcionesInterfazDG = OpcionesInterfazDG(),
 ) -> int:
     """
     Crea un InboundOrder e InboundOrderDetails a partir de una DGSolicitudExamenes.
@@ -93,24 +126,11 @@ async def registrar_solicitud_dg(
         )
 
     # --- 2. Resolver municipio (GPACIUDAD -> Cities.id) y pais ---
-    municipality_id: Optional[int] = None
-    country_id: Optional[int] = None
     codigo_ciudad = dp.municipio_ciudad_codigo if dp else None
-    if codigo_ciudad:
-        res_city = await db.execute(
-            select(City).where(City.postal_code == codigo_ciudad)
-        )
-        city: Optional[City] = res_city.scalars().first()
-        if city:
-            municipality_id = city.id
-            # Obtener el pais a traves del departamento
-            res_dept = await db.execute(
-                select(Department).where(Department.d_id == city.Department_id)
-            )
-            dept: Optional[Department] = res_dept.scalars().first()
-            if dept:
-                country_id = dept.d_country_id
-        print(f"[InterfazDG] GPACIUDAD='{codigo_ciudad}' → municipality_id={municipality_id}, country_id={country_id}")
+    municipality_id, country_id = await _resolver_ciudad(db, codigo_ciudad)
+    if municipality_id is None and opciones.ciudad_defecto:
+        municipality_id, country_id = await _resolver_ciudad(db, opciones.ciudad_defecto)
+    print(f"[InterfazDG] GPACIUDAD='{codigo_ciudad}' → municipality_id={municipality_id}, country_id={country_id}")
 
     # --- 3. Buscar o crear paciente por numero de documento ---
     documento_paciente = dp.codigo if dp else None
@@ -127,7 +147,9 @@ async def registrar_solicitud_dg(
 
     if patient:
         # El paciente existe: verificar que el tipo de documento coincida
-        doc_type_id = await _resolver_tipo_documento(db, dp.tipo_documento if dp else None)
+        doc_type_id = await _resolver_tipo_documento(
+            db, dp.tipo_documento if dp else None, opciones.tipo_doc_por_id_dinamica
+        )
         if doc_type_id is not None and patient.pt_Document_Type_id != doc_type_id:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -155,7 +177,9 @@ async def registrar_solicitud_dg(
             await db.refresh(patient)
     else:
         # Paciente no existe -> crearlo con enterprise_id y municipio homologado
-        patient = await _crear_paciente(db, dp, enterprise_id, municipality_id)
+        patient = await _crear_paciente(
+            db, dp, enterprise_id, municipality_id, opciones.tipo_doc_por_id_dinamica
+        )
 
     # --- 4. Homologar estudios via InterfacesRestDetail ---
     detail_data_list: list[dict] = []
@@ -222,12 +246,12 @@ async def registrar_solicitud_dg(
                 )
 
     # --- 5. Homologar servicio (GESERCODIGO -> Services.code -> Services.id) ---
-    #     En DinamicaFT (servicio_desde_gee=True), si no viene GESERCODIGO se
-    #     usa GEECODIGO/GEENOMBRE.
+    #     Con opciones.servicio_desde_gee (DinamicaFT), si no viene GESERCODIGO
+    #     se usa GEECODIGO/GEENOMBRE.
     service_id: Optional[int] = None
     servicio_codigo = do.geser_codigo if do else None
     servicio_nombre = do.geser_nombre if do else None
-    if servicio_desde_gee and not servicio_codigo and do:
+    if opciones.servicio_desde_gee and not servicio_codigo and do:
         servicio_codigo = do.servicio_codigo
         servicio_nombre = do.servicio_nombre
     if servicio_codigo:
@@ -263,7 +287,7 @@ async def registrar_solicitud_dg(
         # io_date_transmission: fecha/hora real de inserción en esta base de datos.
         "io_date_transmission": now,
         "io_patient_id": patient.pt_id,
-        "io_origin": dg.id_origen if dg else None,
+        "io_origin": f"{opciones.prefijo_origen}{dg.id_origen or ''}" if dg else None,
         "io_medic_document_number": do.medico_codigo if do else None,
         "io_medic_name": do.medico_nombre if do else None,
         "io_enterprise_id": enterprise_id,
@@ -288,9 +312,12 @@ async def _crear_paciente(
     dp,
     enterprise_id: Optional[int] = None,
     city_id: Optional[int] = None,
+    tipo_doc_por_id_dinamica: bool = False,
 ) -> Patient:
     """Crea un paciente nuevo con los datos del XML del HIS."""
-    doc_type_id = await _resolver_tipo_documento(db, dp.tipo_documento if dp else None)
+    doc_type_id = await _resolver_tipo_documento(
+        db, dp.tipo_documento if dp else None, tipo_doc_por_id_dinamica
+    )
     fecha_raw = dp.fecha_nacimiento
     fecha_parseada = _parse_date(fecha_raw)
     print(f"[InterfazDG] fecha_nacimiento raw='{fecha_raw}' parseada='{fecha_parseada}'")
@@ -315,8 +342,24 @@ async def _crear_paciente(
     return patient
 
 
+async def _resolver_ciudad(
+    db: AsyncSession, codigo_postal: Optional[str]
+) -> tuple[Optional[int], Optional[int]]:
+    """Retorna (Cities.id, pais) a partir del codigo postal, o (None, None)."""
+    if not codigo_postal:
+        return None, None
+    res_city = await db.execute(select(City).where(City.postal_code == codigo_postal))
+    city: Optional[City] = res_city.scalars().first()
+    if not city:
+        return None, None
+    # Obtener el pais a traves del departamento
+    res_dept = await db.execute(select(Department).where(Department.d_id == city.Department_id))
+    dept: Optional[Department] = res_dept.scalars().first()
+    return city.id, (dept.d_country_id if dept else None)
+
+
 async def _resolver_tipo_documento(
-    db: AsyncSession, codigo_his: Optional[str]
+    db: AsyncSession, codigo_his: Optional[str], por_id_dinamica: bool = False
 ) -> Optional[int]:
     """
     Busca el id del tipo de documento en DocumentsTypes.
@@ -324,6 +367,8 @@ async def _resolver_tipo_documento(
     - Primero busca por dt_code (codigo textual como 'CC', 'CN', 'TI', etc.)
     - Si no encuentra y el valor es numerico, busca por dt_id_dinamica
       (ID interno del HIS Dinamica enviado en GPATIPDOC).
+    - Con por_id_dinamica=True (DinamicaFT) el orden se invierte: primero
+      dt_id_dinamica y solo si no hay coincidencia, dt_code.
 
     Retorna None si no se recibe codigo o no se encuentra coincidencia.
     """
@@ -331,6 +376,11 @@ async def _resolver_tipo_documento(
         return None
 
     codigo = str(codigo_his).strip().upper()
+
+    if por_id_dinamica:
+        dt_id = await _tipo_documento_por_id_dinamica(db, codigo)
+        if dt_id is not None:
+            return dt_id
 
     # 1. Buscar por dt_code (codigo textual)
     res = await db.execute(
@@ -341,8 +391,13 @@ async def _resolver_tipo_documento(
         return doc_type.dt_id
 
     # 2. Fallback: si es numerico, buscar por dt_id_dinamica
+    return await _tipo_documento_por_id_dinamica(db, codigo)
+
+
+async def _tipo_documento_por_id_dinamica(db: AsyncSession, codigo: str) -> Optional[int]:
+    """Busca DocumentsTypes.dt_id por dt_id_dinamica; None si no es numerico o no existe."""
     try:
-        id_dinamica = int(codigo_his)
+        id_dinamica = int(codigo)
     except (ValueError, TypeError):
         return None
 

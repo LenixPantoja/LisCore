@@ -20,6 +20,7 @@ from app.domains.requests.domain.models import InboundOrderDetail
 from app.domains.requests.domain.constants import (
     INBOUND_ORDER_DETAIL_STATE_EJECUTADA,
     INBOUND_ORDER_DETAIL_STATE_CON_ERROR,
+    INBOUND_ORIGIN_PREFIX_DINAMICA_FT,
 )
 from app.domains.traces.constants import OPERATION_CREATE_ORDER
 from utils.trace import register_trace
@@ -216,6 +217,11 @@ async def create_order_from_inbound(
         "studies": study_ids,
     }
 
+    # DinamicaFT: las observaciones de los examenes seleccionados pasan a las
+    # notas de la orden. Si no traen observacion, o_note queda en null.
+    if (inbound.io_origin or "").startswith(INBOUND_ORIGIN_PREFIX_DINAMICA_FT):
+        order_data["o_note"] = _note_from_observations(selected_details)
+
     # IDs planos capturados antes de intentar crear la orden: si algo falla más
     # abajo se necesitan para marcar iod_state=Con Error, y tras un rollback los
     # objetos ORM de selected_details quedan expirados.
@@ -303,3 +309,29 @@ async def create_order_from_inbound(
         inbound_order_id=payload.inbound_order_id,
         updated_detail_ids=updated_ids,
     )
+
+
+# Valores que Dinamica envía en EXAOBSER cuando el examen no tiene observación
+_EMPTY_OBSERVATIONS = {"", "-"}
+
+
+def _note_from_observations(details) -> Optional[str]:
+    """
+    Une las observaciones (iod_observation) de los detalles en una sola nota.
+    Si hay varias distintas se antepone el código del estudio para saber de
+    cuál examen es cada una. Retorna None si ninguna tiene observación.
+    """
+    observations: list[tuple[str, str]] = []
+    for d in details:
+        obs = (d.iod_observation or "").strip()
+        if obs in _EMPTY_OBSERVATIONS:
+            continue
+        code = d.study.code if d.study else str(d.iod_study_id)
+        observations.append((code, obs))
+
+    if not observations:
+        return None
+    distinct = {obs for _, obs in observations}
+    if len(distinct) == 1:
+        return observations[0][1]
+    return " | ".join(f"{code}: {obs}" for code, obs in observations)

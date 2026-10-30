@@ -18,7 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.integrations.InterfazDG.service import InterfazDGService
-from app.integrations.InterfazDG.use_cases import registrar_solicitud_dg
+from app.integrations.InterfazDG.use_cases import (
+    OPCIONES_DINAMICA_FT,
+    OpcionesInterfazDG,
+    registrar_solicitud_dg,
+)
 from app.integrations.InterfazDG.request_logger import log_solicitud_request
 
 router = APIRouter()
@@ -75,12 +79,16 @@ async def recibir_solicitud_ft(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    # DinamicaFT no envía GESERCODIGO: el servicio se homologa con GEECODIGO
-    return await _procesar_solicitud(request, db, log_prefix="SolicitudesFT", servicio_desde_gee=True)
+    # Reglas propias de DinamicaFT: servicio por GEECODIGO, tipo de documento
+    # por dt_id_dinamica y Pasto como ciudad por defecto (ver OPCIONES_DINAMICA_FT)
+    return await _procesar_solicitud(request, db, log_prefix="SolicitudesFT", opciones=OPCIONES_DINAMICA_FT)
 
 
 async def _procesar_solicitud(
-    request: Request, db: AsyncSession, log_prefix: str, servicio_desde_gee: bool = False
+    request: Request,
+    db: AsyncSession,
+    log_prefix: str,
+    opciones: OpcionesInterfazDG = OpcionesInterfazDG(),
 ) -> Response:
     raw_body = await request.body()
 
@@ -116,7 +124,7 @@ async def _procesar_solicitud(
 
     # 2. Registrar en el sistema
     try:
-        inbound_id = await registrar_solicitud_dg(db, solicitud, servicio_desde_gee=servicio_desde_gee)
+        inbound_id = await registrar_solicitud_dg(db, solicitud, opciones=opciones)
     except Exception as exc:  # noqa: BLE001
         detail = getattr(exc, "detail", str(exc))
         acuse = _build_acuse(
