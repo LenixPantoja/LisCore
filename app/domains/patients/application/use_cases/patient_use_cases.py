@@ -21,9 +21,9 @@ async def create_patient(db: AsyncSession, data: dict, user_id: int | None = Non
                 detail="El número de documento ya se encuentra registrado."
             )
 
-        # Password por defecto: el número de documento, siempre hasheada
-        raw_password = data.get("pt_password") or data.get("pt_Number_document")
-        data["pt_password"] = get_password_hash(raw_password)
+        # La contraseña inicial es siempre el número de documento (hasheada);
+        # no se pide en el formulario de creación.
+        data["pt_password"] = get_password_hash(str(data.get("pt_Number_document") or ""))
 
         patient = await PatientRepository.create(db, data)
         await provision_for_patient(db, patient)
@@ -111,8 +111,11 @@ async def update_patient(db: AsyncSession, pt_id: int, data: dict, user_id: int 
         }
 
         # Si se envía una nueva contraseña, hashearla antes de guardar
+        # (vacía o null se ignora: no debe borrar la contraseña existente)
         if data.get("pt_password"):
             data["pt_password"] = get_password_hash(data["pt_password"])
+        else:
+            data.pop("pt_password", None)
 
         # Si cambia el documento, actualizar también el login del portal de
         # resultados (se confirma en el mismo commit de la actualización)

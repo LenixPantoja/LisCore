@@ -30,6 +30,9 @@ def _base_query_with_relations():
             .selectinload(StudiesLab.test_details)
             .selectinload(StudiesTestDetail.test)
             .selectinload(TestsLab.sample_type),
+            selectinload(InboundOrder.details)
+            .selectinload(InboundOrderDetail.study)
+            .selectinload(StudiesLab.work_group),
         )
     )
 

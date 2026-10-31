@@ -55,6 +55,8 @@ class InboundOrderDetailResponse(BaseModel):
     # Datos del estudio
     study_name: Optional[str] = None
     study_code: Optional[str] = None
+    study_cups_code: Optional[str] = None
+    study_work_group_name: Optional[str] = None
     sample_types: List[SampleTypeInfo] = []
 
     @field_validator("iod_state", mode="before")
@@ -98,6 +100,9 @@ class InboundOrderDetailResponse(BaseModel):
             iod_updated_at=detail.iod_updated_at,
             study_name=study.name if study else None,
             study_code=study.code if study else None,
+            study_cups_code=study.cups_code if study else None,
+            # Solo si la relación ya vino precargada (evita lazy-load en sesión async)
+            study_work_group_name=getattr(study.__dict__.get("work_group"), "wg_name", None) if study else None,
             sample_types=sample_types,
         )
 
