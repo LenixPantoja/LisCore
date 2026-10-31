@@ -115,7 +115,7 @@ docker build -t lis_core_api:prod .
 docker save lis_core_api:prod -o lis_core_api_prod.tar
 
 scp -r lis_core_api_prod.tar admon@192.168.200.8:/home/admon/Back/
-
+# Unibac
 scp -r lis_core_api_prod.tar sistemas@100.93.74.117:/home/sistemas/Back
 
 scp -r dist root@169.58.134.253:~/liscorePabon/Backend/

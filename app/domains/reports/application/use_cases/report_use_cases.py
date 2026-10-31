@@ -426,13 +426,19 @@ async def generate_laboratory_report_data(
 
             pruebas = []
             for row in study["rows"]:
-                units = row["units"] or ""
+                units = (row["units"] or "").strip()
                 resultado = row["result"] or ""
                 referencia = row["reference"] or ""
+                # Las unidades van junto al resultado (no en el valor de
+                # referencia) y fuera del color, ej: "<font ...>7.18</font> 10^3/uL"
+                resultado_html = _format_resultado_html(resultado, row.get("range_type"))
+                if resultado and units:
+                    units_html = units.replace("<", "&lt;").replace(">", "&gt;")
+                    resultado_html = f"{resultado_html} {units_html}"
                 prueba = {
                     "NOMBRE_PRUEBA": row["test_name"],
-                    "RESULTADO_PRUEBA": _format_resultado_html(resultado, row.get("range_type")),
-                    "VALOR_REFERENCIA": f"{referencia} {units}".strip() if referencia else "",
+                    "RESULTADO_PRUEBA": resultado_html,
+                    "VALOR_REFERENCIA": referencia,
                 }
                 alt_range = (row.get("alternative_range_value") or "").strip()
                 if alt_range:
