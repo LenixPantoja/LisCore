@@ -119,6 +119,7 @@ class OrderRepository:
         work_group_ids: Optional[list[int]] = None,
         study_ids: Optional[list[int]] = None,
         headquarter_ids: Optional[list[int]] = None,
+        sort_by_headquarter: bool = False,
         skip: int = 0,
         limit: int = 100,
     ) -> Tuple[Sequence[Order], int]:
@@ -180,8 +181,16 @@ class OrderRepository:
         count_stmt = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_stmt)).scalar() or 0
 
-        # Ordenar por o_id descendente y paginar
-        query = query.order_by(Order.o_id.desc()).offset(skip).limit(limit)
+        if sort_by_headquarter:
+            # Agrupado por sede y, dentro de cada sede, del primer al último consecutivo
+            query = query.order_by(
+                Order.o_headquarter_id.asc().nulls_last(),
+                Order.o_hq_consecutive.asc().nulls_last(),
+                Order.o_id.asc(),
+            )
+        else:
+            query = query.order_by(Order.o_id.desc())
+        query = query.offset(skip).limit(limit)
 
         result = await db.execute(query)
         return list(result.scalars().all()), total

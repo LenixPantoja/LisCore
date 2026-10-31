@@ -193,6 +193,7 @@ async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get
         work_group_ids=data.work_group_ids,
         study_ids=data.study_ids,
         headquarter_ids=data.headquarter_ids,
+        sort_by_headquarter=data.sort_by_headquarter,
         skip=data.skip,
         limit=data.limit,
     )

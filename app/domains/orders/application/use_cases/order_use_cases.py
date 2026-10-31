@@ -1199,6 +1199,7 @@ async def filter_orders(
     work_group_ids: Optional[list[int]] = None,
     study_ids: Optional[list[int]] = None,
     headquarter_ids: Optional[list[int]] = None,
+    sort_by_headquarter: bool = False,
     skip: int = 0,
     limit: int = 100,
 ) -> dict:
@@ -1215,6 +1216,7 @@ async def filter_orders(
         work_group_ids=work_group_ids,
         study_ids=study_ids,
         headquarter_ids=headquarter_ids,
+        sort_by_headquarter=sort_by_headquarter,
         skip=skip,
         limit=limit,
     )
@@ -1240,6 +1242,8 @@ async def filter_orders(
             "pt_name": pt_name,
             "pt_number_document": pt_number_document,
             "o_priority": order.o_priority,
+            "o_headquarter_id": order.o_headquarter_id,
+            "o_hq_consecutive": order.o_hq_consecutive,
         })
 
     return {"total": total, "skip": skip, "limit": limit, "items": result}

@@ -34,12 +34,15 @@ from app.domains.Headquarters.domain.models import Headquarter
 from app.domains.patients.domain.models import Patient
 from app.domains.requests.domain.models import InboundOrder, InboundOrderDetail
 from app.domains.reports.infrastructure.printer_barcodes.barcode_generator import (
-    build_stickers_result,
+    build_labels_result,
+    build_order_label_zpl,
+    build_zpl,
     pdf_to_base64,
 )
 from app.domains.barcodes.infrastructure.repository import (
     BarcodeRepository,
     LABEL_TYPE_MUESTRA,
+    LABEL_TYPE_ORDEN,
 )
 
 
@@ -65,21 +68,36 @@ async def _resolve_piso(db: AsyncSession, order: Order) -> str:
     return (getattr(service, "name", None) or "") if service else ""
 
 
-async def _resolve_hq_consecutive(db: AsyncSession, order: Order) -> str:
+async def _resolve_headquarter(db: AsyncSession, order: Order) -> tuple[str, str]:
     """
-    Consecutivo de sede para el sticker, con formato {prefix}-{o_hq_consecutive}
-    (ej. UB1-125). Si la sede no tiene prefijo se usa solo el número; si la
-    orden no tiene consecutivo de sede (órdenes antiguas o sin sede) retorna "".
+    Retorna (nombre de la sede, consecutivo de sede) para las etiquetas.
+
+    El consecutivo tiene formato {prefix}-{o_hq_consecutive} (ej. UB1-125). Si
+    la sede no tiene prefijo se usa solo el número; si la orden no tiene
+    consecutivo de sede (órdenes antiguas o sin sede) es "".
     """
-    if order.o_hq_consecutive is None:
-        return ""
-    prefix = None
+    name, prefix = "", ""
     if order.o_headquarter_id:
         result = await db.execute(
-            select(Headquarter.prefix).where(Headquarter.id == order.o_headquarter_id)
+            select(Headquarter.name, Headquarter.prefix).where(Headquarter.id == order.o_headquarter_id)
         )
-        prefix = (result.scalar() or "").strip()
-    return f"{prefix}-{order.o_hq_consecutive}" if prefix else str(order.o_hq_consecutive)
+        row = result.first()
+        if row:
+            name = (row.name or "").strip()
+            prefix = (row.prefix or "").strip()
+    if order.o_hq_consecutive is None:
+        return name, ""
+    consecutive = f"{prefix}-{order.o_hq_consecutive}" if prefix else str(order.o_hq_consecutive)
+    return name, consecutive
+
+
+def _order_date_str(order: Order) -> str:
+    """Fecha de creación de la orden para la etiqueta (dd/mm/aaaa hh:mm)."""
+    if order.o_created_at:
+        return order.o_created_at.strftime("%d/%m/%Y %H:%M")
+    if order.o_date:
+        return order.o_date.strftime("%d/%m/%Y")
+    return ""
 
 
 async def generate_barcode_stickers(
@@ -249,7 +267,7 @@ async def generate_barcode_stickers(
         if enterprise else "-"
     )
     piso = await _resolve_piso(db, order)
-    hq_consecutive = await _resolve_hq_consecutive(db, order)
+    hq_name, hq_consecutive = await _resolve_headquarter(db, order)
 
     age_str = "-"
     if patient and getattr(patient, "pt_date_of_birth", None):
@@ -375,9 +393,31 @@ async def generate_barcode_stickers(
                    "tengan pruebas y tipos de muestra configurados.",
         )
 
-    # 9. Build PDF via Labelary and return
-    template = await BarcodeRepository.get_active_template(db, LABEL_TYPE_MUESTRA)
-    pdf_bytes, zpl_list = await asyncio.to_thread(build_stickers_result, stickers, template)
+    # 9. Etiquetas a imprimir: stickers de muestras y, al final, la etiqueta
+    #    de la orden (solo si su plantilla 'ORDEN' está activa y se imprime la
+    #    orden completa: si se pidieron estudios puntuales, solo van los de
+    #    muestras). Cada una se repite según barcodes.number_labels_print.
+    muestra_tpl = await BarcodeRepository.get_active(db, LABEL_TYPE_MUESTRA)
+    labels = [(build_zpl(s, muestra_tpl.zpl), muestra_tpl.copies) for s in stickers]
+
+    orden_tpl = (
+        await BarcodeRepository.find_active(db, LABEL_TYPE_ORDEN)
+        if requested_study_ids is None else None
+    )
+    if orden_tpl is not None:
+        order_label = build_order_label_zpl({
+            "nombre_sede": hq_name,
+            "numero_orden": order.o_number or "",
+            "fecha_creacion_orden": _order_date_str(order),
+            "consecutivo_sede": hq_consecutive,
+            "nombres_paciente": patient_full_name,
+            "tipodoc": document_type_code,
+            "numero_documento": identification,
+        }, orden_tpl.zpl)
+        labels.append((order_label, orden_tpl.copies))
+
+    # 10. Build PDF via Labelary and return
+    pdf_bytes, zpl_list = await asyncio.to_thread(build_labels_result, labels)
     b64 = pdf_to_base64(pdf_bytes)
 
     filename = f"stickers_{order.o_number}_{identification.replace(' ', '_')}.pdf"
@@ -387,6 +427,6 @@ async def generate_barcode_stickers(
         "base64_pdf": b64,
         "order_number": order.o_number,
         "order_id": order_id,
-        "total_stickers": len(stickers),
+        "total_stickers": len(zpl_list),
         "zpl_codes": zpl_list,
     }

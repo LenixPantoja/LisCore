@@ -7,7 +7,7 @@ Label size: 2 x 1 inch at 8 dpmm (≈ 50 mm × 25 mm).
 import base64
 import io
 import time
-from typing import List
+from typing import List, Sequence, Tuple
 
 import requests
 from pypdf import PdfReader, PdfWriter
@@ -33,6 +33,27 @@ def build_zpl(sticker: dict, template: str) -> str:
         piso=sticker.get("piso", ""),
         consecutivo=sticker.get("hq_consecutive", ""),
     )
+
+
+class _BlankOnMissing(dict):
+    """Variables de plantilla no conocidas se reemplazan por vacío en vez de fallar."""
+    def __missing__(self, key):
+        return ""
+
+
+def build_order_label_zpl(data: dict, template: str) -> str:
+    """ZPL de la etiqueta de la orden (barcodes.label_type='ORDEN')."""
+    return template.format_map(_BlankOnMissing(
+        nombre_sede=data.get("nombre_sede", ""),
+        numero_orden=data.get("numero_orden", ""),
+        fecha_creacion_orden=data.get("fecha_creacion_orden", ""),
+        consecutivo_sede=data.get("consecutivo_sede", ""),
+        nombres_paciente=data.get("nombres_paciente", ""),
+        tipodoc=data.get("tipodoc", ""),
+        # La plantilla usa "numero_documeto"; se acepta también bien escrito
+        numero_documeto=data.get("numero_documento", ""),
+        numero_documento=data.get("numero_documento", ""),
+    ))
 
 
 def zpl_to_pdf(zpl: str) -> bytes:
@@ -68,23 +89,33 @@ def _merge_pdfs(pdf_bytes_list: List[bytes]) -> bytes:
     return buf.getvalue()
 
 
-def build_stickers_result(stickers: List[dict], template: str) -> tuple[bytes, List[str]]:
-    """Generate a merged PDF and ZPL codes for all stickers.
+def build_labels_result(labels: Sequence[Tuple[str, int]]) -> tuple[bytes, List[str]]:
+    """Generate a merged PDF and the ZPL codes for a list of (zpl, copies).
 
-    Calls the Labelary API once per sticker, merges the resulting PDFs,
-    and returns the merged PDF alongside the raw ZPL strings.
+    Each label is repeated `copies` times (barcodes.number_labels_print) both
+    in the ZPL list and in the PDF, keeping the given order. Labelary is
+    called only once per label, not once per copy.
 
     Returns:
         (merged_pdf_bytes, zpl_codes)
     """
-    zpl_list = [build_zpl(s, template) for s in stickers]
+    zpl_list: List[str] = []
     pdf_list: List[bytes] = []
-    for i, zpl in enumerate(zpl_list):
-        pdf_list.append(zpl_to_pdf(zpl))
-        if i < len(zpl_list) - 1:
+    for i, (zpl, copies) in enumerate(labels):
+        pdf = zpl_to_pdf(zpl)
+        copies = max(int(copies or 1), 1)
+        zpl_list.extend([zpl] * copies)
+        pdf_list.extend([pdf] * copies)
+        if i < len(labels) - 1:
             time.sleep(0.5)  # avoid 429 rate-limit between requests
-    merged_pdf = _merge_pdfs(pdf_list)
-    return merged_pdf, zpl_list
+    return _merge_pdfs(pdf_list), zpl_list
+
+
+def build_stickers_result(
+    stickers: List[dict], template: str, copies: int = 1
+) -> tuple[bytes, List[str]]:
+    """Generate a merged PDF and ZPL codes for all sample stickers."""
+    return build_labels_result([(build_zpl(s, template), copies) for s in stickers])
 
 
 def pdf_to_base64(pdf_bytes: bytes) -> str:

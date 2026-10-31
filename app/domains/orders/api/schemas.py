@@ -577,6 +577,10 @@ class OrderFilterRequest(BaseModel):
     work_group_ids: Optional[List[int]] = None
     study_ids: Optional[List[int]] = None
     headquarter_ids: Optional[List[int]] = None
+    sort_by_headquarter: bool = Field(
+        False,
+        description="True: agrupa por sede y ordena por consecutivo de sede ascendente. False: o_id descendente.",
+    )
     skip: int = Field(0, ge=0)
     limit: int = Field(100, ge=1, le=500)
 
@@ -620,6 +624,8 @@ class OrderFilterItemResponse(BaseModel):
     pt_name: str = Field(..., description="Nombre completo del paciente: Nombre1 Nombre2 Apellido1 Apellido2")
     pt_number_document: str
     o_priority: Optional[int] = None
+    o_headquarter_id: Optional[int] = None
+    o_hq_consecutive: Optional[int] = None
 
 
 class OrderFilterPaginatedResponse(BaseModel):

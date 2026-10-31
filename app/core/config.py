@@ -57,6 +57,8 @@ class Settings(BaseSettings):
     MINIO_ANNEXE_RESULT_BUCKET: str = "annexedResult"
     MINIO_RESOURCES_BUCKET: str = "resources"
     MINIO_PRESIGNED_EXPIRES_HOURS: int
+    # Región fija: evita que cada URL presignada consulte la región del bucket por red
+    MINIO_REGION: str = "us-east-1"
 
     # Servicio externo de renderizado de PDF (laboratory-results v2).
     # Corre en el mismo host que este backend; el host se toma del request

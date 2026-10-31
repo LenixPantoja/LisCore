@@ -10,6 +10,8 @@ class Barcode(Base):
     label_type = Column(String(20), nullable=False, index=True)
     barcode = Column(Text, nullable=False)
     is_active = Column(Integer, nullable=False, default=1)
+    # Copias que se imprimen de cada etiqueta generada con esta plantilla
+    number_labels_print = Column(Integer, nullable=False, default=1, server_default="1")
     created_at = Column(DateTime, default=get_bogota_now)
     updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 

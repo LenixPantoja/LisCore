@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import date
 
 from app.core.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_current_user
 from app.domains.reports.api.schemas import (
     LaboratoryReportRequest, LaboratoryReportResponse,
     LaboratoryReportDataResponse,
@@ -116,6 +116,26 @@ async def send_results_via_email(
     db: AsyncSession = Depends(get_db),
 ):
     return await send_email_results.execute(db, request.order_id, request.email)
+
+
+@router.get(
+    "/resources/logo2",
+    summary="Logo 2 del reporte de resultados",
+    description="Retorna el LOGO2 configurado para el reporte de resultados (bucket 'resources') como data URI base64, o null si no existe.",
+    dependencies=[Depends(get_current_user)],
+)
+async def get_logo2():
+    import asyncio
+    import base64
+    from utils.minio_client import download_resource
+    from app.domains.reports.application.use_cases.report_use_cases import RESOURCE_OBJECT_NAMES
+
+    object_name = RESOURCE_OBJECT_NAMES["LOGO2"]
+    data = await asyncio.to_thread(download_resource, object_name)
+    if not data:
+        return {"data_uri": None}
+    mime = "image/jpeg" if object_name.lower().endswith((".jpg", ".jpeg")) else "image/png"
+    return {"data_uri": f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"}
 
 
 @router.get(

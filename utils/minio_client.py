@@ -24,6 +24,9 @@ def get_minio_client() -> Minio:
             access_key=settings.MINIO_ACCESS_KEY,
             secret_key=settings.MINIO_SECRET_KEY,
             secure=settings.MINIO_SECURE,
+            # Sin región, presigned_get_object hace una petición GetBucketLocation;
+            # con MinIO lento eso bloqueaba cada analito con gráfica por más de un minuto.
+            region=settings.MINIO_REGION,
         )
     return _client
 
@@ -147,6 +150,24 @@ def get_resource_url(object_name: str | None) -> Optional[str]:
         return url
     except S3Error:
         return None
+    except Exception:
+        return None
+
+
+def download_resource(object_name: str) -> Optional[bytes]:
+    """
+    Descarga un recurso fijo (logo, marca de agua, etc.) del bucket 'resources'.
+    Retorna los bytes o None si no existe o hay error.
+    """
+    if not object_name:
+        return None
+    try:
+        client = get_minio_client()
+        response = client.get_object(settings.MINIO_RESOURCES_BUCKET, object_name)
+        data = response.read()
+        response.close()
+        response.release_conn()
+        return data
     except Exception:
         return None
 
