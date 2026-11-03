@@ -1,0 +1,2 @@
+Method,Name,Error,Occurrences,First Seen,Last Seen
+GET,GET /orders/ [lista],CatchResponseError('respuesta no es JSON'),2,2026-11-03T03:42:19Z,2026-11-03T03:45:33Z

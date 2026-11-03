@@ -1,0 +1,37 @@
+[2026-11-02 22:50:23,448] DESKTOP-P955AD0/INFO/locust.main: Starting Locust 2.47.0
+[2026-11-02 22:50:23,450] DESKTOP-P955AD0/INFO/locust.main: Run time limit set to 600 seconds
+[2026-11-02 22:50:23,451] DESKTOP-P955AD0/INFO/locust.runners: Ramping to 30 users at a rate of 2.00 per second
+[2026-11-02 22:50:37,539] DESKTOP-P955AD0/INFO/locust.runners: All users spawned: {"LisUser": 30} (30 total users)
+[2026-11-02 23:00:22,783] DESKTOP-P955AD0/INFO/locust.main: --run-time limit reached, shutting down
+[2026-11-02 23:00:22,984] DESKTOP-P955AD0/INFO/locust.main: Shutting down (exit code 0)
+Type     Name                                                                          # reqs      # fails |    Avg     Min     Max    Med |   req/s  failures/s
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+GET      GET /masters/work-groups                                                          30     0(0.00%) |    148     142     198    150 |    0.05        0.00
+GET      GET /orders/ [búsqueda]                                                          278     0(0.00%) |    178     151     381    170 |    0.46        0.00
+GET      GET /orders/ [lista]                                                             796     0(0.00%) |    181     151     517    170 |    1.33        0.00
+GET      GET /orders/by-number/[n]/details                                                724     0(0.00%) |    241     157     506    200 |    1.21        0.00
+GET      GET /orders/by-number/[n]/details [plan de trabajo]                             1110     0(0.00%) |    221     151     609    200 |    1.85        0.00
+GET      GET /patients/document/[doc]                                                     272     0(0.00%) |    163     145     525    160 |    0.45        0.00
+GET      GET /studies-lab/ [búsqueda]                                                     313     0(0.00%) |    200     156     361    180 |    0.52        0.00
+GET      GET /traces/order/[id]                                                           148     0(0.00%) |    160     148     229    160 |    0.25        0.00
+POST     POST /orders/filter [plan de trabajo]                                            119     0(0.00%) |    166     150     308    160 |    0.20        0.00
+POST     POST /users/login                                                                 30     0(0.00%) |    559     518     758    530 |    0.05        0.00
+--------|----------------------------------------------------------------------------|-------|-------------|-------|-------|-------|-------|--------|-----------
+         Aggregated                                                                      3820     0(0.00%) |    205     142     758    180 |    6.37        0.00
+
+Response time percentiles (approximated)
+Type     Name                                                                                  50%    66%    75%    80%    90%    95%    98%    99%  99.9% 99.99%   100% # reqs
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+GET      GET /masters/work-groups                                                              150    150    150    150    150    180    200    200    200    200    200     30
+GET      GET /orders/ [búsqueda]                                                               170    180    190    190    200    230    250    290    380    380    380    278
+GET      GET /orders/ [lista]                                                                  170    190    190    190    200    230    340    350    520    520    520    796
+GET      GET /orders/by-number/[n]/details                                                     200    270    320    320    350    360    380    410    510    510    510    724
+GET      GET /orders/by-number/[n]/details [plan de trabajo]                                   200    210    220    260    340    370    450    500    600    610    610   1110
+GET      GET /patients/document/[doc]                                                          160    160    160    160    170    170    220    310    530    530    530    272
+GET      GET /studies-lab/ [búsqueda]                                                          180    190    210    220    310    320    340    350    360    360    360    313
+GET      GET /traces/order/[id]                                                                160    160    170    170    170    180    210    210    230    230    230    148
+POST     POST /orders/filter [plan de trabajo]                                                 160    170    170    180    180    190    210    210    310    310    310    119
+POST     POST /users/login                                                                     530    550    560    590    640    760    760    760    760    760    760     30
+--------|--------------------------------------------------------------------------------|--------|------|------|------|------|------|------|------|------|------|------|------
+         Aggregated                                                                            180    190    210    220    320    350    390    520    640    760    760   3820
+
