@@ -582,6 +582,11 @@ class OrderFilterRequest(BaseModel):
         False,
         description="True: agrupa por sede y ordena por consecutivo de sede ascendente. False: o_id descendente.",
     )
+    search: Optional[str] = Field(
+        None,
+        max_length=100,
+        description="Busca en todas las páginas por número de orden, documento o nombre del paciente.",
+    )
     skip: int = Field(0, ge=0)
     limit: int = Field(100, ge=1, le=500)
 

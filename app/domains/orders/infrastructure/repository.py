@@ -116,6 +116,90 @@ class OrderRepository:
         return order
 
     @staticmethod
+    def _state_filter(
+        order_states: list[int],
+        work_group_ids: Optional[list[int]],
+        study_ids: Optional[list[int]],
+    ):
+        """
+        Condición de estado del filtro de órdenes, evaluada por analito.
+
+        Pendiente, Con Resultados y Validada se miran en los analitos de la orden
+        (solo los del área/estudio si se filtra por ellos; nunca estudios anulados):
+          - Pendiente (2): algún analito requerido sin resultado.
+          - Con Resultados (3): algún analito con resultado sin validar (l_state 2).
+          - Validada (4): todos los analitos requeridos validados o impresos.
+        "Requerido" sigue order_state_logic: si el estudio no marca pruebas
+        requeridas, cuentan todas; Descartado cuenta como resuelto.
+        Ingresada, Impresa, Cerrada y Anulada siguen siendo el estado de la orden.
+        Varios estados se combinan con O: la orden aparece si cumple cualquiera.
+        """
+        from sqlalchemy import and_, exists, not_
+        from sqlalchemy.orm import aliased
+        from app.domains.laboratories.domain.models import Laboratory
+        from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
+        from app.domains.orders.domain.constants import (
+            ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS, ORDER_STATE_VALIDADA,
+        )
+        from app.domains.orders.domain.order_state_logic import (
+            LAB_STATES_WITH_RESULTS, LAB_STATES_VALIDATED_OR_BEYOND,
+        )
+        from app.domains.laboratories.domain.constants import LABORATORY_STATE_CON_RESULTADOS
+
+        result_states = {ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS, ORDER_STATE_VALIDADA}
+        conditions = []
+        order_level = [s for s in order_states if s not in result_states]
+        if order_level:
+            conditions.append(Order.o_order_state.in_(order_level))
+
+        scoped = [s for s in order_states if s in result_states]
+        if scoped:
+            def area_labs(extra, required_only=True):
+                """EXISTS de un analito del área/estudio en la orden que cumple `extra`."""
+                lab, det, std = aliased(Laboratory), aliased(OrdersDetail), aliased(StudiesLab)
+                req, lab2, req2 = aliased(StudiesTestDetail), aliased(Laboratory), aliased(StudiesTestDetail)
+                is_required = exists().where(
+                    req.studies_id == det.od_study_id, req.tests_id == lab.l_test_id, req.is_required.is_(True))
+                study_has_required = exists().where(
+                    lab2.l_order_detail_id == det.od_id,
+                    req2.studies_id == det.od_study_id, req2.tests_id == lab2.l_test_id, req2.is_required.is_(True))
+                conds = [
+                    lab.l_order_detail_id == det.od_id,
+                    det.od_order_id == Order.o_id,
+                    det.od_cancelled == 0,
+                    std.id == det.od_study_id,
+                ]
+                if required_only:
+                    conds.append(or_(is_required, not_(study_has_required)))
+                if work_group_ids:
+                    conds.append(std.work_groups_id.in_(work_group_ids))
+                if study_ids:
+                    conds.append(std.id.in_(study_ids))
+                if extra is not None:
+                    conds.append(extra(lab))
+                return exists().where(and_(*conds))
+
+            has_labs = area_labs(None)
+            missing_result = area_labs(lambda l: or_(l.l_state.is_(None), l.l_state.not_in(LAB_STATES_WITH_RESULTS)))
+            not_validated = area_labs(lambda l: or_(l.l_state.is_(None), l.l_state.not_in(LAB_STATES_VALIDATED_OR_BEYOND)))
+
+            # Cualquier analito (requerido o no) con resultado esperando validación
+            awaiting_validation = area_labs(
+                lambda l: l.l_state == LABORATORY_STATE_CON_RESULTADOS, required_only=False)
+
+            by_state = {
+                ORDER_STATE_PENDIENTE: missing_result,
+                ORDER_STATE_CON_RESULTADOS: awaiting_validation,
+                ORDER_STATE_VALIDADA: and_(has_labs, not_(not_validated)),
+            }
+            conditions.append(and_(
+                Order.o_order_state.in_(result_states),
+                or_(*(by_state[s] for s in scoped)),
+            ))
+
+        return or_(*conditions)
+
+    @staticmethod
     async def get_filtered_orders(
         db: AsyncSession,
         start_date: Optional[datetime] = None,
@@ -125,6 +209,7 @@ class OrderRepository:
         study_ids: Optional[list[int]] = None,
         headquarter_ids: Optional[list[int]] = None,
         sort_by_headquarter: bool = False,
+        search: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
     ) -> Tuple[Sequence[Order], int]:
@@ -159,13 +244,24 @@ class OrderRepository:
             else:
                 query = query.filter(Order.o_created_at <= end_date)
 
-        # Filtro de estados
+        # Filtro de estados: Pendiente / Con Resultados / Validada se evalúan por
+        # analito (del área/estudio si se filtra por ellos). Ver _state_filter.
         if order_states:
-            query = query.filter(Order.o_order_state.in_(order_states))
+            query = query.filter(OrderRepository._state_filter(order_states, work_group_ids, study_ids))
 
         # Filtro de sede (columna directa en Order, sin JOIN)
         if headquarter_ids:
             query = query.filter(Order.o_headquarter_id.in_(headquarter_ids))
+
+        # Búsqueda en todas las páginas: número de orden, documento o nombre del paciente
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            query = query.filter(or_(
+                Order.o_number.ilike(term),
+                Patient.pt_Number_document.ilike(term),
+                func.concat_ws(' ', Patient.pt_firts_name, Patient.pt_middle_name,
+                               Patient.pt_last_name, Patient.pt_second_last_name).ilike(term),
+            ))
 
         # Filtros de grupo de trabajo y/o estudio requieren JOIN con OrdersDetails → StudiesLab
         needs_detail_join = bool(work_group_ids or study_ids)

@@ -2,6 +2,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.billing.domain.models import Invoice
+from utils.Consecutives.consecutive_lock import lock_consecutive
 
 
 async def generate_invoice_number(db: AsyncSession, prefix: str) -> str:
@@ -11,6 +12,8 @@ async def generate_invoice_number(db: AsyncSession, prefix: str) -> str:
     If prefix is empty, uses format: INV0001, INV0002, ...
     """
     safe_prefix = prefix.strip() if prefix else "INV"
+    # Evita que dos facturas simultáneas tomen el mismo número
+    await lock_consecutive(db, f"invoice_number:{safe_prefix}")
 
     stmt = (
         select(Invoice.inv_number)

@@ -1244,6 +1244,7 @@ async def filter_orders(
     study_ids: Optional[list[int]] = None,
     headquarter_ids: Optional[list[int]] = None,
     sort_by_headquarter: bool = False,
+    search: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
 ) -> dict:
@@ -1261,6 +1262,7 @@ async def filter_orders(
         study_ids=study_ids,
         headquarter_ids=headquarter_ids,
         sort_by_headquarter=sort_by_headquarter,
+        search=search,
         skip=skip,
         limit=limit,
     )

@@ -9,6 +9,7 @@ from datetime import date
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.seroteca.domain.models import Gradilla
+from utils.Consecutives.consecutive_lock import lock_consecutive
 
 
 async def generate_gradilla_number(db: AsyncSession) -> str:
@@ -19,6 +20,8 @@ async def generate_gradilla_number(db: AsyncSession) -> str:
     """
     today = date.today()
     dd_mm_yy = today.strftime("%d%m%y")
+    # Evita que dos gradillas simultáneas tomen el mismo número
+    await lock_consecutive(db, f"gradilla_number:{dd_mm_yy}")
 
     # Count how many gradillas were created today (by g_created_at date)
     stmt = select(func.count(Gradilla.g_id)).where(

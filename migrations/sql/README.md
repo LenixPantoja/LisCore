@@ -5,6 +5,9 @@ Scripts para aplicar a mano en la base PostgreSQL de cada cliente. Se usan porqu
 | Script | Qué hace | ¿Toca datos? |
 |---|---|---|
 | `054_indices_faltantes.sql` | Crea 12 índices de rendimiento e integridad | No, solo agrega índices |
+| `055_numero_orden_unico.sql` | Impide números de orden repetidos | No. Falla si ya hay números repetidos: el bloque 0 los lista para corregirlos antes |
+
+> **055:** ejecute primero el bloque 0. Si lista órdenes, corrija esos números a mano (y sus códigos de barras en `SamplesOrder`) antes de crear el índice. Se puede ejecutar completo en pgAdmin (F5) o con psql; si algo falla no cambia nada. Ejecútelo solo con el backend nuevo desplegado (bloqueo de consecutivos).
 
 ## 054 · Índices faltantes
 

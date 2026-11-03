@@ -205,6 +205,7 @@ async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get
         study_ids=data.study_ids,
         headquarter_ids=data.headquarter_ids,
         sort_by_headquarter=data.sort_by_headquarter,
+        search=data.search,
         skip=data.skip,
         limit=data.limit,
     )
