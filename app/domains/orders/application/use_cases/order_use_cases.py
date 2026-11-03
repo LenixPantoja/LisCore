@@ -400,7 +400,8 @@ async def list_orders(
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     order_state: Optional[int] = None,
-    search: Optional[str] = None
+    search: Optional[str] = None,
+    headquarter_id: Optional[int] = None,
 ):
     items, total = await OrderRepository.get_paginated(
         db,
@@ -411,7 +412,8 @@ async def list_orders(
         start_date=start_date,
         end_date=end_date,
         order_state=order_state,
-        search=search
+        search=search,
+        headquarter_id=headquarter_id,
     )
 
     # Calcular dinámicamente el o_order_state para cada orden según is_required

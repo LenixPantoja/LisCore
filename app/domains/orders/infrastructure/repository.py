@@ -22,7 +22,8 @@ class OrderRepository:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         order_state: Optional[int] = None,
-        search: Optional[str] = None
+        search: Optional[str] = None,
+        headquarter_id: Optional[int] = None,
     ) -> Tuple[Sequence[Order], int]:
         from sqlalchemy import or_
         from app.domains.patients.domain.models import Patient
@@ -71,6 +72,10 @@ class OrderRepository:
 
         if order_state is not None:
             query = query.filter(Order.o_order_state == order_state)
+
+        # Sede en la que se ingresó la orden
+        if headquarter_id is not None:
+            query = query.filter(Order.o_headquarter_id == headquarter_id)
 
         # 5. Conteo total
         count_stmt = select(func.count()).select_from(query.subquery())

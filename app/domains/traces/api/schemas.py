@@ -1,4 +1,4 @@
-from pydantic import BaseModel, computed_field
+from pydantic import BaseModel, Field, computed_field
 from typing import Optional, List
 from datetime import datetime
 
@@ -16,6 +16,14 @@ class TraceResponse(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
+
+
+class ResultDeliveryRequest(BaseModel):
+    """Datos de quien retira el resultado impreso."""
+    receiver_name: str = Field(..., min_length=3, max_length=200)
+    relationship: str = Field(..., min_length=2, max_length=100)
+    document_number: str = Field(..., min_length=3, max_length=50)
+    study_codes: Optional[List[str]] = Field(None, description="Estudios incluidos en la impresión (si fue parcial).")
 
 
 class TracePaginatedResponse(BaseModel):

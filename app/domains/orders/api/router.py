@@ -57,6 +57,7 @@ async def list_all(
     end_date: Optional[date] = None,
     order_state: Optional[int] = None,
     search: Optional[str] = None,
+    headquarter_id: Optional[int] = Query(None, description="Filtra por la sede en la que se ingresó la orden"),
     db: AsyncSession = Depends(get_db)
 ):
     return await use_cases.list_orders(
@@ -68,7 +69,8 @@ async def list_all(
         start_date=start_date,
         end_date=end_date,
         order_state=order_state,
-        search=search
+        search=search,
+        headquarter_id=headquarter_id,
     )
 
 @router.get("/next-number", response_model=NextOrderNumberResponse,
