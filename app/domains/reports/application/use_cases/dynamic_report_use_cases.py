@@ -266,6 +266,15 @@ def _coerce_params(
     type_map = {p.rp_name: p.rp_type for p in param_definitions}
     coerced: dict = {}
 
+    # Parámetros opcionales que no llegan (o llegan vacíos) toman su
+    # rp_default_value, o NULL si no tiene; así la consulta no falla por un
+    # bind faltante y puede usar COALESCE(:param, ...) para "sin filtro".
+    raw_params = dict(raw_params)
+    for p in param_definitions:
+        value = raw_params.get(p.rp_name)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            raw_params[p.rp_name] = p.rp_default_value
+
     for key, value in raw_params.items():
         if value is None:
             coerced[key] = value

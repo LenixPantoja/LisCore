@@ -92,9 +92,11 @@ async def _resolve_headquarter(db: AsyncSession, order: Order) -> tuple[str, str
 
 
 def _order_date_str(order: Order) -> str:
-    """Fecha de creación de la orden para la etiqueta (dd/mm/aaaa hh:mm)."""
+    """Fecha de creación de la orden para la etiqueta (dd/mm/aaaa hh:mm AM/PM)."""
     if order.o_created_at:
-        return order.o_created_at.strftime("%d/%m/%Y %H:%M")
+        dt = order.o_created_at
+        # AM/PM armado a mano: %p depende del locale del servidor
+        return f"{dt.strftime('%d/%m/%Y %I:%M')} {'AM' if dt.hour < 12 else 'PM'}"
     if order.o_date:
         return order.o_date.strftime("%d/%m/%Y")
     return ""

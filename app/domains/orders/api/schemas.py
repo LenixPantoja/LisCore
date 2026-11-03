@@ -545,6 +545,7 @@ class OrderEditResponse(BaseModel):
 
 class CancelStudiesRequest(BaseModel):
     study_ids: List[int] = Field(..., min_length=1, description="IDs de los estudios a anular.")
+    justification: Optional[str] = Field(None, description="Justificación de la anulación (se guarda en la traza de la orden).")
 
 
 class CancelStudiesResponse(BaseModel):

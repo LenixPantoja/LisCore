@@ -341,11 +341,53 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Error de integridad al crear la orden.")
 
 
-async def cancel_order_studies(db: AsyncSession, o_id: int, study_ids: list[int]) -> dict:
-    """Cancels specific studies from an order and cleans up related records."""
+async def cancel_order_studies(
+    db: AsyncSession,
+    o_id: int,
+    study_ids: list[int],
+    usr_id: Optional[int] = None,
+    justification: Optional[str] = None,
+) -> dict:
+    """Cancels specific studies from an order and cleans up related records.
+
+    Registra en la traza de la orden una "Anulación de Estudio" por cada estudio
+    anulado (con la justificación en notas) y, si la orden queda totalmente anulada,
+    un registro adicional de la anulación de la orden.
+    """
     result = await OrderRepository.cancel_studies(db, o_id, study_ids)
     if result["not_found"]:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada.")
+
+    cancelled_ids = result.get("cancelled_detail_ids") or []
+    if cancelled_ids:
+        from app.domains.traces.constants import OPERATION_CANCEL_STUDY
+
+        notes = (justification or "").strip() or None
+        rows = await db.execute(
+            select(StudiesLab.id, StudiesLab.code, StudiesLab.name)
+            .join(OrdersDetail, OrdersDetail.od_study_id == StudiesLab.id)
+            .where(OrdersDetail.od_id.in_(cancelled_ids))
+        )
+        for study_id, code, name in rows.all():
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_CANCEL_STUDY,
+                operation_description=f"Anulación estudio {study_id} - {code} {name or ''}".strip(),
+                usr_id=usr_id,
+                order_id=o_id,
+                notes=notes,
+            )
+        if result.get("order_cancelled"):
+            await register_trace(
+                db=db,
+                operation_type=OPERATION_CANCEL_STUDY,
+                operation_description="Anulación de la orden (todos sus estudios fueron anulados)",
+                usr_id=usr_id,
+                order_id=o_id,
+                notes=notes,
+            )
+        await db.commit()
+
     return result
 
 

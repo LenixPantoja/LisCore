@@ -122,11 +122,20 @@ async def edit(
 
 @router.post("/{id}/cancel-studies", response_model=CancelStudiesResponse, status_code=status.HTTP_200_OK,
              dependencies=[Depends(require_permission("Orders:CancelStudies"))])
-async def cancel_studies(id: int, data: CancelStudiesRequest, db: AsyncSession = Depends(get_db)):
+async def cancel_studies(
+    id: int,
+    data: CancelStudiesRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
     """
-    Anula uno o varios estudios de una orden.
+    Anula uno o varios estudios de una orden y lo registra en la traza de la orden.
     """
-    result = await use_cases.cancel_order_studies(db, id, data.study_ids)
+    result = await use_cases.cancel_order_studies(
+        db, id, data.study_ids,
+        usr_id=current_user.usr_id,
+        justification=data.justification,
+    )
     return CancelStudiesResponse(
         success=True,
         o_id=id,
