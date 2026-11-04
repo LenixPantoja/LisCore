@@ -8,7 +8,8 @@ from sqlalchemy.orm import selectinload
 
 from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.laboratories.domain.models import Laboratory
-from app.domains.laboratories.domain.constants import LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO
+from app.domains.laboratories.domain.constants import LABORATORY_STATE_DESCARTADO
+from app.domains.orders.domain.order_state_logic import compute_study_state, STUDY_STATE_VALIDADO
 from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
 from app.domains.testslabs.domain.models import TestsLab
 from app.domains.enterprises.domain.models import Enterprise
@@ -57,6 +58,16 @@ def _format_resultado_html(resultado: str, range_type: Optional[str]) -> str:
     if color:
         return f'<font color="{color}">{escaped}</font>'
     return escaped
+
+
+def _lab_has_result(lab: Any) -> bool:
+    """True si la prueba tiene algún resultado (texto, numérico, compuesto o gráfica)."""
+    return any((
+        (lab.l_result or "").strip(),
+        lab.l_result_num is not None,
+        (lab.l_result_comp or "").strip(),
+        getattr(lab, "l_result_graphic", None),
+    ))
 
 
 async def _load_order_and_validated_labs(
@@ -158,44 +169,53 @@ async def _load_order_and_validated_labs(
                 )
             labs_by_study = {sid: labs for sid, labs in labs_by_study.items() if sid in requested}
 
-        if filter_validated:
-            required_tests_by_study: dict[int, set[int]] = {}
-            if labs_by_study:
-                std_result = await db.execute(
-                    select(StudiesTestDetail).where(
-                        StudiesTestDetail.studies_id.in_(labs_by_study.keys()),
-                        StudiesTestDetail.is_required == True,
-                    )
+        required_tests_by_study: dict[int, set[int]] = {}
+        if labs_by_study:
+            std_result = await db.execute(
+                select(StudiesTestDetail).where(
+                    StudiesTestDetail.studies_id.in_(labs_by_study.keys()),
+                    StudiesTestDetail.is_required == True,
                 )
-                for std in std_result.scalars().all():
-                    required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
+            )
+            for std in std_result.scalars().all():
+                required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
 
-            states_with_results = {LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO}
+        def _required_ids(study_id: int, study_labs: list) -> set[int]:
+            # Solo cuentan las requeridas que existen en la orden; si el
+            # estudio no tiene requeridas, todas sus pruebas lo son.
+            in_order = {lab.l_test_id for lab in study_labs if lab.l_test_id is not None}
+            return (required_tests_by_study.get(study_id, set()) & in_order) or in_order
 
+        def _visible_labs(study_id: int, study_labs: list) -> list:
+            # No salen en el reporte: las pruebas descartadas y las NO
+            # requeridas sin resultado
+            required = _required_ids(study_id, study_labs)
+            return [
+                lab for lab in study_labs
+                if lab.l_state != LABORATORY_STATE_DESCARTADO
+                and (lab.l_test_id in required or _lab_has_result(lab))
+            ]
+
+        if filter_validated:
+            # El estudio sale en el reporte solo si su estado es "Validado"
+            # (misma regla que el detalle de la orden, ver compute_study_state):
+            # requeridas validadas y no requeridas validadas o sin resultado.
             validated_labs = []
             for study_id, study_labs in labs_by_study.items():
-                required_test_ids = required_tests_by_study.get(study_id, set())
                 labs_by_test = {
-                    lab.l_test_id: lab.l_state for lab in study_labs if lab.l_test_id is not None
+                    lab.l_test_id: (lab.l_state or 0) for lab in study_labs if lab.l_test_id is not None
                 }
-
-                if required_test_ids:
-                    # Solo las pruebas requeridas determinan si el estudio está listo
-                    study_ready = all(
-                        labs_by_test.get(tid, 0) in states_with_results for tid in required_test_ids
-                    )
-                else:
-                    # Sin pruebas requeridas definidas: todas deben estar validadas
-                    study_ready = bool(study_labs) and all(
-                        lab.l_state in states_with_results for lab in study_labs
-                    )
-
-                if study_ready:
-                    validated_labs.extend(study_labs)
+                state = compute_study_state(labs_by_test, required_tests_by_study.get(study_id, set()))
+                if state == STUDY_STATE_VALIDADO:
+                    validated_labs.extend(_visible_labs(study_id, study_labs))
         else:
             # Raw: todos los laboratorios de la orden (o del subconjunto
             # study_ids), sin exigir que el estudio esté completamente validado.
-            validated_labs = [lab for study_labs in labs_by_study.values() for lab in study_labs]
+            validated_labs = [
+                lab
+                for study_id, study_labs in labs_by_study.items()
+                for lab in _visible_labs(study_id, study_labs)
+            ]
 
         # 4. Evaluar rangos de referencia y adjuntarlos a cada lab
         patient_dob = getattr(patient, "pt_date_of_birth", None)

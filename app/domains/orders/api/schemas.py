@@ -332,7 +332,9 @@ class OrderDetailsSummaryResponse(BaseModel):
     """order en la raíz de /by-number/{o_number}/details, solo con los campos que usa el front."""
     o_id: int
     o_number: str
+    o_headquarter_id: Optional[int] = None
     o_hq_consecutive: Optional[int] = None
+    o_priority: Optional[int] = None  # 1 = urgente
     o_age: Optional[str] = None
     o_date: date
     o_note: Optional[str] = None
