@@ -139,7 +139,7 @@ class OrderRepository:
         from app.domains.laboratories.domain.models import Laboratory
         from app.domains.studieslab.domain.models import StudiesLab, StudiesTestDetail
         from app.domains.orders.domain.constants import (
-            ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS, ORDER_STATE_VALIDADA,
+            ORDER_STATE_INGRESADA, ORDER_STATE_PENDIENTE, ORDER_STATE_CON_RESULTADOS, ORDER_STATE_VALIDADA,
         )
         from app.domains.orders.domain.order_state_logic import (
             LAB_STATES_WITH_RESULTS, LAB_STATES_VALIDATED_OR_BEYOND,
@@ -192,8 +192,11 @@ class OrderRepository:
                 ORDER_STATE_CON_RESULTADOS: awaiting_validation,
                 ORDER_STATE_VALIDADA: and_(has_labs, not_(not_validated)),
             }
+            # Se incluye Ingresada: la interfaz de los equipos escribe resultados
+            # directo en Laboratories sin actualizar o_order_state, así que una
+            # orden con resultados del analizador puede seguir en 1.
             conditions.append(and_(
-                Order.o_order_state.in_(result_states),
+                Order.o_order_state.in_(result_states | {ORDER_STATE_INGRESADA}),
                 or_(*(by_state[s] for s in scoped)),
             ))
 
