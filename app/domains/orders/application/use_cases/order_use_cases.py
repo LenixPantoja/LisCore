@@ -27,7 +27,7 @@ from app.domains.orders.domain.constants import (
     ORDER_DETAIL_STATE_INGRESADO,
 )
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS
-from app.domains.orders.domain.order_state_logic import LAB_STATES_WITH_RESULTS
+from app.domains.orders.domain.order_state_logic import compute_study_state
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.samples.domain.constants import SAMPLE_ORDER_STATE_NO_INGRESADA
 from app.domains.laboratories.domain.models import Laboratory
@@ -708,45 +708,16 @@ async def get_full_order_details_by_id(db: AsyncSession, o_id: int):
         for std in std_result.scalars().all():
             required_tests_by_study.setdefault(std.studies_id, set()).add(std.tests_id)
 
-    # Compute state per study based on labs with required tests
-    STUDY_STATE_PENDIENTE = "Pendiente"
-    STUDY_STATE_CON_RESULTADOS = "Con Resultados"
-    STUDY_STATE_SIN_RESULTADOS = "Sin Resultados"
-    STATES_WITH_RESULTS = LAB_STATES_WITH_RESULTS  # Con Resultados, Validada, Impreso, Descartado
-
+    # Estado de cada estudio según sus pruebas requeridas y no requeridas
+    # (ver compute_study_state)
     for study_id, entry in study_map.items():
-        study_labs = entry["laboratories"]
         labs_by_test: dict[int, int] = {
-            lab.l_test_id: lab.l_state for lab in study_labs if lab.l_test_id is not None
+            lab.l_test_id: (lab.l_state or 0)
+            for lab in entry["laboratories"] if lab.l_test_id is not None
         }
-        # Solo cuentan las pruebas requeridas que existen en la orden: si la
-        # configuración del estudio cambió después de crearla, una prueba
-        # requerida nueva no debe dejar el estudio "Pendiente" para siempre.
-        required_test_ids = required_tests_by_study.get(study_id, set()) & labs_by_test.keys()
-
-        if not required_test_ids:
-            # No required tests defined: use lab states as-is
-            if not study_labs:
-                entry["study_state"] = STUDY_STATE_SIN_RESULTADOS
-            elif all(labs_by_test.get(tid, 0) in STATES_WITH_RESULTS for tid in labs_by_test):
-                entry["study_state"] = STUDY_STATE_CON_RESULTADOS
-            else:
-                entry["study_state"] = STUDY_STATE_PENDIENTE
-        else:
-            # Only required tests determine the state
-            required_with_results = all(
-                labs_by_test.get(tid, 0) in STATES_WITH_RESULTS
-                for tid in required_test_ids
-            )
-            if required_with_results:
-                entry["study_state"] = STUDY_STATE_CON_RESULTADOS
-            elif any(
-                labs_by_test.get(tid, 0) not in STATES_WITH_RESULTS
-                for tid in required_test_ids
-            ):
-                entry["study_state"] = STUDY_STATE_PENDIENTE
-            else:
-                entry["study_state"] = STUDY_STATE_SIN_RESULTADOS
+        entry["study_state"] = compute_study_state(
+            labs_by_test, required_tests_by_study.get(study_id, set())
+        )
 
     # Fallback: si algún estudio no tiene valor desde InvoicesDetail, buscarlo en TariffsDetail
     tariff_id = order.o_tariff_id if hasattr(order, "o_tariff_id") else None

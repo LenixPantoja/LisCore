@@ -88,3 +88,45 @@ def compute_order_state_from_studies(
     if all_with_results:
         return ORDER_STATE_CON_RESULTADOS
     return ORDER_STATE_PENDIENTE
+
+
+# Estados de un estudio (etiquetas que consume el frontend)
+STUDY_STATE_SIN_RESULTADOS = "Sin Resultados"
+STUDY_STATE_PENDIENTE = "Pendiente"
+STUDY_STATE_CON_RESULTADOS = "Con Resultados"
+STUDY_STATE_VALIDADO = "Validado"
+
+
+def compute_study_state(tests_map: dict[int, int], required_test_ids: set[int]) -> str:
+    """
+    Estado de un estudio a partir de sus pruebas ({test_id: l_state}).
+
+    Pruebas relevantes = las requeridas del estudio que existen en la orden; si
+    el estudio no tiene requeridas, todas sus pruebas.
+
+    - Validado: todas las requeridas están validadas (o impresas/descartadas)
+      y las NO requeridas están validadas o sin resultado (una no requerida
+      vacía no impide validar el estudio).
+    - Con Resultados: todas las requeridas tienen resultado, pero falta
+      validar alguna (o una no requerida tiene resultado sin validar).
+    - Pendiente: alguna requerida aún no tiene resultado.
+    - Sin Resultados: el estudio no tiene pruebas en la orden.
+    """
+    if not tests_map:
+        return STUDY_STATE_SIN_RESULTADOS
+
+    required_ids = (required_test_ids & tests_map.keys()) or set(tests_map.keys())
+    optional_ids = tests_map.keys() - required_ids
+
+    if not all(tests_map[tid] in LAB_STATES_WITH_RESULTS for tid in required_ids):
+        return STUDY_STATE_PENDIENTE
+
+    required_validated = all(tests_map[tid] in LAB_STATES_VALIDATED_OR_BEYOND for tid in required_ids)
+    optional_ok = all(
+        tests_map[tid] in LAB_STATES_VALIDATED_OR_BEYOND
+        or tests_map[tid] not in LAB_STATES_WITH_RESULTS  # no requerida sin resultado
+        for tid in optional_ids
+    )
+    if required_validated and optional_ok:
+        return STUDY_STATE_VALIDADO
+    return STUDY_STATE_CON_RESULTADOS
