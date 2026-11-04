@@ -232,6 +232,10 @@ _PERMISSIONS = [
     {"p_name": "CompoundTemplates:Update",       "p_description": "Editar plantillas existentes",                     "p_module": "CompoundTemplates"},
     {"p_name": "CompoundTemplates:Delete",       "p_description": "Eliminar plantillas",                              "p_module": "CompoundTemplates"},
     {"p_name": "CompoundTemplates:ManageLinks",  "p_description": "Vincular/desvincular tests a plantillas",         "p_module": "CompoundTemplates"},
+
+    # ── WorkSheets (hojas de trabajo) ──────────────────────────────────────
+    {"p_name": "WorkSheets:List",   "p_description": "Ver hojas de trabajo y usarlas en Planes de Trabajo", "p_module": "WorkSheets"},
+    {"p_name": "WorkSheets:Manage", "p_description": "Crear, editar y eliminar hojas de trabajo y sus estudios", "p_module": "WorkSheets"},
 ]
 
 

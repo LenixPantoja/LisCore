@@ -209,34 +209,54 @@ class LaboratoryRepository:
             )
             rows = (await db.execute(stmt)).all()
 
-            # Build variables from non-formula labs that have a numeric result
+            # Variables: resultados de las pruebas que no son fórmula, más las
+            # fórmulas ya validadas/impresas (no se recalculan, pero otras
+            # fórmulas pueden depender de ellas).
             available_results = [
                 {
                     "name_abbreviation": row.name_abbreviation,
                     "result_value": row.l_result_num if row.l_result_num is not None else row.l_result,
                 }
                 for row in rows
-                if not row.is_formula and row.name_abbreviation
+                if row.name_abbreviation
+                and (not row.is_formula or row.l_state >= LABORATORY_STATE_VALIDADA)
             ]
 
-            # Evaluate and persist each formula lab
-            for row in rows:
-                if not row.is_formula or not row.formula:
-                    continue
-                # Do not overwrite already validated/printed results
-                if row.l_state >= LABORATORY_STATE_VALIDADA:
-                    continue
+            # Fórmulas a calcular (no se sobrescriben las validadas/impresas)
+            pending = [
+                row for row in rows
+                if row.is_formula and row.formula and row.l_state < LABORATORY_STATE_VALIDADA
+            ]
 
-                try:
-                    computed = process_formula_for_test(
-                        row.formula,
-                        available_results,
-                        num_decimal_result=row.num_decimal_result,
-                    )
-                except (FormulaMissingVariableError, FormulaError):
-                    # Variables not yet available — leave this lab unchanged
-                    continue
+            # Se evalúan en varias pasadas para que una fórmula pueda usar el
+            # resultado de otra (ej. LDL = (COL-HDL)-VLDL con VLDL = TRI/5):
+            # cada fórmula calculada queda disponible como variable para las
+            # siguientes. Se detiene cuando una pasada no calcula nada nuevo.
+            computed_rows = []
+            while pending:
+                still_pending = []
+                for row in pending:
+                    try:
+                        computed = process_formula_for_test(
+                            row.formula,
+                            available_results,
+                            num_decimal_result=row.num_decimal_result,
+                        )
+                    except (FormulaMissingVariableError, FormulaError):
+                        # Variables not yet available — retry in the next pass
+                        still_pending.append(row)
+                        continue
+                    computed_rows.append((row, computed))
+                    if row.name_abbreviation:
+                        available_results.append(
+                            {"name_abbreviation": row.name_abbreviation, "result_value": computed}
+                        )
+                if len(still_pending) == len(pending):
+                    break  # nada nuevo: faltan variables, se dejan sin cambios
+                pending = still_pending
 
+            # Persist each computed formula lab
+            for row, computed in computed_rows:
                 if row.num_decimal_result is not None:
                     result_str = f"{computed:.{row.num_decimal_result}f}"
                 else:
