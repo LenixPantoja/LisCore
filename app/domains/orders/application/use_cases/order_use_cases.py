@@ -24,6 +24,7 @@ from app.domains.orders.domain.constants import (
     ORDER_STATE_CON_RESULTADOS,
     ORDER_STATE_VALIDADA,
     ORDER_STATE_IMPRESA,
+    ORDER_STATE_ANULADA,
     ORDER_DETAIL_STATE_INGRESADO,
 )
 from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS
@@ -949,6 +950,15 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | Non
                 invoice.inv_subtotal = (Decimal(str(invoice.inv_subtotal)) if invoice.inv_subtotal else Decimal(0)) + additional
                 invoice.inv_total = (Decimal(str(invoice.inv_total)) if invoice.inv_total else Decimal(0)) + additional
 
+        # 4b. Una orden anulada (todos sus estudios anulados) que recibe un
+        #     estudio nuevo vuelve a estar activa: si no, quedaría "Anulada"
+        #     con un examen pendiente por procesar.
+        reactivated = False
+        if added_studies and (order.o_order_state == ORDER_STATE_ANULADA or order.o_cancelled == 1):
+            order.o_order_state = ORDER_STATE_INGRESADA
+            order.o_cancelled = 0
+            reactivated = True
+
         # 5. Registrar trazas en AppTrace (ANTES del commit)
         # 5a. Demográficos modificados
         if diff_parts and user_id:
@@ -976,6 +986,15 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | Non
                     operation_description=f"Adición estudio a orden {order.o_number}",
                     notes=f"Estudio agregado: {info}",
                 ))
+
+        if reactivated and user_id:
+            db.add(AppTrace(
+                usr_id=user_id,
+                order_id=o_id,
+                operation_type=OPERATION_EDIT_DEMOGRAPHICS,
+                operation_description=f"Reactivación de orden {order.o_number}",
+                notes="La orden estaba anulada y se le agregó un estudio: vuelve a estado Ingresada.",
+            ))
 
         await db.commit()
 
