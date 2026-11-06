@@ -1,6 +1,6 @@
 from decimal import Decimal, InvalidOperation
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import update, select, delete
+from sqlalchemy import update, select, delete, text
 from app.domains.laboratories.domain.models import Laboratory
 from utils.timezone import get_bogota_now
 from app.domains.testslabs.domain.models import TestsLab
@@ -18,6 +18,47 @@ from app.domains.orders.domain.constants import (
     ORDER_DETAIL_STATE_DESCARTADO,
 )
 from typing import List, Dict, Any, Tuple
+
+# Decimales por defecto para una fórmula sin "decimales del resultado" configurados
+DEFAULT_FORMULA_DECIMALS = 2
+
+# Columna Laboratories.l_formula_manual (migrations/sql/059_resultado_formula_manual.sql).
+# Se consulta una vez si existe, para no romper el guardado si el backend se
+# despliega antes de correr el SQL.
+_manual_flag_available: bool | None = None
+
+
+async def _has_manual_flag(db: AsyncSession) -> bool:
+    global _manual_flag_available
+    if _manual_flag_available is None:
+        found = await db.execute(text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = 'Laboratories' AND column_name = 'l_formula_manual'"
+        ))
+        _manual_flag_available = found.first() is not None
+    return _manual_flag_available
+
+
+async def _set_formula_manual(db: AsyncSession, l_ids: List[int], manual: bool) -> None:
+    """Marca (o desmarca) resultados de fórmula escritos a mano por el usuario."""
+    if l_ids and await _has_manual_flag(db):
+        await db.execute(
+            text('UPDATE "Laboratories" SET l_formula_manual = :m WHERE l_id = ANY(:ids)'),
+            {"m": manual, "ids": l_ids},
+        )
+
+
+def _formula_decimals(configured: Any) -> int:
+    """Decimales del resultado de una fórmula: los configurados en la prueba o 2."""
+    return configured if configured is not None else DEFAULT_FORMULA_DECIMALS
+
+
+def _same_result(a: Any, b: Any) -> bool:
+    """Compara dos resultados como texto, ignorando espacios y coma/punto decimal."""
+    def norm(v: Any) -> str:
+        return ("" if v is None else str(v)).strip().replace(",", ".")
+    return norm(a) == norm(b)
+
 
 class LaboratoryRepository:
     @staticmethod
@@ -38,6 +79,8 @@ class LaboratoryRepository:
         invalid_state_ids = []
         not_found_ids = []
         trace_data_list: List[Dict[str, Any]] = []
+        manual_formula_ids: List[int] = []
+        auto_formula_ids: List[int] = []
         
         for item in updates:
             l_id = item.pop("l_id")
@@ -84,6 +127,26 @@ class LaboratoryRepository:
             # Si hay resultado a registrar, establecer estado a 2 (Con Resultados)
             if any(key in item for key in ["l_result", "l_result_comp", "l_result_num"]):
                 item["l_state"] = LABORATORY_STATE_CON_RESULTADOS
+
+            # Resultado de una prueba calculada por fórmula editado a mano: se
+            # respeta el valor escrito (no se recalcula). Si se deja vacío, la
+            # prueba vuelve a calcularse sola.
+            if "l_result" in item and lab.l_test_id and not _same_result(item["l_result"], old_result):
+                is_formula = (await db.execute(
+                    select(TestsLab.is_formula).where(TestsLab.id == lab.l_test_id)
+                )).scalar()
+                if is_formula:
+                    if _same_result(item["l_result"], None):
+                        auto_formula_ids.append(l_id)
+                        item["l_result_num"] = None
+                    else:
+                        manual_formula_ids.append(l_id)
+                        # El valor numérico debe ser el escrito (lo usan los rangos
+                        # y otras fórmulas), no el que se había calculado antes.
+                        try:
+                            item["l_result_num"] = Decimal(str(item["l_result"]).strip().replace(",", "."))
+                        except (InvalidOperation, ValueError):
+                            item["l_result_num"] = None
 
             # Si viene l_result y el test es de tipo Numérico (N), poblar también l_result_num
             if "l_result" in item and item["l_result"] is not None and lab.l_test_id:
@@ -151,6 +214,9 @@ class LaboratoryRepository:
                     "new_result_comp": new_result_comp,
                 })
             
+        await _set_formula_manual(db, manual_formula_ids, True)
+        await _set_formula_manual(db, auto_formula_ids, False)
+
         # Recalculate formula-based labs for all orders that had results updated
         affected_order_ids = list({t["order_id"] for t in trace_data_list if t.get("order_id")})
         if affected_order_ids:
@@ -209,9 +275,21 @@ class LaboratoryRepository:
             )
             rows = (await db.execute(stmt)).all()
 
+            # Fórmulas con un resultado escrito a mano por el usuario: se respetan
+            manual_ids: set[int] = set()
+            formula_ids = [row.l_id for row in rows if row.is_formula]
+            if formula_ids and await _has_manual_flag(db):
+                manual_ids = set((await db.execute(
+                    text('SELECT l_id FROM "Laboratories" WHERE l_formula_manual AND l_id = ANY(:ids)'),
+                    {"ids": formula_ids},
+                )).scalars().all())
+
+            def is_fixed(row) -> bool:
+                return row.l_state >= LABORATORY_STATE_VALIDADA or row.l_id in manual_ids
+
             # Variables: resultados de las pruebas que no son fórmula, más las
-            # fórmulas ya validadas/impresas (no se recalculan, pero otras
-            # fórmulas pueden depender de ellas).
+            # fórmulas que no se recalculan (validadas/impresas o escritas a
+            # mano), porque otras fórmulas pueden depender de ellas.
             available_results = [
                 {
                     "name_abbreviation": row.name_abbreviation,
@@ -219,13 +297,14 @@ class LaboratoryRepository:
                 }
                 for row in rows
                 if row.name_abbreviation
-                and (not row.is_formula or row.l_state >= LABORATORY_STATE_VALIDADA)
+                and (not row.is_formula or is_fixed(row))
             ]
 
-            # Fórmulas a calcular (no se sobrescriben las validadas/impresas)
+            # Fórmulas a calcular (no se sobrescriben las validadas/impresas
+            # ni las que el usuario escribió a mano)
             pending = [
                 row for row in rows
-                if row.is_formula and row.formula and row.l_state < LABORATORY_STATE_VALIDADA
+                if row.is_formula and row.formula and not is_fixed(row)
             ]
 
             # Se evalúan en varias pasadas para que una fórmula pueda usar el
@@ -240,7 +319,7 @@ class LaboratoryRepository:
                         computed = process_formula_for_test(
                             row.formula,
                             available_results,
-                            num_decimal_result=row.num_decimal_result,
+                            num_decimal_result=_formula_decimals(row.num_decimal_result),
                         )
                     except (FormulaMissingVariableError, FormulaError):
                         # Variables not yet available — retry in the next pass
@@ -257,17 +336,18 @@ class LaboratoryRepository:
 
             # Persist each computed formula lab
             for row, computed in computed_rows:
-                if row.num_decimal_result is not None:
-                    result_str = f"{computed:.{row.num_decimal_result}f}"
-                else:
-                    result_str = str(computed)
+                result_str = f"{computed:.{_formula_decimals(row.num_decimal_result)}f}"
+
+                # Sin cambios: no se reescribe la fila
+                if row.l_result == result_str and row.l_state == LABORATORY_STATE_CON_RESULTADOS:
+                    continue
 
                 await db.execute(
                     update(Laboratory)
                     .where(Laboratory.l_id == row.l_id)
                     .values(
                         l_result=result_str,
-                        l_result_num=computed,
+                        l_result_num=Decimal(result_str),
                         l_state=LABORATORY_STATE_CON_RESULTADOS,
                     )
                 )
@@ -550,6 +630,7 @@ class LaboratoryRepository:
                 .values(l_result=None, l_result_num=None, l_result_comp=None, l_state=LABORATORY_STATE_SIN_RESULTADOS)
             )
             await db.execute(stmt)
+            await _set_formula_manual(db, [l_id], False)
             cleared_count += 1
         
         await db.commit()
