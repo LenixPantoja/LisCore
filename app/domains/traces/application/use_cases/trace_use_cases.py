@@ -84,3 +84,33 @@ async def register_result_delivery(
     )
     await db.commit()
     return _map_to_response(trace, user_name)
+
+
+async def register_result_download(
+    db: AsyncSession,
+    order_id: int,
+    usr_id: int,
+    study_codes: Optional[list[str]] = None,
+    user_name: Optional[str] = None,
+) -> TraceResponse:
+    """Registra en la traza de la orden que un usuario descargó el PDF del resultado."""
+    from fastapi import HTTPException, status
+    from app.domains.orders.domain.models import Order
+    from app.domains.traces.constants import OPERATION_DOWNLOAD_RESULT
+    from utils.trace import register_trace
+
+    order = await db.get(Order, order_id)
+    if not order:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Orden no encontrada.")
+
+    scope = f"Estudios: {', '.join(study_codes)}" if study_codes else "Todos los estudios"
+    trace = await register_trace(
+        db=db,
+        operation_type=OPERATION_DOWNLOAD_RESULT,
+        operation_description=f"Descarga de PDF de resultado - Orden {order.o_number}",
+        usr_id=usr_id,
+        order_id=order_id,
+        notes=scope,
+    )
+    await db.commit()
+    return _map_to_response(trace, user_name)

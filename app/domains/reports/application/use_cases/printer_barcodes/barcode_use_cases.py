@@ -216,6 +216,10 @@ async def generate_barcode_stickers(
     requested_study_ids = set(study_ids) if study_ids else None
     study_target_st_ids: set[int] = set()
 
+    # Estudios cuyo tipo de muestra ya no coincide con ningún tubo de la orden
+    orphan_wg_studies: dict[int, list[str]] = defaultdict(list)
+    orphan_requested = False
+
     for study in studies:
         wg_id = study.work_groups_id
         if not wg_id:
@@ -240,6 +244,19 @@ async def generate_barcode_stickers(
         for st_id in covered_st_ids:
             if code not in sample_wg_studies[st_id][wg_id]:
                 sample_wg_studies[st_id][wg_id].append(code)
+
+        # Estudio sin tubo en la orden: el tipo de muestra de sus pruebas se cambió
+        # en Definiciones después de crear la orden (el tubo se creó con el tipo
+        # anterior). Se imprime en el tubo de la orden que quedó sin estudios.
+        st_to_suffix = {sid: sfx for sfx, sids in st_suffix_map.items() for sid in sids}
+        tube_suffixes = {
+            (t.sample_type.st_sufix if t.sample_type.st_sufix is not None else t.sample_type.st_id)
+            for t in tubes if t.sample_type
+        }
+        if not any(st_to_suffix.get(sid, sid) in tube_suffixes for sid in covered_st_ids):
+            orphan_wg_studies[wg_id].append(code)
+            if requested_study_ids is not None and study.id in requested_study_ids:
+                orphan_requested = True
 
     if requested_study_ids is not None and not study_target_st_ids:
         raise HTTPException(
@@ -312,9 +329,6 @@ async def generate_barcode_stickers(
 
         # If specific studies were requested, skip tubes that don't carry any of them —
         # but keep the full sticker content (all tests on that tube) for the ones that do.
-        if requested_study_ids is not None and not (set(related_st_ids) & study_target_st_ids):
-            continue
-
         # Collect work-group studies from ALL sample type IDs with this suffix
         combined_wg_studies: dict[int, list[str]] = defaultdict(list)
         for st_id in related_st_ids:
@@ -323,6 +337,18 @@ async def generate_barcode_stickers(
                 for c in codes:
                     if c not in combined_wg_studies[wg_id]:
                         combined_wg_studies[wg_id].append(c)
+
+        # Tubo sin estudios + estudios sin tubo (tipo de muestra cambiado después
+        # de crear la orden): esos estudios van en este tubo.
+        uses_orphans = not combined_wg_studies and bool(orphan_wg_studies)
+        if uses_orphans:
+            for wg_id, codes in orphan_wg_studies.items():
+                combined_wg_studies[wg_id].extend(codes)
+
+        if requested_study_ids is not None and not (
+            (set(related_st_ids) & study_target_st_ids) or (uses_orphans and orphan_requested)
+        ):
+            continue
 
         if not combined_wg_studies:
             # No studies with print_barcode enabled for this tube → skip sticker

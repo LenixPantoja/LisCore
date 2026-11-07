@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.dependencies import require_permission, get_current_user
 from app.domains.users.infrastructure.models import AppUser
-from app.domains.traces.api.schemas import TraceResponse, TracePaginatedResponse, ResultDeliveryRequest
+from app.domains.traces.api.schemas import TraceResponse, TracePaginatedResponse, ResultDeliveryRequest, ResultDownloadRequest
 from app.domains.traces.application.use_cases import trace_use_cases as use_cases
 
 router = APIRouter()
@@ -45,5 +45,19 @@ async def register_result_delivery(
     return await use_cases.register_result_delivery(
         db, order_id, current_user.usr_id,
         data.receiver_name, data.relationship, data.document_number, data.study_codes,
+        user_name=f"{current_user.usr_first_name or ''} {current_user.usr_last_name or ''}".strip(),
+    )
+
+
+@router.post("/order/{order_id}/result-download", response_model=TraceResponse)
+async def register_result_download(
+    order_id: int,
+    data: ResultDownloadRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: AppUser = Depends(get_current_user),
+):
+    """Registra en la traza de la orden la descarga del PDF del resultado."""
+    return await use_cases.register_result_download(
+        db, order_id, current_user.usr_id, data.study_codes,
         user_name=f"{current_user.usr_first_name or ''} {current_user.usr_last_name or ''}".strip(),
     )

@@ -26,6 +26,11 @@ class ResultDeliveryRequest(BaseModel):
     study_codes: Optional[List[str]] = Field(None, description="Estudios incluidos en la impresión (si fue parcial).")
 
 
+class ResultDownloadRequest(BaseModel):
+    """Estudios incluidos en el PDF descargado (si fue parcial)."""
+    study_codes: Optional[List[str]] = Field(None, description="Estudios incluidos en el PDF (si fue parcial).")
+
+
 class TracePaginatedResponse(BaseModel):
     items: List[TraceResponse]
     total: int

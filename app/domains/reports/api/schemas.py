@@ -230,3 +230,19 @@ class DashboardKpisSummaryResponse(BaseModel):
     total_tests: int
     avg_tests_per_order: float
     top_patient: Optional[TopPatientItem] = None
+
+
+class WorkGroupSliceItem(BaseModel):
+    wg_id: Optional[int] = None
+    wg_name: str
+    total: int
+
+
+class ValidationByWorkGroupResponse(BaseModel):
+    """Estudios validados y pendientes por validar, por área, en un rango de fechas."""
+    date_from: date
+    date_to: date
+    validated: list[WorkGroupSliceItem]
+    pending: list[WorkGroupSliceItem]
+    total_validated: int
+    total_pending: int

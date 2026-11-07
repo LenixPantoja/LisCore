@@ -6,6 +6,7 @@ from datetime import date
 from app.core.database import get_db
 from app.core.dependencies import require_permission, get_current_user
 from app.domains.reports.api.schemas import (
+    ValidationByWorkGroupResponse,
     LaboratoryReportRequest, LaboratoryReportResponse,
     LaboratoryReportDataResponse,
     DashboardStatsResponse,
@@ -178,10 +179,11 @@ async def get_kpis(
     dependencies=[Depends(require_permission("Reports:Kpis"))],
 )
 async def get_kpi_orders_by_work_group(
-    date: date = Query(..., description="Fecha de consulta (YYYY-MM-DD)"),
+    date: date = Query(..., description="Fecha de consulta (YYYY-MM-DD); inicio del rango si se envía date_to"),
+    date_to: Optional[date] = Query(None, description="Fecha final del rango (opcional)"),
     db: AsyncSession = Depends(get_db),
 ):
-    return await kpis_use_cases.get_orders_by_work_group_by_date(db, date)
+    return await kpis_use_cases.get_orders_by_work_group_by_date(db, date, date_to)
 
 
 @router.get(
@@ -193,10 +195,11 @@ async def get_kpi_orders_by_work_group(
     dependencies=[Depends(require_permission("Reports:Kpis"))],
 )
 async def get_kpi_orders_by_sede(
-    date: date = Query(..., description="Fecha de consulta (YYYY-MM-DD)"),
+    date: date = Query(..., description="Fecha de consulta (YYYY-MM-DD); inicio del rango si se envía date_to"),
+    date_to: Optional[date] = Query(None, description="Fecha final del rango (opcional)"),
     db: AsyncSession = Depends(get_db),
 ):
-    return await kpis_use_cases.get_orders_by_sede_by_date(db, date)
+    return await kpis_use_cases.get_orders_by_sede_by_date(db, date, date_to)
 
 
 @router.get(
@@ -217,6 +220,26 @@ async def get_kpi_orders_by_period(
     db: AsyncSession = Depends(get_db),
 ):
     return await kpis_use_cases.get_orders_by_period(db, date_from, date_to)
+
+
+@router.get(
+    "/dashboard/validation-by-work-group",
+    response_model=ValidationByWorkGroupResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Muestras validadas y pendientes por validar, por área",
+    description=(
+        "Muestras (tubos) de las órdenes ingresadas en el rango, por grupo de trabajo: "
+        "validadas (todas las pruebas del área en el tubo validadas/impresas) y pendientes por validar. "
+        "Sin fechas se usa el día de hoy."
+    ),
+    dependencies=[Depends(require_permission("Reports:Dashboard"))],
+)
+async def get_validation_by_work_group(
+    date_from: Optional[date] = Query(None, description="Fecha inicial (YYYY-MM-DD)"),
+    date_to: Optional[date] = Query(None, description="Fecha final (YYYY-MM-DD)"),
+    db: AsyncSession = Depends(get_db),
+):
+    return await kpis_use_cases.get_validation_by_work_group(db, date_from, date_to)
 
 
 @router.get(
