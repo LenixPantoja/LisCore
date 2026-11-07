@@ -337,7 +337,9 @@ class OrderDetailsSummaryResponse(BaseModel):
     o_priority: Optional[int] = None  # 1 = urgente
     o_age: Optional[str] = None
     o_date: date
+    o_created_at: Optional[datetime] = None  # fecha y hora de ingreso
     o_note: Optional[str] = None
+    diagnosis: Optional[DiagnosisResponse] = None
 
     class Config:
         from_attributes = True

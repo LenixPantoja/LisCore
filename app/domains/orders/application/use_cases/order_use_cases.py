@@ -100,6 +100,16 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
         data["o_order_state"] = ORDER_STATE_INGRESADA
         data["o_cancelled"] = 0
 
+        # Edad del paciente: si el front no la envía (p. ej. paciente recién
+        # creado en la misma pantalla), se calcula de la fecha de nacimiento.
+        if not (data.get("o_age") or "").strip() and data.get("o_his_id"):
+            from app.domains.patients.domain.models import Patient
+            from app.domains.patients.domain.rules import calculate_age
+            patient = await db.get(Patient, data["o_his_id"])
+            if patient and patient.pt_date_of_birth:
+                age = calculate_age(patient.pt_date_of_birth)
+                data["o_age"] = f"{age['years']}a {age['months']}m {age['days']}d"
+
         order = await OrderRepository.create(db, data)
         await db.flush() # Obtenemos o_id sin confirmar la transacción todavía        
         # Diccionario para evitar duplicar tipos de muestra en una misma orden
