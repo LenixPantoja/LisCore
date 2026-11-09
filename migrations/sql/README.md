@@ -7,6 +7,7 @@ Scripts para aplicar a mano en la base PostgreSQL de cada cliente. Se usan porqu
 | `054_indices_faltantes.sql` | Crea 12 índices de rendimiento e integridad | No, solo agrega índices |
 | `058_hojas_de_trabajo.sql` | Crea las tablas de Hojas de Trabajo y sus permisos (los da a los roles que ya ven / editan estudios) | No, solo agrega tablas y permisos. Se puede correr varias veces |
 | `059_resultado_formula_manual.sql` | Agrega `Laboratories.l_formula_manual`: un resultado de fórmula escrito a mano ya no se recalcula | No, solo agrega una columna (todas en false). Se puede correr varias veces |
+| `060_medicos.sql` | Crea la tabla `Medics`, agrega `Orders.o_medic_id` y los permisos `Medics:List/GetOne/Create/Update/Delete` | No, solo agrega tabla, columna y permisos. Correr ANTES de desplegar el backend. Se puede correr varias veces |
 | `055_numero_orden_unico.sql` | Impide números de orden repetidos | No. Falla si ya hay números repetidos: el bloque 0 los lista para corregirlos antes |
 
 > **055:** ejecute primero el bloque 0. Si lista órdenes, corrija esos números a mano (y sus códigos de barras en `SamplesOrder`) antes de crear el índice. Se puede ejecutar completo en pgAdmin (F5) o con psql; si algo falla no cambia nada. Ejecútelo solo con el backend nuevo desplegado (bloqueo de consecutivos).

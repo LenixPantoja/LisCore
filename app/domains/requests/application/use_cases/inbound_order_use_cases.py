@@ -214,6 +214,8 @@ async def create_order_from_inbound(
         "o_headquarter_id": payload.o_headquarter_id or inbound.io_headquarter_id,
         "o_AppUser_id": user_id,
         "o_autorizacion": inbound.io_number_request,
+        # Las órdenes que llegan del HIS se crean siempre sin médico
+        "o_medic_id": None,
         "studies": study_ids,
     }
 

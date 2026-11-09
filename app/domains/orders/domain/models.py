@@ -3,6 +3,7 @@ from sqlalchemy.orm import relationship
 from app.core.database import Base
 from datetime import datetime
 from utils.timezone import get_bogota_now
+from app.domains.medics.domain import models as _medic_models  # noqa: F401  (registra la tabla Medics para la FK o_medic_id)
 
 class Order(Base):
     __tablename__ = "Orders"
@@ -35,6 +36,8 @@ class Order(Base):
     o_tariff_id = Column(Integer, ForeignKey("Tariffs.t_id"), nullable=True)
     o_cancelled = Column(Integer, default=0, nullable=False)
     o_sample_name = Column(String(255), nullable=True)
+    # Médico de la orden (maestro Medics). Opcional en la base; el front lo exige al crear.
+    o_medic_id = Column(Integer, ForeignKey("Medics.med_codigo"), nullable=True, index=True)
 
     # Relaciones
     patient = relationship("Patient", foreign_keys=[o_his_id])

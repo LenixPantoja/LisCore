@@ -100,6 +100,18 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
         data["o_order_state"] = ORDER_STATE_INGRESADA
         data["o_cancelled"] = 0
 
+        # Médico de la orden: opcional; si llega, debe existir y estar activo
+        if not data.get("o_medic_id"):
+            data["o_medic_id"] = None
+        else:
+            from app.domains.medics.domain.models import Medic
+            medic = await db.get(Medic, data["o_medic_id"])
+            if not medic or not medic.med_is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El médico seleccionado no existe o está inactivo.",
+                )
+
         # Edad del paciente: si el front no la envía (p. ej. paciente recién
         # creado en la misma pantalla), se calcula de la fecha de nacimiento.
         if not (data.get("o_age") or "").strip() and data.get("o_his_id"):

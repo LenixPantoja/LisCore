@@ -236,6 +236,11 @@ _PERMISSIONS = [
     # ── WorkSheets (hojas de trabajo) ──────────────────────────────────────
     {"p_name": "WorkSheets:List",   "p_description": "Ver hojas de trabajo y usarlas en Planes de Trabajo", "p_module": "WorkSheets"},
     {"p_name": "WorkSheets:Manage", "p_description": "Crear, editar y eliminar hojas de trabajo y sus estudios", "p_module": "WorkSheets"},
+    {"p_name": "Medics:List",   "p_description": "Listar médicos (también para elegir el médico al crear una orden)", "p_module": "Medics"},
+    {"p_name": "Medics:GetOne", "p_description": "Ver el detalle de un médico", "p_module": "Medics"},
+    {"p_name": "Medics:Create", "p_description": "Crear médicos", "p_module": "Medics"},
+    {"p_name": "Medics:Update", "p_description": "Editar médicos", "p_module": "Medics"},
+    {"p_name": "Medics:Delete", "p_description": "Eliminar médicos", "p_module": "Medics"},
 ]
 
 
