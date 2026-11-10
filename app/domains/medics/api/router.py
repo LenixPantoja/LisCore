@@ -25,8 +25,8 @@ router = APIRouter(redirect_slashes=False)
 async def list_medics(
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=500),
-    search: Optional[str] = Query(None, max_length=100, description="Texto libre: nombre, documento, tarjeta profesional o usuario; si es un número, también el código exacto"),
-    codigo: Optional[int] = Query(None, ge=1, description="Código del médico (exacto)"),
+    search: Optional[str] = Query(None, max_length=100, description="Texto libre: código exacto, o parte del nombre, documento, especialidad, tarjeta profesional o usuario"),
+    codigo: Optional[str] = Query(None, max_length=30, description="Código del médico (exacto)"),
     name: Optional[str] = Query(None, max_length=200, description="Nombre del médico (coincidencia parcial)"),
     is_active: Optional[bool] = Query(None, description="Filtra por activos (true) o inactivos (false)"),
     db: AsyncSession = Depends(get_db),
@@ -40,8 +40,8 @@ async def list_medics(
     dependencies=[Depends(require_permission("Medics:List"))],
 )
 async def list_active_medics(
-    search: Optional[str] = Query(None, max_length=100, description="Texto libre; si es un número, también el código exacto"),
-    codigo: Optional[int] = Query(None, ge=1, description="Código del médico (exacto)"),
+    search: Optional[str] = Query(None, max_length=100, description="Texto libre: código exacto, o parte del nombre, documento o especialidad"),
+    codigo: Optional[str] = Query(None, max_length=30, description="Código del médico (exacto)"),
     name: Optional[str] = Query(None, max_length=200, description="Nombre del médico (coincidencia parcial)"),
     db: AsyncSession = Depends(get_db),
 ):
@@ -50,12 +50,12 @@ async def list_active_medics(
 
 
 @router.get(
-    "/{med_codigo}",
+    "/{med_id}",
     response_model=MedicResponse,
     dependencies=[Depends(require_permission("Medics:GetOne"))],
 )
-async def get_medic(med_codigo: int, db: AsyncSession = Depends(get_db)):
-    return await use_cases.get_medic(db, med_codigo)
+async def get_medic(med_id: int, db: AsyncSession = Depends(get_db)):
+    return await use_cases.get_medic(db, med_id)
 
 
 @router.post(
@@ -69,17 +69,17 @@ async def create_medic(body: MedicCreate, db: AsyncSession = Depends(get_db)):
 
 
 @router.put(
-    "/{med_codigo}",
+    "/{med_id}",
     response_model=MedicResponse,
     dependencies=[Depends(require_permission("Medics:Update"))],
 )
-async def update_medic(med_codigo: int, body: MedicUpdate, db: AsyncSession = Depends(get_db)):
-    return await use_cases.update_medic(db, med_codigo, body.model_dump(exclude_unset=True))
+async def update_medic(med_id: int, body: MedicUpdate, db: AsyncSession = Depends(get_db)):
+    return await use_cases.update_medic(db, med_id, body.model_dump(exclude_unset=True))
 
 
 @router.delete(
-    "/{med_codigo}",
+    "/{med_id}",
     dependencies=[Depends(require_permission("Medics:Delete"))],
 )
-async def delete_medic(med_codigo: int, db: AsyncSession = Depends(get_db)):
-    return await use_cases.delete_medic(db, med_codigo)
+async def delete_medic(med_id: int, db: AsyncSession = Depends(get_db)):
+    return await use_cases.delete_medic(db, med_id)

@@ -11,6 +11,7 @@ from app.domains.medics.infrastructure.repository import MedicRepository
 
 def _to_dict(m: Medic) -> dict:
     return {
+        "med_id": m.med_id,
         "med_codigo": m.med_codigo,
         "med_name": m.med_name,
         "med_document_number": m.med_document_number,
@@ -28,39 +29,51 @@ def _to_dict(m: Medic) -> dict:
     }
 
 
-async def _get_or_404(db: AsyncSession, med_codigo: int) -> Medic:
-    medic = await MedicRepository.get(db, med_codigo)
+async def _get_or_404(db: AsyncSession, med_id: int) -> Medic:
+    medic = await MedicRepository.get(db, med_id)
     if not medic:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Médico no encontrado.")
     return medic
 
 
+async def _check_unique(db: AsyncSession, data: dict, exclude_id: Optional[int] = None) -> None:
+    if data.get("med_codigo") and await MedicRepository.codigo_taken(db, data["med_codigo"], exclude_id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"El código '{data['med_codigo']}' ya está asignado a otro médico.")
+    if data.get("med_user") and await MedicRepository.user_taken(db, data["med_user"], exclude_id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"El usuario '{data['med_user']}' ya está asignado a otro médico.")
+
+
 async def list_medics(
     db: AsyncSession, skip: int, limit: int, search: Optional[str], is_active: Optional[bool],
-    codigo: Optional[int] = None, name: Optional[str] = None,
+    codigo: Optional[str] = None, name: Optional[str] = None,
 ) -> dict:
     rows, total = await MedicRepository.list_paged(db, skip, limit, search, is_active, codigo, name)
     return {"total": total, "skip": skip, "limit": limit, "items": [_to_dict(m) for m in rows]}
 
 
 async def list_active_medics(
-    db: AsyncSession, search: Optional[str] = None, codigo: Optional[int] = None, name: Optional[str] = None,
+    db: AsyncSession, search: Optional[str] = None, codigo: Optional[str] = None, name: Optional[str] = None,
 ) -> list[dict]:
     rows = await MedicRepository.list_active(db, search, codigo, name)
     return [
-        {"med_codigo": m.med_codigo, "med_name": m.med_name, "med_document_number": m.med_document_number,
-         "med_specialty": m.med_specialty, "med_card_professional_number": m.med_card_professional_number}
+        {
+            "med_id": m.med_id,
+            "med_codigo": m.med_codigo,
+            "med_name": m.med_name,
+            "med_document_number": m.med_document_number,
+            "med_specialty": m.med_specialty,
+            "med_card_professional_number": m.med_card_professional_number,
+        }
         for m in rows
     ]
 
 
-async def get_medic(db: AsyncSession, med_codigo: int) -> dict:
-    return _to_dict(await _get_or_404(db, med_codigo))
+async def get_medic(db: AsyncSession, med_id: int) -> dict:
+    return _to_dict(await _get_or_404(db, med_id))
 
 
 async def create_medic(db: AsyncSession, data: dict) -> dict:
-    if data.get("med_user") and await MedicRepository.user_taken(db, data["med_user"]):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"El usuario '{data['med_user']}' ya está asignado a otro médico.")
+    await _check_unique(db, data)
     password = data.pop("med_password", None)
     medic = Medic(**data)
     if password:
@@ -71,14 +84,13 @@ async def create_medic(db: AsyncSession, data: dict) -> dict:
     return _to_dict(medic)
 
 
-async def update_medic(db: AsyncSession, med_codigo: int, data: dict) -> dict:
-    medic = await _get_or_404(db, med_codigo)
-    if data.get("med_user") and await MedicRepository.user_taken(db, data["med_user"], exclude_codigo=med_codigo):
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"El usuario '{data['med_user']}' ya está asignado a otro médico.")
+async def update_medic(db: AsyncSession, med_id: int, data: dict) -> dict:
+    medic = await _get_or_404(db, med_id)
+    await _check_unique(db, data, exclude_id=med_id)
     password = data.pop("med_password", None)
     for key, value in data.items():
         # Campos no anulables: un null explícito no los borra
-        if value is None and key in ("med_name", "med_reset_password", "med_is_locked", "med_is_active"):
+        if value is None and key in ("med_codigo", "med_name", "med_reset_password", "med_is_locked", "med_is_active"):
             continue
         setattr(medic, key, value)
     if password:
@@ -88,12 +100,12 @@ async def update_medic(db: AsyncSession, med_codigo: int, data: dict) -> dict:
     return _to_dict(medic)
 
 
-async def delete_medic(db: AsyncSession, med_codigo: int) -> dict:
+async def delete_medic(db: AsyncSession, med_id: int) -> dict:
     """Elimina el médico. Si ya tiene órdenes asociadas no se borra: se debe inactivar."""
     from app.domains.orders.domain.models import Order
 
-    medic = await _get_or_404(db, med_codigo)
-    orders = (await db.execute(select(func.count(Order.o_id)).where(Order.o_medic_id == med_codigo))).scalar() or 0
+    medic = await _get_or_404(db, med_id)
+    orders = (await db.execute(select(func.count(Order.o_id)).where(Order.o_medic_id == med_id))).scalar() or 0
     if orders:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

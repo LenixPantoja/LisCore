@@ -9,7 +9,8 @@
 --
 -- Seguro de correr varias veces. No modifica ni borra datos existentes.
 -- IMPORTANTE: correr ANTES de desplegar el backend nuevo (el backend lee
--- Orders.o_medic_id).
+-- Orders.o_medic_id). Si la tabla ya existía con med_codigo como llave, correr
+-- también 061_medics_med_id.sql.
 -- =============================================================================
 
 BEGIN;
@@ -25,7 +26,8 @@ BEGIN
 END $$;
 
 CREATE TABLE IF NOT EXISTS "Medics" (
-    med_codigo                   SERIAL PRIMARY KEY,
+    med_id                       SERIAL PRIMARY KEY,
+    med_codigo                   VARCHAR(30) NOT NULL,     -- código propio del médico (único)
     med_name                     VARCHAR(200) NOT NULL,
     med_document_number          VARCHAR(30),
     med_specialty                VARCHAR(150),
@@ -48,6 +50,9 @@ CREATE INDEX IF NOT EXISTS ix_medics_med_document_number ON "Medics" (med_docume
 -- Especialidad (si la tabla ya existía sin esta columna)
 ALTER TABLE "Medics" ADD COLUMN IF NOT EXISTS med_specialty VARCHAR(150);
 
+-- Código único
+CREATE UNIQUE INDEX IF NOT EXISTS ux_medics_med_codigo ON "Medics" (med_codigo);
+
 -- Usuario único (si se asigna)
 CREATE UNIQUE INDEX IF NOT EXISTS ux_medics_med_user
     ON "Medics" (lower(med_user)) WHERE med_user IS NOT NULL;
@@ -61,7 +66,7 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_orders_o_medic_id') THEN
         ALTER TABLE "Orders"
             ADD CONSTRAINT fk_orders_o_medic_id
-            FOREIGN KEY (o_medic_id) REFERENCES "Medics"(med_codigo);
+            FOREIGN KEY (o_medic_id) REFERENCES "Medics"(med_id);
     END IF;
 END $$;
 

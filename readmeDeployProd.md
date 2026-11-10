@@ -129,6 +129,9 @@ dir lis_core_api_prod.tar
 
 Fatima
 scp lis_core_api_prod.tar root@169.58.134.253:~/liscorePabon/Backend/
+
+
+scp -r dist root@169.58.134.253:~/liscorePabon/Front/
 ### Copiar el archivo .tar al servidor Linux
 
 ```powershell

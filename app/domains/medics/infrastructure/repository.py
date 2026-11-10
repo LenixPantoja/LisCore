@@ -8,36 +8,34 @@ from app.domains.medics.domain.models import Medic
 
 class MedicRepository:
     @staticmethod
-    async def get(db: AsyncSession, med_codigo: int) -> Optional[Medic]:
-        return await db.get(Medic, med_codigo)
+    async def get(db: AsyncSession, med_id: int) -> Optional[Medic]:
+        return await db.get(Medic, med_id)
 
     @staticmethod
-    def _filters(search: Optional[str], codigo: Optional[int], name: Optional[str]) -> list:
+    def _filters(search: Optional[str], codigo: Optional[str], name: Optional[str]) -> list:
         """
         Filtros de búsqueda de médicos:
-          - codigo: código exacto (med_codigo).
+          - codigo: código del médico exacto (med_codigo, sin importar mayúsculas).
           - name:   nombre, coincidencia parcial sin importar mayúsculas.
-          - search: texto libre en nombre, documento, especialidad, tarjeta profesional y usuario;
-                    si es un número, también busca el código exacto.
+          - search: texto libre: código exacto, o parcial en nombre, documento,
+                    especialidad, tarjeta profesional y usuario.
         """
         conds = []
-        if codigo is not None:
-            conds.append(Medic.med_codigo == codigo)
+        if codigo and codigo.strip():
+            conds.append(func.lower(Medic.med_codigo) == codigo.strip().lower())
         if name and name.strip():
             conds.append(Medic.med_name.ilike(f"%{name.strip()}%"))
         if search and search.strip():
             text = search.strip()
             term = f"%{text}%"
-            options = [
+            conds.append(or_(
+                func.lower(Medic.med_codigo) == text.lower(),
                 Medic.med_name.ilike(term),
                 Medic.med_document_number.ilike(term),
                 Medic.med_specialty.ilike(term),
                 Medic.med_card_professional_number.ilike(term),
                 Medic.med_user.ilike(term),
-            ]
-            if text.isdigit():
-                options.append(Medic.med_codigo == int(text))
-            conds.append(or_(*options))
+            ))
         return conds
 
     @staticmethod
@@ -47,7 +45,7 @@ class MedicRepository:
         limit: int,
         search: Optional[str] = None,
         is_active: Optional[bool] = None,
-        codigo: Optional[int] = None,
+        codigo: Optional[str] = None,
         name: Optional[str] = None,
     ) -> tuple[list[Medic], int]:
         stmt = select(Medic).where(*MedicRepository._filters(search, codigo, name))
@@ -61,7 +59,7 @@ class MedicRepository:
     async def list_active(
         db: AsyncSession,
         search: Optional[str] = None,
-        codigo: Optional[int] = None,
+        codigo: Optional[str] = None,
         name: Optional[str] = None,
     ) -> list[Medic]:
         stmt = (
@@ -73,8 +71,15 @@ class MedicRepository:
         return list((await db.execute(stmt)).scalars().all())
 
     @staticmethod
-    async def user_taken(db: AsyncSession, user: str, exclude_codigo: Optional[int] = None) -> bool:
-        stmt = select(Medic.med_codigo).where(func.lower(Medic.med_user) == user.lower())
-        if exclude_codigo is not None:
-            stmt = stmt.where(Medic.med_codigo != exclude_codigo)
+    async def user_taken(db: AsyncSession, user: str, exclude_id: Optional[int] = None) -> bool:
+        stmt = select(Medic.med_id).where(func.lower(Medic.med_user) == user.lower())
+        if exclude_id is not None:
+            stmt = stmt.where(Medic.med_id != exclude_id)
+        return (await db.execute(stmt)).first() is not None
+
+    @staticmethod
+    async def codigo_taken(db: AsyncSession, codigo: str, exclude_id: Optional[int] = None) -> bool:
+        stmt = select(Medic.med_id).where(func.lower(Medic.med_codigo) == codigo.lower())
+        if exclude_id is not None:
+            stmt = stmt.where(Medic.med_id != exclude_id)
         return (await db.execute(stmt)).first() is not None

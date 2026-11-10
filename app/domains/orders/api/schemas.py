@@ -31,7 +31,7 @@ class OrderBase(BaseModel):
     o_note: Optional[str] = None
     o_tariff_id: Optional[int] = None
     o_sample_name: Optional[str] = None
-    o_medic_id: Optional[int] = None  # médico de la orden (Medics.med_codigo)
+    o_medic_id: Optional[int] = None  # médico de la orden (Medics.med_id)
 
     @field_validator("o_pat_mail", mode="before")
     @classmethod
@@ -535,6 +535,7 @@ class OrderEditRequest(BaseModel):
     o_scholarity: Optional[int] = None
     o_note: Optional[str] = None
     o_tariff_id: Optional[int] = None
+    o_medic_id: Optional[int] = None  # cambiar el médico de la orden (Medics.med_id)
     studies: Optional[List[int]] = None  # IDs de estudios a agregar
 
 

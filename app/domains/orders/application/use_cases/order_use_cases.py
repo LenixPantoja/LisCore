@@ -86,9 +86,11 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
                 )
 
         # 1. Crear el encabezado de la Orden
-        # La fecha se asigna automáticamente si no se envía
-        if not data.get("o_date"):
-            data["o_date"] = get_bogota_now().date()
+        # La fecha de la orden es SIEMPRE la del servidor (Bogotá) al crearla.
+        # No se confía en la que envía el cliente: si la pantalla de ingreso
+        # quedó abierta desde el día anterior, enviaba la fecha de ayer y la
+        # orden quedaba con número y fecha del día anterior.
+        data["o_date"] = get_bogota_now().date()
         # Generamos el número de orden automáticamente ignorando el del request
         data["o_number"] = await generate_order_number(db, data.get("o_date"))
         # Consecutivo propio de la sede (bloquea la fila de la sede hasta el commit)
@@ -818,9 +820,29 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | Non
                 setattr(order, field, data[field])
                 updated_fields.append(field)
 
+        # 2b. Cambio de médico (solo si llega uno distinto al actual)
+        medic_change: Optional[tuple[str, str]] = None
+        new_medic_id = data.get("o_medic_id")
+        if new_medic_id and new_medic_id != order.o_medic_id:
+            from app.domains.medics.domain.models import Medic
+
+            new_medic = await db.get(Medic, new_medic_id)
+            if not new_medic or not new_medic.med_is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="El médico seleccionado no existe o está inactivo.",
+                )
+            old_medic = await db.get(Medic, order.o_medic_id) if order.o_medic_id else None
+            describe = lambda m: f"{m.med_name} (Cód. {m.med_codigo})" if m else "Sin médico"
+            medic_change = (describe(old_medic), describe(new_medic))
+            order.o_medic_id = new_medic_id
+            updated_fields.append("o_medic_id")
+
         # --- Build diff description ---
         diff_parts: list[str] = []
         for field in updated_fields:
+            if field == "o_medic_id":
+                continue  # el cambio de médico se registra aparte, con nombres
             label = field_labels.get(field, field)
             old_val = before_snapshot.get(field)
             new_val = data[field]
@@ -990,6 +1012,16 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | Non
                 operation_type=OPERATION_EDIT_DEMOGRAPHICS,
                 operation_description=f"Edición de orden {order.o_number}",
                 notes=" | ".join(diff_parts) if diff_parts else None,
+            ))
+
+        # 5a-bis. Cambio de médico: registro propio con el médico anterior y el nuevo
+        if medic_change and user_id:
+            db.add(AppTrace(
+                usr_id=user_id,
+                order_id=o_id,
+                operation_type=OPERATION_EDIT_DEMOGRAPHICS,
+                operation_description=f"Cambio de médico de la orden {order.o_number}",
+                notes=f"Médico: {medic_change[0]} → {medic_change[1]}",
             ))
 
         # 5b. Estudios agregados

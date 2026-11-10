@@ -11,7 +11,11 @@ def _blank_to_none(v):
     return v
 
 
+_OPTIONAL_TEXT = ("med_document_number", "med_specialty", "med_card_professional_number", "med_phone", "med_mail", "med_user")
+
+
 class MedicBase(BaseModel):
+    med_codigo: str = Field(..., min_length=1, max_length=30, description="Código del médico (único)")
     med_name: str = Field(..., min_length=3, max_length=200)
     med_document_number: Optional[str] = Field(None, max_length=30)
     med_specialty: Optional[str] = Field(None, max_length=150)
@@ -23,10 +27,15 @@ class MedicBase(BaseModel):
     med_is_locked: bool = False
     med_is_active: bool = True
 
-    @field_validator("med_document_number", "med_specialty", "med_card_professional_number", "med_phone", "med_mail", "med_user", mode="before")
+    @field_validator(*_OPTIONAL_TEXT, mode="before")
     @classmethod
     def _strip(cls, v):
         return _blank_to_none(v)
+
+    @field_validator("med_codigo", mode="before")
+    @classmethod
+    def _codigo(cls, v):
+        return v.strip().upper() if isinstance(v, str) else (str(v) if v is not None else v)
 
     @field_validator("med_name", mode="before")
     @classmethod
@@ -45,6 +54,7 @@ class MedicCreate(MedicBase):
 
 
 class MedicUpdate(BaseModel):
+    med_codigo: Optional[str] = Field(None, min_length=1, max_length=30)
     med_name: Optional[str] = Field(None, min_length=3, max_length=200)
     med_document_number: Optional[str] = Field(None, max_length=30)
     med_specialty: Optional[str] = Field(None, max_length=150)
@@ -58,10 +68,18 @@ class MedicUpdate(BaseModel):
     med_is_locked: Optional[bool] = None
     med_is_active: Optional[bool] = None
 
-    @field_validator("med_document_number", "med_specialty", "med_card_professional_number", "med_phone", "med_mail", "med_user", "med_password", mode="before")
+    @field_validator(*_OPTIONAL_TEXT, "med_password", mode="before")
     @classmethod
     def _strip(cls, v):
         return _blank_to_none(v)
+
+    @field_validator("med_codigo", mode="before")
+    @classmethod
+    def _codigo(cls, v):
+        if isinstance(v, str):
+            v = v.strip().upper()
+            return v or None
+        return str(v) if v is not None else v
 
     @field_validator("med_name", mode="before")
     @classmethod
@@ -71,7 +89,8 @@ class MedicUpdate(BaseModel):
 
 class MedicResponse(BaseModel):
     """Médico sin la contraseña."""
-    med_codigo: int
+    med_id: int
+    med_codigo: str
     med_name: str
     med_document_number: Optional[str] = None
     med_specialty: Optional[str] = None
@@ -96,7 +115,8 @@ class MedicPaginatedResponse(BaseModel):
 
 class MedicOption(BaseModel):
     """Opción para el selector de médico al crear una orden."""
-    med_codigo: int
+    med_id: int
+    med_codigo: str
     med_name: str
     med_document_number: Optional[str] = None
     med_specialty: Optional[str] = None
