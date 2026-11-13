@@ -627,7 +627,7 @@ class LaboratoryRepository:
             stmt = (
                 update(Laboratory)
                 .where(Laboratory.l_id == l_id)
-                .values(l_result=None, l_result_num=None, l_result_comp=None, l_state=LABORATORY_STATE_SIN_RESULTADOS)
+                .values(l_result=None, l_result_num=None, l_result_comp=None, l_result_graphic=None, l_state=LABORATORY_STATE_SIN_RESULTADOS)
             )
             await db.execute(stmt)
             await _set_formula_manual(db, [l_id], False)
