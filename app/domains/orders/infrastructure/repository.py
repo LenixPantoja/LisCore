@@ -525,16 +525,47 @@ class OrderRepository:
             count_stmt = count_stmt.where(StudiesLab.work_groups_id.in_(work_group_ids))
         total = (await db.execute(count_stmt)).scalar() or 0
 
-        # JOIN StudiesLab and StudiesTestDetail to apply ordering by order_of_print / order_print.
+        # Posición de cada prueba según la configuración del estudio. Si una
+        # prueba está vinculada varias veces al estudio, su 1.ª copia en la
+        # orden toma la 1.ª posición configurada, la 2.ª copia la 2.ª, etc.
+        # (si no, todas las copias quedaban juntas en la primera posición).
+        lab_pos = (
+            select(
+                Laboratory.l_id.label("l_id"),
+                func.row_number().over(
+                    partition_by=(Laboratory.l_order_detail_id, Laboratory.l_test_id),
+                    order_by=Laboratory.l_id,
+                ).label("n"),
+            )
+            .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
+            .where(OrdersDetail.od_order_id == o_id)
+            .subquery()
+        )
+        cfg_pos = (
+            select(
+                StudiesTestDetail.studies_id.label("studies_id"),
+                StudiesTestDetail.tests_id.label("tests_id"),
+                StudiesTestDetail.order_print.label("order_print"),
+                func.row_number().over(
+                    partition_by=(StudiesTestDetail.studies_id, StudiesTestDetail.tests_id),
+                    order_by=(StudiesTestDetail.order_print.nulls_last(), StudiesTestDetail.id),
+                ).label("n"),
+            )
+            .subquery()
+        )
+
+        # JOIN StudiesLab and the test position to apply ordering by order_of_print / order_print.
         # contains_eager reuses the explicit JOINs instead of issuing separate SELECTs.
         query = (
             select(Laboratory)
             .join(OrdersDetail, OrdersDetail.od_id == Laboratory.l_order_detail_id)
             .join(StudiesLab, StudiesLab.id == OrdersDetail.od_study_id)
+            .join(lab_pos, lab_pos.c.l_id == Laboratory.l_id)
             .outerjoin(
-                StudiesTestDetail,
-                (StudiesTestDetail.studies_id == OrdersDetail.od_study_id)
-                & (StudiesTestDetail.tests_id == Laboratory.l_test_id),
+                cfg_pos,
+                (cfg_pos.c.studies_id == OrdersDetail.od_study_id)
+                & (cfg_pos.c.tests_id == Laboratory.l_test_id)
+                & (cfg_pos.c.n == lab_pos.c.n),
             )
             .where(OrdersDetail.od_order_id == o_id)
             .options(
@@ -557,7 +588,8 @@ class OrderRepository:
                 # ordenarlas entre sí por order_print.
                 StudiesLab.order_of_print.nulls_last(),
                 OrdersDetail.od_study_id,
-                StudiesTestDetail.order_print.nulls_last(),
+                OrdersDetail.od_id,
+                cfg_pos.c.order_print.nulls_last(),
                 Laboratory.l_id,
             )
             .offset(skip)

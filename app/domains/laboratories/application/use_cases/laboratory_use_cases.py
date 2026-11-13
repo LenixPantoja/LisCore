@@ -182,6 +182,15 @@ async def validate_laboratories(db: AsyncSession, items: list):
         # Guardar l_ids antes de que el repositorio los procese
         l_ids = [item["l_id"] for item in items]
 
+        # Alarmas y Críticos: no validar valores críticos que bloquean la
+        # validación mientras no se registre la notificación al médico.
+        from app.domains.alarms.application.use_cases.alarm_use_cases import check_validation_block
+        await check_validation_block(db, [
+            item["l_id"] for item in items
+            if item.get("validate_unconditionally")
+            or item.get("l_result") is not None or item.get("l_result_comp") is not None
+        ])
+
         validated_count, details, trace_data_list = await LaboratoryRepository.validate_laboratories(db, items)
 
         # Registrar trazas para cada laboratorio validado

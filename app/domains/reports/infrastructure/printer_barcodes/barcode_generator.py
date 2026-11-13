@@ -9,8 +9,12 @@ import io
 import time
 from typing import List, Sequence, Tuple
 
+import logging
+
 import requests
 from pypdf import PdfReader, PdfWriter
+
+logger = logging.getLogger(__name__)
 
 # ── Labelary API ────────────────────────────────────────────────────────────
 LABELARY_URL = "http://api.labelary.com/v1/printers/8dpmm/labels/2x1/0/"
@@ -101,14 +105,25 @@ def build_labels_result(labels: Sequence[Tuple[str, int]]) -> tuple[bytes, List[
     """
     zpl_list: List[str] = []
     pdf_list: List[bytes] = []
+    # El PDF es solo vista previa (la impresión usa los ZPL). Si Labelary no
+    # responde (servidor sin internet / DNS), se devuelven igual los ZPL con
+    # el PDF vacío, para que las etiquetas se puedan imprimir.
+    preview_ok = True
     for i, (zpl, copies) in enumerate(labels):
-        pdf = zpl_to_pdf(zpl)
         copies = max(int(copies or 1), 1)
         zpl_list.extend([zpl] * copies)
+        if not preview_ok:
+            continue
+        try:
+            pdf = zpl_to_pdf(zpl)
+        except requests.RequestException as exc:
+            logger.warning("Vista previa de etiquetas no disponible (Labelary): %s", exc)
+            preview_ok = False
+            continue
         pdf_list.extend([pdf] * copies)
         if i < len(labels) - 1:
             time.sleep(0.5)  # avoid 429 rate-limit between requests
-    return _merge_pdfs(pdf_list), zpl_list
+    return (_merge_pdfs(pdf_list) if preview_ok else b""), zpl_list
 
 
 def build_stickers_result(

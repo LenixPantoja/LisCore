@@ -30,6 +30,7 @@ from sqlalchemy import text
 from app.core.config import settings
 from app.core.database import async_session
 from app.domains.laboratories.infrastructure.repository import LaboratoryRepository
+from app.domains.alarms.infrastructure import detector as alarm_detector
 from utils.timezone import get_bogota_now
 
 logger = logging.getLogger(__name__)
@@ -86,6 +87,15 @@ async def _handle_notification(connection, pid, channel, payload: str) -> None:
             "Error recalculando fórmulas para la orden %s tras notificación externa.", order_id
         )
 
+    # Alarmas y Críticos: revisar al instante los resultados de la orden
+    # (después de las fórmulas, para incluir los valores calculados).
+    try:
+        async with async_session() as db:
+            await alarm_detector.evaluate(db, order_ids=[order_id])
+            await db.commit()
+    except Exception:
+        logger.exception("Error revisando valores críticos de la orden %s.", order_id)
+
 
 async def _connect_listener() -> None:
     """Abre la conexión dedicada de escucha (si no está abierta)."""
@@ -133,6 +143,29 @@ async def sweep_pending_formulas(full: bool = False) -> int:
         return len(order_ids)
 
 
+async def sweep_alarms(full: bool = False) -> None:
+    """
+    Alarmas y Críticos: revisa los resultados recientes (o los de las últimas
+    CATCH_UP_HOURS al arrancar), escala las alarmas que superaron su tiempo meta
+    y cierra las que quedaron sin resultado. Lo hace un solo worker a la vez.
+    """
+    now = get_bogota_now().replace(tzinfo=None)
+    since = now - (timedelta(hours=alarm_detector.CATCH_UP_HOURS) if full
+                   else timedelta(minutes=SWEEP_RECENT_MINUTES))
+    async with async_session() as db:
+        if not await alarm_detector.alarms_ready(db):
+            return
+        got_lock = (await db.execute(
+            text("SELECT pg_try_advisory_xact_lock(hashtext('alarm_sweep'))")
+        )).scalar()
+        if not got_lock:
+            return
+        await alarm_detector.evaluate(db, since=since)
+        await alarm_detector.close_orphans(db)
+        await alarm_detector.escalate_overdue(db)
+        await db.commit()
+
+
 async def _supervise() -> None:
     """Mantiene viva la escucha y hace el barrido periódico."""
     catch_up = True  # al arrancar: ponerse al día con todo lo reciente
@@ -144,11 +177,19 @@ async def _supervise() -> None:
                 catch_up = True
         except Exception:
             logger.exception("No se pudo conectar la escucha de '%s'; se reintenta.", _CHANNEL)
+        formulas_ok = alarms_ok = False
         try:
             await sweep_pending_formulas(full=catch_up)
-            catch_up = False
+            formulas_ok = True
         except Exception:
             logger.exception("Error en el barrido de fórmulas pendientes.")
+        try:
+            await sweep_alarms(full=catch_up)
+            alarms_ok = True
+        except Exception:
+            logger.exception("Error en el barrido de alarmas y críticos.")
+        if formulas_ok and alarms_ok:
+            catch_up = False
         await asyncio.sleep(SWEEP_INTERVAL_SECONDS)
 
 

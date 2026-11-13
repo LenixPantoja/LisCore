@@ -28,6 +28,7 @@ from app.domains.compound_templates.api.router import router as compound_templat
 from app.domains.app_results_page.api.router import router as app_results_page_router
 from app.domains.worksheets.api.router import router as worksheets_router
 from app.domains.medics.api.router import router as medics_router
+from app.domains.alarms.api.router import router as alarms_router
 
 api_router = APIRouter()
 
@@ -62,3 +63,4 @@ api_router.include_router(compound_templates_router, prefix="/compound-templates
 api_router.include_router(app_results_page_router)
 api_router.include_router(worksheets_router, prefix="/worksheets", tags=["Work Sheets"])
 api_router.include_router(medics_router, prefix="/medics", tags=["Medics"])
+api_router.include_router(alarms_router, prefix="/alarms", tags=["Alarms"])
