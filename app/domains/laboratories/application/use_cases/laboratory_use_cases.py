@@ -16,6 +16,7 @@ from app.domains.traces.constants import (
 )
 from utils.trace import register_trace
 from typing import List
+from app.core.user_errors import user_error, not_available
 
 async def bulk_update_laboratories(db: AsyncSession, data_list: List[dict]):
     """
@@ -90,7 +91,7 @@ async def bulk_update_laboratories(db: AsyncSession, data_list: List[dict]):
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al actualizar los laboratorios: {str(e)}"
+            detail=user_error("No fue posible guardar los resultados", e)
         )
 
 async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int], usr_id: int, note: str = None):
@@ -155,7 +156,7 @@ async def invalidate_laboratories(db: AsyncSession, laboratory_ids: List[int], u
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al desvalidar los laboratorios: {str(e)}"
+            detail=user_error("No fue posible desvalidar los resultados", e)
         )
 
 async def validate_laboratories(db: AsyncSession, items: list):
@@ -248,7 +249,7 @@ async def validate_laboratories(db: AsyncSession, items: list):
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al validar los laboratorios: {str(e)}"
+            detail=user_error("No fue posible validar los resultados", e)
         )
 
 
@@ -370,7 +371,7 @@ async def clear_laboratory_results(db: AsyncSession, laboratory_ids: List[int]):
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al limpiar los resultados de laboratorios: {str(e)}"
+            detail=user_error("No fue posible limpiar los resultados", e)
         )
 
 
@@ -472,7 +473,7 @@ async def upload_laboratory_graphic(
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Error al subir la imagen a MinIO: {exc}"
+            detail=user_error("No fue posible guardar la imagen", exc)
         )
 
     await LaboratoryRepository.update_graphic(db, l_id, object_name)
@@ -568,7 +569,7 @@ async def bulk_update_preliminaries(db: AsyncSession, items: List[dict], usr_id:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al validar los preliminares: {str(e)}"
+            detail=user_error("No fue posible validar los preliminares", e)
         )
 
 
@@ -627,5 +628,5 @@ async def invalidate_preliminaries(db: AsyncSession, items: List[dict], usr_id: 
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al desvalidar los preliminares: {str(e)}"
+            detail=user_error("No fue posible desvalidar los preliminares", e)
         )

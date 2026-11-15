@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.studieslab.infrastructure.repository import StudiesLabRepository
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
+from app.core.user_errors import user_error, not_available
 
 async def create_study(db: AsyncSession, data: dict):
     try:
@@ -33,7 +34,7 @@ async def add_test_to_study(db: AsyncSession, study_id: int, detail_data: dict):
         if "StudiesTestDetail_pkey" in error_msg:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Error de secuencia en la base de datos (ID duplicado). Por favor sincronice las secuencias de la tabla StudiesTestDetail."
+                detail=not_available("Agregar pruebas al estudio", "secuencia de StudiesTestDetail desincronizada (ID duplicado)")
             )
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

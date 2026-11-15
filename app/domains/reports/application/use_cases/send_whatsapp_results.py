@@ -10,6 +10,7 @@ from app.domains.reports.application.use_cases.report_use_cases import generate_
 from app.domains.traces.constants import OPERATION_SEND_RESULT_WHATSAPP
 from app.integrations.whatsapp.client import whatsapp_client
 from utils.trace import register_trace
+from app.core.user_errors import user_error, not_available
 
 
 async def execute(db: AsyncSession, order_id: int, phone_number: str) -> dict:
@@ -62,7 +63,7 @@ async def execute(db: AsyncSession, order_id: int, phone_number: str) -> dict:
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Error al enviar el mensaje por WhatsApp: {exc}",
+            detail=user_error("No fue posible enviar el mensaje por WhatsApp", exc),
         )
 
     await register_trace(

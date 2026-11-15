@@ -5,6 +5,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.domains.barcodes.domain.models import Barcode
+from app.core.user_errors import user_error, not_available
 
 LABEL_TYPE_MUESTRA = "MUESTRA"
 LABEL_TYPE_GRADILLA = "GRADILLA"
@@ -41,7 +42,7 @@ class BarcodeRepository:
         if template is None:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"No hay una plantilla ZPL activa configurada para '{label_type}' en la tabla barcodes.",
+                detail=not_available(f"La impresión de etiquetas '{label_type}'", f"no hay plantilla ZPL activa para '{label_type}' en la tabla barcodes"),
             )
         return template
 

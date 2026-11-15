@@ -30,6 +30,7 @@ from app.shared.utils.range_evaluator import (
     evaluate_reference_range_sync,
 )
 from utils.timezone import get_bogota_now
+from app.core.user_errors import user_error, not_available
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ def _require_ready(ready: bool) -> None:
     if not ready:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="El módulo de alarmas no está instalado: falta correr el script SQL 062_alarmas_criticos.sql.",
+            detail=not_available("El módulo de alarmas", "falta correr el script SQL 062_alarmas_criticos.sql"),
         )
 
 

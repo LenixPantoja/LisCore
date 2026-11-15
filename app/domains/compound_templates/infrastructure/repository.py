@@ -32,7 +32,7 @@ class CompoundTemplateRepository:
         count_stmt = select(func.count()).select_from(query.subquery())
         total = (await db.execute(count_stmt)).scalar() or 0
 
-        result = await db.execute(query.offset(skip).limit(limit).order_by(CompoundTemplate.ct_id.desc()))
+        result = await db.execute(query.offset(skip).limit(limit).order_by(CompoundTemplate.ct_created_at.desc().nulls_last(), CompoundTemplate.ct_id.desc()))
         return result.scalars().all(), total
 
     @staticmethod

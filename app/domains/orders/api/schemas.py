@@ -47,6 +47,8 @@ class OrderCreate(OrderBase):
     """Esquema para crear una orden con sus estudios solicitados."""
     o_date: Optional[date] = None  # Se asigna automáticamente si no se envía
     studies: List[int]
+    # Notas escritas en admisión: se guardan a nombre del usuario que crea la orden
+    notes: Optional[List[str]] = Field(default=None, max_length=30)
 
 class OrderUpdate(BaseModel):
     o_print_date: Optional[datetime] = None
@@ -340,6 +342,8 @@ class OrderDetailsSummaryResponse(BaseModel):
     o_date: date
     o_created_at: Optional[datetime] = None  # fecha y hora de ingreso
     o_note: Optional[str] = None
+    # Nota de ingreso + notas con autor, en un solo texto (planes de trabajo)
+    o_notes_text: Optional[str] = None
     diagnosis: Optional[DiagnosisResponse] = None
 
     class Config:

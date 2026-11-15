@@ -43,8 +43,9 @@ def _parse_int_list(raw: Optional[list[str]]) -> Optional[list[int]]:
 
 @router.post("/", response_model=OrderCreatedResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_permission("Orders:Create"))])
-async def create(data: OrderCreate, db: AsyncSession = Depends(get_db)):
-    return await use_cases.create_order(db, data.model_dump())
+async def create(data: OrderCreate, db: AsyncSession = Depends(get_db),
+                 current_user: AppUser = Depends(get_current_user)):
+    return await use_cases.create_order(db, data.model_dump(), note_author_id=current_user.usr_id)
 
 @router.get("/", response_model=OrderPaginatedResponse,
             dependencies=[Depends(require_permission("Orders:List"))])
@@ -209,3 +210,40 @@ async def filter_orders(data: OrderFilterRequest, db: AsyncSession = Depends(get
         skip=data.skip,
         limit=data.limit,
     )
+
+
+# ── Notas de la orden (bacteriólogo / laboratorio) ──────────────────────────
+# Solo requieren sesión: quien valida resultados debe poder dejar y leer notas.
+from pydantic import BaseModel, Field as _Field
+from app.domains.orders.infrastructure import order_notes as _order_notes
+
+
+class OrderNoteCreate(BaseModel):
+    text: str = _Field(..., min_length=1, max_length=_order_notes.MAX_LEN)
+
+
+@router.get("/{id}/notes", status_code=status.HTTP_200_OK)
+async def list_order_notes(id: int, db: AsyncSession = Depends(get_db),
+                           current_user: AppUser = Depends(get_current_user)):
+    """Nota de ingreso + notas del laboratorio, cada una con su autor."""
+    return await _order_notes.list_notes(db, id, current_user.usr_id)
+
+
+@router.post("/{id}/notes", status_code=status.HTTP_201_CREATED)
+async def add_order_note(id: int, data: OrderNoteCreate, db: AsyncSession = Depends(get_db),
+                         current_user: AppUser = Depends(get_current_user)):
+    return await _order_notes.add_note(db, id, current_user.usr_id, data.text)
+
+
+@router.put("/{id}/notes/{note_id}", status_code=status.HTTP_200_OK)
+async def update_order_note(id: int, note_id: int, data: OrderNoteCreate, db: AsyncSession = Depends(get_db),
+                            current_user: AppUser = Depends(get_current_user)):
+    """Solo el autor puede modificar su nota (queda la traza con el texto anterior)."""
+    return await _order_notes.update_note(db, id, note_id, current_user.usr_id, data.text)
+
+
+@router.delete("/{id}/notes/{note_id}", status_code=status.HTTP_200_OK)
+async def delete_order_note(id: int, note_id: int, db: AsyncSession = Depends(get_db),
+                            current_user: AppUser = Depends(get_current_user)):
+    """Solo el autor puede borrar su nota. La nota de ingreso no se borra desde aquí."""
+    return await _order_notes.delete_note(db, id, note_id, current_user.usr_id)

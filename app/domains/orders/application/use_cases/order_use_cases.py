@@ -52,6 +52,7 @@ from utils.Consecutives.consecutive_invoices import generate_invoice_number
 from utils.timezone import get_bogota_now
 from utils.trace import register_trace
 from app.domains.traces.constants import OPERATION_CREATE_ORDER
+from app.core.user_errors import user_error, not_available
 
 
 def _new_laboratory(od_id: int, test_id: int, defaults: dict) -> Laboratory:
@@ -73,7 +74,7 @@ def _new_laboratory(od_id: int, test_id: int, defaults: dict) -> Laboratory:
         l_state=LABORATORY_STATE_CON_RESULTADOS,
     )
 
-async def create_order(db: AsyncSession, data: dict, commit: bool = True):
+async def create_order(db: AsyncSession, data: dict, commit: bool = True, note_author_id: Optional[int] = None):
     """
     `commit=False` deja la orden creada pero sin confirmar (solo flush), para que
     el llamador la incluya en una transacción más grande y confirme todo junto
@@ -81,6 +82,8 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
     forma permanente si un paso posterior falla o el request se cancela).
     """
     studies_ids = data.pop("studies", [])
+    from app.domains.orders.infrastructure import order_notes as _order_notes
+    admission_notes = _order_notes.clean_notes(data.pop("notes", None))
     if not studies_ids:
         raise HTTPException(status_code=400, detail="Debe solicitar al menos un estudio.")
 
@@ -145,7 +148,16 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
                 data["o_age"] = f"{age['years']}a {age['months']}m {age['days']}d"
 
         order = await OrderRepository.create(db, data)
-        await db.flush() # Obtenemos o_id sin confirmar la transacción todavía        
+        await db.flush() # Obtenemos o_id sin confirmar la transacción todavía
+
+        # Notas de admisión con su autor (misma transacción que la orden).
+        # Si la tabla de notas aún no existe, no se pierden: van a la nota de ingreso.
+        if admission_notes:
+            author = note_author_id or data.get("o_AppUser_id")
+            if not await _order_notes.insert_notes(db, order.o_id, author, admission_notes):
+                joined = "\n".join(admission_notes)
+                order.o_note = f"{order.o_note}\n{joined}".strip() if (order.o_note or "").strip() else joined
+
         # Diccionario para evitar duplicar tipos de muestra en una misma orden
         # st_sufix → (first_st_id, set_of_st_ids) - agrupa por sufijo
         sample_suffix_map: dict[int, tuple[int, set[int]]] = {}
@@ -586,6 +598,9 @@ async def get_order_details_paginated_by_number(
             if link.format_complete
         ]
         enriched_tests.append(test)
+
+    from app.domains.orders.infrastructure import order_notes as _order_notes
+    order.o_notes_text = await _order_notes.notes_text(db, order.o_id, order.o_note)
 
     return {
         "order": order,
@@ -1100,13 +1115,13 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | Non
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Error de integridad al editar la orden: {str(e.orig)}"
+            detail=user_error("No fue posible guardar los cambios de la orden porque hay datos en conflicto", e)
         )
     except Exception as e:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error al editar la orden: {str(e)}"
+            detail=user_error("No fue posible guardar los cambios de la orden", e)
         )
 
 

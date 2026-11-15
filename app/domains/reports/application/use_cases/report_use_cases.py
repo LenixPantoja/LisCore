@@ -25,6 +25,7 @@ from app.domains.reports.infrastructure.pdf_generator import (
 )
 from app.shared.utils.range_evaluator import evaluate_reference_range
 from app.domains.testslabs.domain.constants import RANGE_TYPE_NORMAL, RANGE_TYPE_CRITICO
+from app.core.user_errors import user_error, not_available
 
 # Nombres de objeto fijos del bucket 'resources' de MinIO (logos y marca de
 # agua institucionales, los mismos para todas las órdenes).
@@ -526,7 +527,7 @@ async def generate_laboratory_report_v2(
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Error al generar el PDF de resultados: {exc}",
+            detail=user_error("No fue posible generar el PDF de resultados", exc),
         )
 
     if annex_pdfs:

@@ -10,6 +10,7 @@ from app.domains.reports.application.use_cases.report_use_cases import generate_
 from app.domains.traces.constants import OPERATION_SEND_RESULT_EMAIL
 from app.integrations.email.client import gmail_client
 from utils.trace import register_trace
+from app.core.user_errors import user_error, not_available
 
 
 def _build_email_body(patient_name: str, order_number: str) -> str:
@@ -156,7 +157,7 @@ async def execute(db: AsyncSession, order_id: int, email: str) -> dict:
     except Exception as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Error al enviar el correo electrónico: {exc}",
+            detail=user_error("No fue posible enviar el correo electrónico", exc),
         )
 
     await register_trace(
