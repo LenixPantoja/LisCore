@@ -214,6 +214,10 @@ async def create_order_from_inbound(
         "o_headquarter_id": payload.o_headquarter_id or inbound.io_headquarter_id,
         "o_AppUser_id": user_id,
         "o_autorizacion": inbound.io_number_request,
+        # Celular y correo de la orden: igual que en el ingreso manual, se toman
+        # del paciente (son a donde se envían los resultados por WhatsApp/correo)
+        "o_pat_num_whatsapp": _clean(patient.pt_phone_number) if patient else None,
+        "o_pat_mail": _clean(patient.pt_mail) if patient else None,
         # Las órdenes que llegan del HIS se crean siempre sin médico
         "o_medic_id": None,
         "studies": study_ids,
@@ -311,6 +315,12 @@ async def create_order_from_inbound(
         inbound_order_id=payload.inbound_order_id,
         updated_detail_ids=updated_ids,
     )
+
+
+def _clean(value) -> Optional[str]:
+    """Texto sin espacios sobrantes; vacío o '-' se guarda como null."""
+    text = (value or "").strip()
+    return text if text and text != "-" else None
 
 
 # Valores que Dinamica envía en EXAOBSER cuando el examen no tiene observación

@@ -1,11 +1,46 @@
 from typing import List, Optional, Sequence, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
-from app.domains.testslabs.domain.models import TestslabFormatComplete
+from app.domains.testslabs.domain.models import FormatComplete, TestslabFormatComplete
 
 
 class TestslabFormatCompleteRepository:
+
+    @staticmethod
+    async def get_default_results(db: AsyncSession, test_ids) -> Dict[int, str]:
+        """
+        Resultado predeterminado por prueba: el nombre del formato de completado
+        marcado como predeterminado (y activo). {test_id: "Amarillo"}
+        """
+        ids = list({t for t in test_ids if t})
+        if not ids:
+            return {}
+        rows = (await db.execute(
+            select(TestslabFormatComplete.tfc_testslab_id, FormatComplete.fc_name)
+            .join(FormatComplete, FormatComplete.fc_id == TestslabFormatComplete.tfc_format_complete_id)
+            .where(
+                TestslabFormatComplete.tfc_testslab_id.in_(ids),
+                TestslabFormatComplete.tfc_is_default.is_(True),
+                FormatComplete.fc_active.is_(True),
+            )
+            .order_by(TestslabFormatComplete.tfc_order_index.asc(), TestslabFormatComplete.tfc_id.asc())
+        )).all()
+        out: Dict[int, str] = {}
+        for test_id, name in rows:
+            if name and name.strip() and test_id not in out:
+                out[test_id] = name.strip()
+        return out
+
+    @staticmethod
+    async def clear_other_defaults(db: AsyncSession, testslab_id: int, keep_tfc_id: Optional[int] = None) -> None:
+        """Una prueba tiene un solo formato predeterminado: desmarca los demás."""
+        stmt = (update(TestslabFormatComplete)
+                .where(TestslabFormatComplete.tfc_testslab_id == testslab_id,
+                       TestslabFormatComplete.tfc_is_default.is_(True)))
+        if keep_tfc_id is not None:
+            stmt = stmt.where(TestslabFormatComplete.tfc_id != keep_tfc_id)
+        await db.execute(stmt.values(tfc_is_default=False))
 
     @staticmethod
     async def create(db: AsyncSession, data: dict) -> TestslabFormatComplete:

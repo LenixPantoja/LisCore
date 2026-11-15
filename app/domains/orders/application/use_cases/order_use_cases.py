@@ -27,7 +27,7 @@ from app.domains.orders.domain.constants import (
     ORDER_STATE_ANULADA,
     ORDER_DETAIL_STATE_INGRESADO,
 )
-from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS
+from app.domains.laboratories.domain.constants import LABORATORY_STATE_SIN_RESULTADOS, LABORATORY_STATE_CON_RESULTADOS
 from app.domains.orders.domain.order_state_logic import compute_study_state
 from app.domains.samples.domain.models import SamplesOrder
 from app.domains.samples.domain.constants import SAMPLE_ORDER_STATE_NO_INGRESADA
@@ -52,6 +52,26 @@ from utils.Consecutives.consecutive_invoices import generate_invoice_number
 from utils.timezone import get_bogota_now
 from utils.trace import register_trace
 from app.domains.traces.constants import OPERATION_CREATE_ORDER
+
+
+def _new_laboratory(od_id: int, test_id: int, defaults: dict) -> Laboratory:
+    """
+    Crea el registro de resultado de una prueba de la orden. Si la prueba tiene un
+    formato de completado PREDETERMINADO, el resultado nace con ese valor y en
+    estado "Con Resultados", listo para validar (el usuario puede cambiarlo).
+    """
+    default = defaults.get(test_id)
+    if not default:
+        return Laboratory(l_order_detail_id=od_id, l_test_id=test_id, l_state=LABORATORY_STATE_SIN_RESULTADOS)
+    try:
+        num = Decimal(default.replace(",", "."))
+        num = num if num.is_finite() else None
+    except Exception:
+        num = None
+    return Laboratory(
+        l_order_detail_id=od_id, l_test_id=test_id, l_result=default, l_result_num=num,
+        l_state=LABORATORY_STATE_CON_RESULTADOS,
+    )
 
 async def create_order(db: AsyncSession, data: dict, commit: bool = True):
     """
@@ -142,6 +162,8 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
                 select(StudiesTestDetail)
                 .filter(StudiesTestDetail.studies_id == study_id)
                 .options(selectinload(StudiesTestDetail.test))
+                # Crear las pruebas en el orden configurado en el estudio
+                .order_by(StudiesTestDetail.order_print.nulls_last(), StudiesTestDetail.id)
             )
             result = await db.execute(stmt)
             test_links = result.scalars().all()
@@ -174,14 +196,12 @@ async def create_order(db: AsyncSession, data: dict, commit: bool = True):
             # orden ya haya registrado esa misma prueba (ej: TRI en LDLD y en
             # Triglicéridos deben quedar como dos registros independientes).
             seen_test_ids_for_study: set[int] = set()
+            default_results = await TestslabFormatCompleteRepository.get_default_results(
+                db, [link.tests_id for link in test_links])
 
             for link in test_links:
                 if link.tests_id not in seen_test_ids_for_study:
-                    blank_result = Laboratory(
-                        l_order_detail_id=order_detail.od_id,
-                        l_test_id=link.tests_id,
-                        l_state=LABORATORY_STATE_SIN_RESULTADOS
-                    )
+                    blank_result = _new_laboratory(order_detail.od_id, link.tests_id, default_results)
                     db.add(blank_result)
                     seen_test_ids_for_study.add(link.tests_id)
 
@@ -898,6 +918,7 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | Non
                     select(StudiesTestDetail)
                     .filter(StudiesTestDetail.studies_id == study_id)
                     .options(selectinload(StudiesTestDetail.test))
+                    .order_by(StudiesTestDetail.order_print.nulls_last(), StudiesTestDetail.id)
                 )
                 result = await db.execute(stmt)
                 test_links = result.scalars().all()
@@ -920,12 +941,10 @@ async def edit_order(db: AsyncSession, o_id: int, data: dict, user_id: int | Non
                 study_od_map[study_id] = order_detail.od_id
 
                 new_sample_types: set[int] = set()
+                default_results = await TestslabFormatCompleteRepository.get_default_results(
+                    db, [link.tests_id for link in test_links])
                 for link in test_links:
-                    blank_result = Laboratory(
-                        l_order_detail_id=order_detail.od_id,
-                        l_test_id=link.tests_id,
-                        l_state=LABORATORY_STATE_SIN_RESULTADOS,
-                    )
+                    blank_result = _new_laboratory(order_detail.od_id, link.tests_id, default_results)
                     db.add(blank_result)
 
                     if link.test and link.test.samples_type_id:

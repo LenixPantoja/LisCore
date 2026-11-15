@@ -546,6 +546,7 @@ class OrderRepository:
                 StudiesTestDetail.studies_id.label("studies_id"),
                 StudiesTestDetail.tests_id.label("tests_id"),
                 StudiesTestDetail.order_print.label("order_print"),
+                StudiesTestDetail.id.label("detail_id"),
                 func.row_number().over(
                     partition_by=(StudiesTestDetail.studies_id, StudiesTestDetail.tests_id),
                     order_by=(StudiesTestDetail.order_print.nulls_last(), StudiesTestDetail.id),
@@ -590,6 +591,9 @@ class OrderRepository:
                 OrdersDetail.od_study_id,
                 OrdersDetail.od_id,
                 cfg_pos.c.order_print.nulls_last(),
+                # Empate en order_print (p. ej. varias en 0): mismo desempate que la
+                # pantalla del estudio (id de la configuración), no el orden de creación.
+                cfg_pos.c.detail_id.nulls_last(),
                 Laboratory.l_id,
             )
             .offset(skip)

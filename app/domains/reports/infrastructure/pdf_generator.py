@@ -724,7 +724,7 @@ def _build_row(lab: Any, is_female: bool) -> dict:
         "range_type": lab.__dict__.get("_ref_type"),
         "note": lab.l_nota_validation or "",
         "graphic_object_name": lab.l_result_graphic or None,
-        "result_comp": lab.l_result_comp or "",
+        "result_comp": _realign_result_comp(lab.l_result_comp or ""),
         "date_validatie": lab.l_date_validatie,
         "alternative_range_value": (lab.test.alternative_range_value or "") if lab.test else "",
     }
@@ -734,6 +734,48 @@ def _build_row(lab: Any, is_female: bool) -> dict:
 # Helpers
 # ─────────────────────────────────────────────
 _COMP_COL_SPLIT = re.compile(r" {2,}")
+
+# La etiqueta no puede tener 2+ espacios seguidos: así no se confunden con
+# etiquetas las líneas en columnas (antibiogramas, cultivos de equipo, p.ej.
+# "Observaciones        HEMOCULTIVO 2 ... GRAM: COCOS").
+_COMP_LABEL_LINE = re.compile(r"^(?P<label>\S(?:(?! {2}).)*?:) +(?P<value>\S.*)$")
+_COMP_MAX_ALIGN_LABEL = 40
+
+
+def _realign_result_comp(text: str) -> str:
+    """
+    Re-alinea las líneas "ETIQUETA:<espacios>VALOR" del resultado compuesto.
+
+    El frontend rellena todas las etiquetas al ancho de la etiqueta más larga;
+    si una etiqueta es muy larga (p.ej. un texto de protocolo de 130
+    caracteres), todas quedan con ~130 espacios y en el PDF el valor salta a
+    la línea de abajo. Aquí la alineación se calcula solo con las etiquetas
+    cortas (<= _COMP_MAX_ALIGN_LABEL); las largas quedan como "ETIQUETA: VALOR".
+    Las líneas sin ese formato (títulos, notas, tablas, antibiogramas) no se
+    tocan, y si ninguna etiqueta es larga el texto se devuelve tal cual.
+    Solo cambian espacios: nunca etiquetas ni valores.
+    """
+    lines = text.split("\n")
+    parsed = [_COMP_LABEL_LINE.match(line.rstrip()) for line in lines]
+    if not any(m and len(m["label"]) > _COMP_MAX_ALIGN_LABEL for m in parsed):
+        return text
+    # Si el texto tiene líneas en columnas (2+ espacios que no siguen a una
+    # etiqueta, p.ej. un antibiograma), no es el formato "ETIQUETA: valor"
+    # de las plantillas: se deja tal cual para no romper su alineación.
+    if any(not m and "  " in line.strip() for line, m in zip(lines, parsed)):
+        return text
+    short = [len(m["label"]) for m in parsed if m and len(m["label"]) <= _COMP_MAX_ALIGN_LABEL]
+    pad_len = (max(short) + 1) if short else 0
+    out = []
+    for line, m in zip(lines, parsed):
+        if not m:
+            out.append(line)
+        elif len(m["label"]) <= _COMP_MAX_ALIGN_LABEL:
+            out.append(m["label"].ljust(pad_len) + m["value"])
+        else:
+            out.append(f'{m["label"]} {m["value"]}')
+    return "\n".join(out)
+
 
 
 def _build_comp_table(text: str, style: ParagraphStyle, avail_width: float) -> Table | None:

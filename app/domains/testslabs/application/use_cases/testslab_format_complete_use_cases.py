@@ -28,6 +28,8 @@ async def link_format_to_testslab(db: AsyncSession, testslab_id: int, data: dict
             detail="El formato ya está vinculado a esta prueba.",
         )
     try:
+        if data.get("tfc_is_default"):
+            await TestslabFormatCompleteRepository.clear_other_defaults(db, testslab_id)
         payload = {**data, "tfc_testslab_id": testslab_id}
         return await TestslabFormatCompleteRepository.create(db, payload)
     except IntegrityError:
@@ -54,6 +56,10 @@ async def get_link_by_id(db: AsyncSession, tfc_id: int):
 
 
 async def update_link(db: AsyncSession, tfc_id: int, data: dict):
+    if data.get("tfc_is_default"):
+        current = await TestslabFormatCompleteRepository.get_by_id(db, tfc_id)
+        if current:
+            await TestslabFormatCompleteRepository.clear_other_defaults(db, current.tfc_testslab_id, keep_tfc_id=tfc_id)
     record = await TestslabFormatCompleteRepository.update(db, tfc_id, data)
     if not record:
         raise HTTPException(
