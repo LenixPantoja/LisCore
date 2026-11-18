@@ -229,7 +229,7 @@ class InboundOrderResponse(InboundOrderBase):
             patient_document=patient_document,
             sex_code=patient.sex_type.code if patient and patient.sex_type else None,
             tariff_name=order.tariff.t_name if order.tariff else None,
-            service_name=order.service.name if order.service else None,
+            service_name=(order.service.name if order.service else None) or order.io_service_name,
             diagnosis_code=order.diagnosis.diag_code if order.diagnosis else None,
             diagnosis_description=order.diagnosis.d_description if order.diagnosis else None,
             headquarter_name=order.headquarter.name if order.headquarter else None,

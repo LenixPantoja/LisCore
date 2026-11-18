@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator, Field, computed_field
+from pydantic import BaseModel, field_validator, Field, computed_field
 from typing import Optional, List, Any
 from datetime import date, datetime
 from app.domains.patients.api.schemas import PatientResponse
@@ -27,7 +27,8 @@ class OrderBase(BaseModel):
     o_scholarity: Optional[int] = None
     o_order_state: Optional[int] = 1
     o_pat_num_whatsapp: Optional[str] = None
-    o_pat_mail: Optional[EmailStr] = None
+    # Texto libre: puede llegar como 'NA', 'notiene', vacío, etc.
+    o_pat_mail: Optional[str] = Field(default=None, max_length=255)
     o_note: Optional[str] = None
     o_tariff_id: Optional[int] = None
     o_sample_name: Optional[str] = None
@@ -36,11 +37,11 @@ class OrderBase(BaseModel):
     @field_validator("o_pat_mail", mode="before")
     @classmethod
     def _blank_email_to_none(cls, v):
-        # El correo y el celular del paciente no son obligatorios: si el
-        # front envía "" (campo vacío) en vez de omitir el campo, EmailStr lo
-        # rechazaría como email inválido — se trata igual que None.
-        if isinstance(v, str) and v.strip() == "":
-            return None
+        # El correo del paciente no es obligatorio ni se valida como email
+        # (puede venir "NA", "notiene", etc.); vacío se guarda como None.
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
         return v
 
 class OrderCreate(OrderBase):
@@ -60,14 +61,16 @@ class OrderUpdate(BaseModel):
     o_autorizacion: Optional[str] = None
     o_order_state: Optional[int] = None
     o_pat_num_whatsapp: Optional[str] = None
-    o_pat_mail: Optional[EmailStr] = None
+    # Texto libre: puede llegar como 'NA', 'notiene', vacío, etc.
+    o_pat_mail: Optional[str] = Field(default=None, max_length=255)
     o_note: Optional[str] = None
 
     @field_validator("o_pat_mail", mode="before")
     @classmethod
     def _blank_email_to_none(cls, v):
-        if isinstance(v, str) and v.strip() == "":
-            return None
+        if isinstance(v, str):
+            v = v.strip()
+            return v or None
         return v
 
 class OrderResponse(OrderBase):

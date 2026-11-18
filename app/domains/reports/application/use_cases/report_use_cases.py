@@ -401,6 +401,8 @@ async def generate_laboratory_report_data(
         "DOCUMENTO_PACIENTE": patient.pt_Number_document if patient else "—",
         "EMPRESA": order.enterprise.en_name if order.enterprise else "—",
         "MUNICIPIO": (patient.city.city_name if patient and patient.city else None) or "—",
+        # Celular registrado en la orden; vacío si no tiene
+        "CELULAR": (order.o_pat_num_whatsapp or "").strip(),
         "SERVICIO": order.service.name if order.service else "—",
         "NUMERO_ORDEN": order.o_number or "—",
         "EDAD": order.o_age or "—",

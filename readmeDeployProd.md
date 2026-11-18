@@ -113,22 +113,22 @@ docker build -t lis_core_api:prod .
 
 # 3. Exportar la imagen a un archivo .tar
 docker save lis_core_api:prod -o lis_core_api_prod.tar
-
+# Pabon
 scp -r lis_core_api_prod.tar admon@192.168.200.8:/home/admon/Back/
+scp -r dist admon@192.168.200.8:/home/admon/front/deploy/
+
 # Unibac
 scp -r lis_core_api_prod.tar sistemas@100.93.74.117:/home/sistemas/Back
-
 scp -r dist root@100.93.74.117:/home/sistemas/Front/
 
-scp -r dist root@169.58.134.253:~/liscorePabon/Backend/
 
-scp -r dist admon@192.168.200.8:/home/admon/front/deploy/
+Fatima
+scp -r dist root@169.58.134.253:~/liscorePabon/Front/
+scp lis_core_api_prod.tar root@169.58.134.253:~/liscorePabon/Backend/
+
 # 4. Verificar el tamaño del archivo
 dir lis_core_api_prod.tar
 ```
-
-Fatima
-scp lis_core_api_prod.tar root@169.58.134.253:~/liscorePabon/Backend/
 
 
 scp -r dist root@169.58.134.253:~/liscorePabon/Front/

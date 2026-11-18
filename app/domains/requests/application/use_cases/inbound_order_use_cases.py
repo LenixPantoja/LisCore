@@ -202,6 +202,14 @@ async def create_order_from_inbound(
             detail="Debe indicar una tarifa (tariff_id) o asegurarse de que el InboundOrder tenga una tarifa asignada.",
         )
 
+    # Servicio: solicitudes que llegaron sin servicio homologado se resuelven
+    # aqui por codigo/nombre del HIS; si no existe, queda "0" CE - LABORATORIO.
+    if not inbound.io_service_id:
+        from app.domains.requests.application.service_resolver import resolve_service_id
+        inbound.io_service_id = await resolve_service_id(
+            db, inbound.io_service_code, inbound.io_service_name
+        )
+
     order_data = {
         "o_his_id": inbound.io_patient_id,
         "o_age": o_age,

@@ -21,6 +21,7 @@ from app.core.security import get_password_hash
 from app.domains.requests.domain.constants import INBOUND_ORIGIN_PREFIX_DINAMICA_FT
 from app.domains.requests.domain.models import InboundOrder, InboundOrderDetail
 from app.domains.requests.infrastructure.repository import InboundOrderRepository
+from app.domains.requests.application.service_resolver import resolve_service_id
 from app.integrations.InterfazDG.models import DGSolicitudExamenes
 
 # Estado inicial de un detalle: Pendiente
@@ -254,13 +255,10 @@ async def registrar_solicitud_dg(
     if opciones.servicio_desde_gee and not servicio_codigo and do:
         servicio_codigo = do.servicio_codigo
         servicio_nombre = do.servicio_nombre
-    if servicio_codigo:
-        res_svc = await db.execute(
-            select(Service).where(Service.code == servicio_codigo)
-        )
-        svc: Optional[Service] = res_svc.scalars().first()
-        if svc:
-            service_id = svc.id
+    # Busca por codigo y luego por nombre; si no existe lo registra en el
+    # catalogo para que la solicitud y la orden queden con servicio.
+    service_id = await resolve_service_id(db, servicio_codigo, servicio_nombre)
+    print(f"[InterfazDG] servicio '{servicio_codigo}'/'{servicio_nombre}' → service_id={service_id}")
 
     # --- 6. Homologar diagnostico (CODICIE10 -> Diagnoses.diag_code -> Diagnoses.diag_id) ---
     diagnostic_id: Optional[int] = None

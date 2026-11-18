@@ -256,6 +256,31 @@ def _render_html(template_str: str, data: List[dict], params: dict) -> str:
         )
 
 
+def _is_empty_param(value: Any) -> bool:
+    """None, texto vacío o lista vacía (multiselect sin opciones marcadas)."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple)):
+        return len(value) == 0
+    return False
+
+
+def _coerce_scalar(value: Any) -> Any:
+    """'5' -> 5, '2.5' -> 2.5, 'ABC' -> 'ABC' (los ids llegan como texto)."""
+    if not isinstance(value, str):
+        return value
+    v = value.strip()
+    try:
+        return int(v)
+    except ValueError:
+        try:
+            return float(v)
+        except ValueError:
+            return v
+
+
 def _coerce_params(
     raw_params: dict, param_definitions: List[ReportParameter]
 ) -> dict:
@@ -271,8 +296,7 @@ def _coerce_params(
     # bind faltante y puede usar COALESCE(:param, ...) para "sin filtro".
     raw_params = dict(raw_params)
     for p in param_definitions:
-        value = raw_params.get(p.rp_name)
-        if value is None or (isinstance(value, str) and not value.strip()):
+        if _is_empty_param(raw_params.get(p.rp_name)):
             raw_params[p.rp_name] = p.rp_default_value
 
     for key, value in raw_params.items():
@@ -299,6 +323,13 @@ def _coerce_params(
                 coerced[key] = int(value) if "." not in value else float(value)
             except ValueError:
                 coerced[key] = value
+
+        elif param_type == "multiselect":
+            # Lista de valores (el front los envía como texto): se convierte
+            # cada uno a número si lo es, para usar "col = ANY(:param)".
+            # Un valor por defecto en texto se acepta separado por comas.
+            items = value if isinstance(value, (list, tuple)) else str(value).split(",")
+            coerced[key] = [_coerce_scalar(v) for v in items if str(v).strip()] or None
 
         elif param_type in ("select", "multiselect") and isinstance(value, str):
             # If the value looks like an integer (e.g. a foreign-key id), coerce it
@@ -416,7 +447,7 @@ async def run_report(
 
     # Validate required parameters are present
     for param in report.parameters:
-        if param.rp_required and param.rp_name not in filter_params:
+        if param.rp_required and _is_empty_param(filter_params.get(param.rp_name)):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"El par\u00e1metro requerido '{param.rp_label}' no fue enviado.",
@@ -489,7 +520,7 @@ async def export_report_xlsx(
 
     # Validate required parameters
     for param in report.parameters:
-        if param.rp_required and param.rp_name not in filter_params:
+        if param.rp_required and _is_empty_param(filter_params.get(param.rp_name)):
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"El par\u00e1metro requerido '{param.rp_label}' no fue enviado.",
