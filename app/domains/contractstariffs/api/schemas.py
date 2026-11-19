@@ -16,6 +16,7 @@ class TariffDetailResponse(TariffDetailBase):
 class StudieInfo(BaseModel):
     id: int
     code: Optional[str] = None
+    cups_code: Optional[str] = None
     name: Optional[str] = None
     active: Optional[bool] = None
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 
@@ -181,6 +181,45 @@ async def list_tariff_details(
     return await tariff_contracts_use_cases.get_tariff_details_paginated(
         db, tariff_id, skip, limit, search, active
     )
+
+@router.get("/tariffs/{tariff_id}/export",
+            dependencies=[Depends(require_permission("Tariffs:ManageDetails"))])
+async def export_tariff(tariff_id: int, db: AsyncSession = Depends(get_db)):
+    """Descarga el tarifario (valor por estudio) en Excel para editarlo y volver a importarlo."""
+    from fastapi.responses import Response
+    from app.domains.contractstariffs.application.use_cases.tariff_excel_use_cases import export_tariff_excel
+    content, filename = await export_tariff_excel(db, tariff_id)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                 "Access-Control-Expose-Headers": "Content-Disposition"},
+    )
+
+
+@router.post("/tariffs/{tariff_id}/import",
+             dependencies=[Depends(require_permission("Tariffs:ManageDetails"))])
+async def import_tariff(
+    tariff_id: int,
+    file: UploadFile = File(...),
+    dry_run: bool = Query(True, description="True: solo vista previa, no guarda"),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Importa el Excel del tarifario: actualiza valores y agrega estudios con valor.
+    Nunca elimina estudios de la tarifa. Con dry_run=true devuelve la vista previa.
+    """
+    from fastapi import HTTPException
+    from app.domains.contractstariffs.application.use_cases.tariff_excel_use_cases import import_tariff_excel
+    if not (file.filename or "").lower().endswith(".xlsx"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="Seleccione un archivo de Excel (.xlsx).")
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                            detail="El archivo supera el tamaño máximo de 10 MB.")
+    return await import_tariff_excel(db, tariff_id, content, dry_run=dry_run)
+
 
 @router.post("/tariffs/{tariff_id}/details", response_model=TariffDetailResponse, status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(require_permission("Tariffs:ManageDetails"))])
