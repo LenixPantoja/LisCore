@@ -166,6 +166,71 @@ async def _get_sample_by_barcode(db: AsyncSession, barcode: str) -> SamplesOrder
     )
 
 
+async def _validate_not_same_location(
+    db: AsyncSession, sample: SamplesOrder, barcode: str, location_id: Optional[int]
+) -> None:
+    """
+    Una muestra no se puede registrar dos veces seguidas en la misma localidad:
+    para volver a registrarla aquí debe haber pasado antes por otra localidad.
+    Se compara contra el último movimiento de la muestra (cualquier estado).
+    """
+    from app.domains.seroteca.domain.models import SampleLog
+
+    last = (
+        await db.execute(
+            select(SampleLog)
+            .where(SampleLog.log_sample_order_id == sample.so_id)
+            .order_by(SampleLog.log_create_at.desc(), SampleLog.sl_id.desc())
+            .limit(1)
+        )
+    ).scalars().first()
+    if last is None or last.log_location_id != location_id:
+        return
+
+    loc_name = "esta localidad"
+    if location_id is not None:
+        from app.domains.locations.domain.models import Location
+        loc = await db.get(Location, location_id)
+        if loc and loc.loc_name:
+            loc_name = f"la localidad {loc.loc_name}"
+    when = last.log_create_at.strftime("%d/%m/%Y %I:%M %p") if last.log_create_at else ""
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=(
+            f"La muestra '{barcode}' ya tiene su último registro en {loc_name}"
+            f"{' (' + when + ')' if when else ''}."
+        ),
+    )
+
+
+async def _sample_summary(db: AsyncSession, sample: SamplesOrder, location_id: Optional[int]) -> dict:
+    """Datos para mostrar la muestra registrada: tipo de muestra, orden, paciente y localidad."""
+    from app.domains.samples.domain.models import SampleType
+    from app.domains.patients.domain.models import Patient
+    from app.domains.locations.domain.models import Location
+
+    info = {"sample_type_name": None, "sample_type_color": None, "order_number": None,
+            "patient_name": None, "location_name": None}
+    if sample.so_sample_type_id:
+        st = await db.get(SampleType, sample.so_sample_type_id)
+        if st:
+            info["sample_type_name"] = st.st_name
+            info["sample_type_color"] = getattr(st, "st_color", None)
+    order = sample.order
+    if order:
+        info["order_number"] = order.o_number
+        if order.o_his_id:
+            pt = await db.get(Patient, order.o_his_id)
+            if pt:
+                info["patient_name"] = " ".join(p for p in [
+                    pt.pt_firts_name, pt.pt_middle_name, pt.pt_last_name, pt.pt_second_last_name
+                ] if p).strip() or None
+    if location_id is not None:
+        loc = await db.get(Location, location_id)
+        info["location_name"] = loc.loc_name if loc else None
+    return info
+
+
 async def log_sample_event(
     db: AsyncSession,
     barcode: str,
@@ -181,6 +246,8 @@ async def log_sample_event(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"La muestra con código de barras '{barcode}' fue descartada y ya no admite trazabilidad.",
         )
+
+    await _validate_not_same_location(db, sample, barcode, location_id)
 
     # When a sample is found and tracked, mark it as "Con Muestra" at the order level
     sample.so_state = SAMPLE_ORDER_STATE_CON_MUESTRA
@@ -235,7 +302,8 @@ async def log_sample_event(
                 select(OrdersDetail)
                 .where(OrdersDetail.od_order_id == sample.order.o_id)
                 .options(
-                    selectinload(OrdersDetail.study).selectinload(StudiesLab.test_details)
+                    selectinload(OrdersDetail.study).selectinload(StudiesLab.test_details),
+                    selectinload(OrdersDetail.study).selectinload(StudiesLab.work_group),
                 )
             )
             result = await db.execute(stmt)
@@ -255,8 +323,19 @@ async def log_sample_event(
                     "study_id": od.study.id,
                     "study_name": od.study.name,
                     "study_code": od.study.code,
+                    "work_group_id": od.study.work_groups_id,
+                    "work_group_name": (od.study.work_group.wg_name if od.study.work_group else None),
                     "tests": [test_info_by_id[tid] for tid in study_test_ids if tid in test_info_by_id],
                 })
+
+    # Área(s) de la muestra: grupos de trabajo de los estudios del tubo, sin repetir
+    areas: list[str] = []
+    for s in studies:
+        name = (s.get("work_group_name") or "").strip()
+        if name and name not in areas:
+            areas.append(name)
+
+    sample_info = await _sample_summary(db, sample, location_id)
 
     await db.commit()
 
@@ -268,6 +347,8 @@ async def log_sample_event(
         "so_barcode": sample.so_barcode,
         "so_id": sample.so_id,
         "studies": studies,
+        "areas": areas,
+        **sample_info,
     }
 
 
@@ -292,6 +373,7 @@ async def get_sample_history(
             "log_create_at": log.log_create_at,
             "location_name": log.location.loc_name if log.location else None,
             "headquarter_name": None,
+            "log_create_iso": log.log_create_at.isoformat(timespec="seconds") if log.log_create_at else None,
         }
         # Obtener el nombre de la sede desde sample → order
         if log.sample and log.sample.order:

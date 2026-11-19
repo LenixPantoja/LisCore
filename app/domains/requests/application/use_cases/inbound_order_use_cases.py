@@ -18,6 +18,8 @@ from app.domains.requests.infrastructure.repository import (
 )
 from app.domains.requests.domain.models import InboundOrderDetail
 from app.domains.requests.domain.constants import (
+    INBOUND_ORDER_DETAIL_STATES,
+    INBOUND_ORDER_DETAIL_STATE_PENDIENTE,
     INBOUND_ORDER_DETAIL_STATE_EJECUTADA,
     INBOUND_ORDER_DETAIL_STATE_CON_ERROR,
     INBOUND_ORIGIN_PREFIX_DINAMICA_FT,
@@ -148,19 +150,22 @@ async def create_order_from_inbound(
             detail="No se encontraron detalles válidos para el InboundOrder especificado.",
         )
 
-    # Validar que ningún detalle esté ya en estado Ejecutada
-    already_executed = [
+    # Solo se integran detalles en estado Pendiente: los Ejecutados, Enviados,
+    # Con Error, etc. ya tuvieron trámite y no pueden generar otra orden.
+    not_pending = [
         d for d in selected_details
-        if d.iod_state == INBOUND_ORDER_DETAIL_STATE_EJECUTADA
+        if d.iod_state is not None and d.iod_state != INBOUND_ORDER_DETAIL_STATE_PENDIENTE
     ]
-    if already_executed:
-        executed_info = [
-            f"{d.study.name} ({d.study.code})" if d.study else f"Detalle {d.iod_id}"
-            for d in already_executed
+    if not_pending:
+        info = [
+            (f"{d.study.name} ({d.study.code})" if d.study else f"Detalle {d.iod_id}")
+            + f" - {INBOUND_ORDER_DETAIL_STATES.get(d.iod_state, 'Estado ' + str(d.iod_state))}"
+            for d in not_pending
         ]
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Los siguientes estudios ya fueron ejecutados y no pueden registrarse nuevamente: {'; '.join(executed_info)}",
+            detail="Solo se pueden integrar estudios en estado Pendiente. "
+                   f"No se pueden integrar: {'; '.join(info)}.",
         )
 
     study_ids = [d.iod_study_id for d in selected_details if d.iod_study_id]

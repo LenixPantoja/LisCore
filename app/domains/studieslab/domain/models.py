@@ -34,6 +34,8 @@ class StudiesLab(Base):
     work_groups_id = Column(Integer, ForeignKey("Work_groups.wg_id"), nullable=True)
     external_lab_id = Column(Integer, ForeignKey("ExternalReferenceLaboratories.erl_id"), nullable=True)
     active = Column(Boolean, default=True)
+    # Etiquetas a imprimir del tubo de este estudio (None = cantidad general)
+    labels_to_print = Column(Integer, nullable=True)
 
     # Relaciones con Masters utilizando los modelos definidos anteriormente
     referral_location = relationship("ReferralLocation", foreign_keys=[referral_location_id])

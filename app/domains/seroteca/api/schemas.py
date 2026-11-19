@@ -53,6 +53,8 @@ class SampleLogResponse(BaseModel):
     # Campos enriquecidos
     location_name: Optional[str] = None
     headquarter_name: Optional[str] = None
+    # Fecha/hora sin formato (ISO, hora Bogotá) para calcular tiempos transcurridos
+    log_create_iso: Optional[str] = None
 
     @field_serializer("log_create_at")
     def serialize_log_create_at(self, value: Optional[datetime]) -> Optional[str]:

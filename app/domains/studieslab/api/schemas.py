@@ -1,4 +1,4 @@
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Any
 
 
@@ -21,6 +21,7 @@ class StudiesLabBase(BaseModel):
     work_groups_id: Optional[int] = None
     external_lab_id: Optional[int] = None
     active: Optional[bool] = True
+    labels_to_print: Optional[int] = Field(default=None, ge=1, le=20)
 
 
 class StudiesLabCreate(StudiesLabBase):
@@ -36,6 +37,7 @@ class StudiesLabUpdate(BaseModel):
     work_groups_id: Optional[int] = None
     external_lab_id: Optional[int] = None
     active: Optional[bool] = None
+    labels_to_print: Optional[int] = Field(default=None, ge=1, le=20)
 
 
 # --- Work Group ---

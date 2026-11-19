@@ -91,6 +91,15 @@ async def _resolve_headquarter(db: AsyncSession, order: Order) -> tuple[str, str
     return name, consecutive
 
 
+def _copies(value) -> int:
+    """Cantidad de etiquetas configurada (0 si no hay o no es válida)."""
+    try:
+        n = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return min(max(n, 0), 20)
+
+
 def _order_date_str(order: Order) -> str:
     """Fecha de creación de la orden para la etiqueta (dd/mm/aaaa hh:mm AM/PM)."""
     if order.o_created_at:
@@ -220,6 +229,11 @@ async def generate_barcode_stickers(
     orphan_wg_studies: dict[int, list[str]] = defaultdict(list)
     orphan_requested = False
 
+    # Cantidad de etiquetas configurada (StudiesLab / TestsLab.labels_to_print)
+    # por tipo de muestra: se toma la mayor de los estudios y pruebas del tubo.
+    st_copies: dict[int, int] = defaultdict(int)
+    orphan_copies = 0
+
     for study in studies:
         wg_id = study.work_groups_id
         if not wg_id:
@@ -230,9 +244,16 @@ async def generate_barcode_stickers(
 
         # Determine which sample types this study covers (only from tests with print_barcode enabled)
         covered_st_ids: set[int] = set()
+        study_copies = _copies(getattr(study, "labels_to_print", None))
+        copies_by_st: dict[int, int] = {}
         for std in study.test_details:
             if std.test and std.test.print_barcode and std.test.samples_type_id is not None:
-                covered_st_ids.add(std.test.samples_type_id)
+                sid = std.test.samples_type_id
+                covered_st_ids.add(sid)
+                copies_by_st[sid] = max(
+                    copies_by_st.get(sid, 0), study_copies,
+                    _copies(getattr(std.test, "labels_to_print", None)),
+                )
 
         # If no test has print_barcode enabled, skip this study entirely
         if not covered_st_ids:
@@ -244,6 +265,7 @@ async def generate_barcode_stickers(
         for st_id in covered_st_ids:
             if code not in sample_wg_studies[st_id][wg_id]:
                 sample_wg_studies[st_id][wg_id].append(code)
+            st_copies[st_id] = max(st_copies[st_id], copies_by_st.get(st_id, 0))
 
         # Estudio sin tubo en la orden: el tipo de muestra de sus pruebas se cambió
         # en Definiciones después de crear la orden (el tubo se creó con el tipo
@@ -255,6 +277,7 @@ async def generate_barcode_stickers(
         }
         if not any(st_to_suffix.get(sid, sid) in tube_suffixes for sid in covered_st_ids):
             orphan_wg_studies[wg_id].append(code)
+            orphan_copies = max(orphan_copies, *copies_by_st.values())
             if requested_study_ids is not None and study.id in requested_study_ids:
                 orphan_requested = True
 
@@ -354,6 +377,11 @@ async def generate_barcode_stickers(
             # No studies with print_barcode enabled for this tube → skip sticker
             continue
 
+        # Etiquetas configuradas para este tubo (0 = usar la cantidad general)
+        tube_copies = max((st_copies.get(sid, 0) for sid in related_st_ids), default=0)
+        if uses_orphans:
+            tube_copies = max(tube_copies, orphan_copies)
+
         # Sort work groups by wg_order_of_print
         sorted_wg_ids = sorted(
             combined_wg_studies.keys(),
@@ -384,6 +412,7 @@ async def generate_barcode_stickers(
                 "sample_type_name": sample_type_name,
                 "piso": piso,
                 "hq_consecutive": hq_consecutive,
+                "copies": tube_copies,
             })
         else:
             # Multiple work groups share the same sample type → merge into one sticker.
@@ -412,6 +441,7 @@ async def generate_barcode_stickers(
                 "sample_type_name": sample_type_name,
                 "piso": piso,
                 "hq_consecutive": hq_consecutive,
+                "copies": tube_copies,
             })
 
     if not stickers:
@@ -424,9 +454,14 @@ async def generate_barcode_stickers(
     # 9. Etiquetas a imprimir: stickers de muestras y, al final, la etiqueta
     #    de la orden (solo si su plantilla 'ORDEN' está activa y se imprime la
     #    orden completa: si se pidieron estudios puntuales, solo van los de
-    #    muestras). Cada una se repite según barcodes.number_labels_print.
+    #    muestras). Cada una se repite según barcodes.number_labels_print; las
+    #    de muestras, la mayor entre esa cantidad general y la configurada en
+    #    los estudios/pruebas del tubo (labels_to_print).
     muestra_tpl = await BarcodeRepository.get_active(db, LABEL_TYPE_MUESTRA)
-    labels = [(build_zpl(s, muestra_tpl.zpl), muestra_tpl.copies) for s in stickers]
+    labels = [
+        (build_zpl(s, muestra_tpl.zpl), max(muestra_tpl.copies, s.get("copies", 0)))
+        for s in stickers
+    ]
 
     orden_tpl = (
         await BarcodeRepository.find_active(db, LABEL_TYPE_ORDEN)

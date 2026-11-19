@@ -1,4 +1,4 @@
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Any
 from datetime import datetime
 from decimal import Decimal
@@ -31,6 +31,7 @@ class TestsLabBase(BaseModel):
     formula: Optional[str] = None
     is_confidential: Optional[bool] = False
     print_barcode: Optional[bool] = True
+    labels_to_print: Optional[int] = Field(default=None, ge=1, le=20)
 
 
 class TestsLabCreate(TestsLabBase):
@@ -62,6 +63,7 @@ class TestsLabUpdate(BaseModel):
     formula: Optional[str] = None
     is_confidential: Optional[bool] = None
     print_barcode: Optional[bool] = None
+    labels_to_print: Optional[int] = Field(default=None, ge=1, le=20)
 
 
 class TestsLabResponse(TestsLabBase):

@@ -37,6 +37,8 @@ class TestsLab(Base):
     formula = Column(String(500), nullable=True)
     is_confidential = Column(Boolean, default=False)
     print_barcode = Column(Boolean, default=True)
+    # Etiquetas a imprimir del tubo de esta prueba (None = cantidad general)
+    labels_to_print = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=get_bogota_now)
     updated_at = Column(DateTime, default=get_bogota_now, onupdate=get_bogota_now)
 
