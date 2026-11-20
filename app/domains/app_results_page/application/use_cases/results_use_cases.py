@@ -18,6 +18,8 @@ from app.domains.orders.domain.models import Order, OrdersDetail
 from app.domains.patients.domain.models import Patient
 from app.domains.studieslab.domain.models import StudiesTestDetail
 from app.domains.testslabs.domain.models import RangeReference
+from app.domains.app_results_page.application.use_cases.evolution_use_cases import lab_numeric_value
+from app.shared.utils.range_evaluator import evaluate_reference_range_sync
 
 # Estados de Laboratory que se consideran "resultado definitivo" para el paciente.
 _VALIDATED_LAB_STATES = {LABORATORY_STATE_VALIDADA, LABORATORY_STATE_IMPRESO}
@@ -70,10 +72,12 @@ async def _fetch_required_map(
     return {(std.studies_id, std.tests_id): bool(std.is_required) for std in result.scalars().all()}
 
 
-async def _fetch_ranges_by_test(db: AsyncSession, test_ids: set[int]) -> dict[int, list[dict]]:
-    """Devuelve, por test_id, la lista de rangos de referencia configurados con sus valores."""
+async def _fetch_ranges_by_test(
+    db: AsyncSession, test_ids: set[int]
+) -> tuple[dict[int, list[dict]], dict[int, list[RangeReference]]]:
+    """Devuelve, por test_id, los rangos serializados y los modelos (para evaluar resultados)."""
     if not test_ids:
-        return {}
+        return {}, {}
 
     result = await db.execute(
         select(RangeReference)
@@ -82,7 +86,9 @@ async def _fetch_ranges_by_test(db: AsyncSession, test_ids: set[int]) -> dict[in
         .order_by(RangeReference.test_id, RangeReference.priority.asc().nullslast())
     )
     ranges_by_test: dict[int, list[dict]] = {}
+    models_by_test: dict[int, list[RangeReference]] = {}
     for rr in result.scalars().all():
+        models_by_test.setdefault(rr.test_id, []).append(rr)
         ranges_by_test.setdefault(rr.test_id, []).append({
             "range_type": rr.range_type,
             "gender": rr.gender,
@@ -99,13 +105,14 @@ async def _fetch_ranges_by_test(db: AsyncSession, test_ids: set[int]) -> dict[in
                 for rv in rr.reference_values
             ],
         })
-    return ranges_by_test
+    return ranges_by_test, models_by_test
 
 
 async def _fetch_studies_by_order(
     db: AsyncSession,
     order_ids: list[int],
     only_show_validated: bool = False,
+    patients_by_order: Optional[dict[int, Patient]] = None,
 ) -> dict[int, list[dict]]:
     """Para cada o_id, agrupa los resultados de laboratorio por estudio.
 
@@ -113,6 +120,9 @@ async def _fetch_studies_by_order(
     l_state está validado (Validada / Laboratorio Impreso); en cualquier otro
     caso se oculta el valor y se reporta como "Pendiente", sin importar si la
     prueba es obligatoria (is_required) o no dentro del estudio.
+
+    Si se indica `patients_by_order`, cada resultado visible se evalúa contra el
+    rango de referencia aplicable al paciente (range_type, ref_min, ref_max).
     """
     if not order_ids:
         return {}
@@ -135,7 +145,7 @@ async def _fetch_studies_by_order(
         for lab in labs
         if lab.order_detail and lab.l_test_id
     })
-    ranges_by_test = await _fetch_ranges_by_test(db, {lab.l_test_id for lab in labs if lab.l_test_id})
+    ranges_by_test, range_models = await _fetch_ranges_by_test(db, {lab.l_test_id for lab in labs if lab.l_test_id})
 
     studies_by_order: dict[int, dict[int, dict]] = {}
     study_order_seq: dict[int, list[int]] = {}
@@ -166,7 +176,20 @@ async def _fetch_studies_by_order(
             state_label = LABORATORY_STATES.get(lab.l_state, str(lab.l_state))
             validation_date = _format_datetime(lab.l_date_validatie)
 
+        range_type = ref_min = ref_max = None
+        patient = (patients_by_order or {}).get(order_id)
+        if result_value is not None and patient is not None and lab.l_test_id:
+            num, text = lab_numeric_value(lab)
+            range_type, ref_min, ref_max = evaluate_reference_range_sync(
+                range_models.get(lab.l_test_id, []),
+                num,
+                patient.pt_date_of_birth,
+                patient.pt_sex_type,
+                result_text=text,
+            )
+
         order_studies[study_id]["results"].append({
+            "test_id": lab.l_test_id,
             "test_name": lab.test.name if lab.test else "—",
             "result": result_value,
             "units": lab.test.units if lab.test else None,
@@ -175,6 +198,9 @@ async def _fetch_studies_by_order(
             "is_required": required_map.get((study_id, lab.l_test_id), False),
             "reference_ranges": ranges_by_test.get(lab.l_test_id, []),
             "alternative_range_value": lab.test.alternative_range_value if lab.test else None,
+            "range_type": range_type,
+            "ref_min": float(ref_min) if ref_min is not None else None,
+            "ref_max": float(ref_max) if ref_max is not None else None,
         })
 
     return {
@@ -211,7 +237,12 @@ async def list_patient_orders(
     )
     orders = result.scalars().all()
 
-    studies_by_order = await _fetch_studies_by_order(db, [o.o_id for o in orders], only_show_validated=True)
+    studies_by_order = await _fetch_studies_by_order(
+        db,
+        [o.o_id for o in orders],
+        only_show_validated=True,
+        patients_by_order={o.o_id: patient for o in orders},
+    )
     patient_document = patient.pt_Number_document
     patient_fullname = full_name(patient)
 
@@ -269,7 +300,12 @@ async def list_enterprise_orders(
     )
     orders = result.scalars().all()
 
-    studies_by_order = await _fetch_studies_by_order(db, [o.o_id for o in orders], only_show_validated=True)
+    studies_by_order = await _fetch_studies_by_order(
+        db,
+        [o.o_id for o in orders],
+        only_show_validated=True,
+        patients_by_order={o.o_id: o.patient for o in orders if o.patient},
+    )
 
     items = [
         {

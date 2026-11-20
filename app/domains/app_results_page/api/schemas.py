@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 from pydantic import BaseModel
@@ -64,6 +64,7 @@ class ReferenceRangeItem(BaseModel):
 
 
 class StudyResultItem(BaseModel):
+    test_id: Optional[int] = None
     test_name: str
     result: Optional[str] = None
     units: Optional[str] = None
@@ -72,6 +73,10 @@ class StudyResultItem(BaseModel):
     is_required: bool = False
     reference_ranges: List[ReferenceRangeItem] = []
     alternative_range_value: Optional[str] = None
+    # Evaluación del resultado contra el rango aplicable al paciente (género/edad)
+    range_type: Optional[str] = None  # NORMAL | ACEPTABLE | CRITICO
+    ref_min: Optional[float] = None  # límites del rango NORMAL aplicable
+    ref_max: Optional[float] = None
 
 
 class StudyWithResults(BaseModel):
@@ -115,3 +120,24 @@ class EnterpriseOrdersPaginatedResponse(BaseModel):
     page: int
     page_size: int
     items: List[EnterpriseOrderItem]
+
+
+# --- Gráfico evolutivo ---
+
+class EvolutionPointItem(BaseModel):
+    fecha: Optional[datetime] = None
+    valor: Optional[float] = None
+    valor_texto: Optional[str] = None
+    referencia_min: Optional[float] = None
+    referencia_max: Optional[float] = None
+    estado: Optional[str] = None  # NORMAL | ACEPTABLE | CRITICO
+    orden_numero: Optional[str] = None
+
+
+class EvolutionResponse(BaseModel):
+    test_id: int
+    prueba: Optional[str] = None
+    codigo: Optional[str] = None
+    unidad: Optional[str] = None
+    paciente: Optional[str] = None
+    historico: List[EvolutionPointItem] = []

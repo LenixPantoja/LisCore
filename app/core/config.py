@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     MINIO_SIGNATURES_BUCKET: str
     MINIO_ANNEXE_RESULT_BUCKET: str = "annexedResult"
     MINIO_RESOURCES_BUCKET: str = "resources"
+    # Logo del portal de resultados (objeto dentro del bucket de recursos)
+    PORTAL_LOGO_OBJECT: str = "Logo1.png"
     MINIO_PRESIGNED_EXPIRES_HOURS: int
     # Región fija: evita que cada URL presignada consulte la región del bucket por red
     MINIO_REGION: str = "us-east-1"
